@@ -246,7 +246,7 @@ interface ProductMeta {
 
 const supabase = useSupabaseClient()
 const toast = useToast()
-const { isViewer } = useCurrentUser()
+const { isViewer, profileLoaded } = useCurrentUser()
 const { selectedMonth, selectedPeriodLabel, availableMonths, selectMonth } = useAnalysisPeriod()
 const route = useRoute()
 const router = useRouter()
@@ -725,13 +725,15 @@ watch(
 )
 
 watch(
-  () => selectedMonth.value,
-  async () => {
+  () => [selectedMonth.value, profileLoaded.value],
+  async ([month, loaded]) => {
+    if (!month || !loaded) return
     await fetchCustomers()
     if (selectedCustomer.value) {
       await fetchCustomerOrders(selectedCustomer.value)
     }
   },
+  { immediate: true },
 )
 
 function stagePercent(stage: string): number {
@@ -764,7 +766,6 @@ function downloadFilteredCustomers() {
 
 onMounted(async () => {
   await loadProductMeta()
-  await fetchCustomers()
 })
 </script>
 <style scoped>

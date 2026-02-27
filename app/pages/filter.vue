@@ -599,7 +599,7 @@ const FETCH_PAGE_SIZE = 1000
 
 const supabase = useSupabaseClient()
 const toast = useToast()
-const { user, isViewer } = useCurrentUser()
+const { user, isViewer, profileLoaded } = useCurrentUser()
 const { selectedMonth } = useAnalysisPeriod()
 const { setFilterResult, setPendingReview } = useMonthlyWorkflow()
 
@@ -1481,8 +1481,9 @@ function downloadFilteredCsv() {
 }
 
 watch(
-  () => selectedMonth.value,
-  async () => {
+  () => [selectedMonth.value, profileLoaded.value],
+  async ([month, loaded]) => {
+    if (!month || !loaded) return
     revealResultSection.value = false
     showConfirmModal.value = false
     closeDetail()

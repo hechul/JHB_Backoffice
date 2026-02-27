@@ -244,6 +244,7 @@ const toast = useToast()
 const activeTab = ref('filter')
 const expandedFilter = ref<number | null>(null)
 const expandedManual = ref<number | null>(null)
+const { isViewer, profileLoaded } = useCurrentUser()
 const { selectedMonth, selectedPeriodLabel } = useAnalysisPeriod()
 const filterLogs = ref<FilterLogRow[]>([])
 const manualLogs = ref<ManualLogRow[]>([])
@@ -405,8 +406,9 @@ const filteredFilterLogs = computed(() => filterLogs.value)
 const filteredManualLogs = computed(() => manualLogs.value)
 
 watch(
-  () => selectedMonth.value,
-  async () => {
+  () => [selectedMonth.value, profileLoaded.value],
+  async ([month, loaded]) => {
+    if (!month || !loaded) return
     expandedFilter.value = null
     expandedManual.value = null
     await fetchLogs()

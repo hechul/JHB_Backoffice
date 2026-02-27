@@ -309,7 +309,7 @@ watch(showPeriodSelector, (visible) => {
 })
 
 onMounted(async () => {
-  await refreshMonths()
+  // 인증 로직 후 데이터 조회
 })
 
 watch(
@@ -320,6 +320,7 @@ watch(
     if (availableMonths.value.length > 0) return
     await refreshMonths()
   },
+  { immediate: true }
 )
 </script>
 

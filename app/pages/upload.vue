@@ -321,7 +321,7 @@ interface MappingApplyResult {
 
 const supabase = useSupabaseClient()
 const toast = useToast()
-const { isViewer } = useCurrentUser()
+const { isViewer, profileLoaded } = useCurrentUser()
 const { selectedMonth, refreshMonths } = useAnalysisPeriod()
 const { getWorkflow, setUploadResult, setMappingPending, setUnmappedProducts, resetMonth } = useMonthlyWorkflow()
 
@@ -352,6 +352,8 @@ const hasResult = computed(() => uploadState.value === 'uploaded' || uploadState
 const needsMapping = computed(() => uploadState.value === 'mapping_required')
 const mappedCount = computed(() => mappingFailedItems.value.filter((item) => !!item.mappedProductId).length)
 const remainingMappingCount = computed(() => Math.max(0, mappingFailedItems.value.length - mappedCount.value))
+
+
 
 const uploadStateVariant = computed(() => {
   const map = { empty: 'neutral', uploading: 'info', uploaded: 'success', mapping_required: 'warning' } as const
@@ -1475,8 +1477,9 @@ const uploadResults = computed(() => {
 })
 
 watch(
-  () => selectedMonth.value,
-  async (month) => {
+  () => [selectedMonth.value, profileLoaded.value],
+  async ([month, loaded]) => {
+    if (!loaded) return
     const syncId = ++monthSyncSeq.value
     if (isUploading.value) return
     resetSourceFileState()
