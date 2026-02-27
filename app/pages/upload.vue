@@ -719,7 +719,31 @@ async function loadProductCatalog() {
 }
 onMounted(loadProductCatalog)
 
-async function fetchMonthUploadCounts(month: string): Promise<{ orderCount: number; expCount: number }> {
+function formatUploadTimestamp(value: string): string {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) {
+    return String(value).replace('T', ' ').slice(0, 16)
+  }
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
+}
+
+function pickLatestTimestamp(a: string, b: string): string {
+  if (!a) return b
+  if (!b) return a
+  const da = new Date(a)
+  const db = new Date(b)
+  if (Number.isNaN(da.getTime())) return b
+  if (Number.isNaN(db.getTime())) return a
+  return da.getTime() >= db.getTime() ? a : b
+}
+
+async function fetchMonthUploadMeta(month: string): Promise<{ orderCount: number; expCount: number; latestUploadAt: string }> {
   const [{ count: orderCount, error: orderError }, { count: expCount, error: expError }] = await Promise.all([
     supabase
       .from('purchases')
@@ -734,9 +758,36 @@ async function fetchMonthUploadCounts(month: string): Promise<{ orderCount: numb
   if (orderError) throw orderError
   if (expError) throw expError
 
+  let latestUploadAt = ''
+  const [{ data: latestOrderRows, error: latestOrderError }, { data: latestExpRows, error: latestExpError }] = await Promise.all([
+    supabase
+      .from('purchases')
+      .select('created_at')
+      .eq('target_month', month)
+      .order('created_at', { ascending: false })
+      .limit(1),
+    supabase
+      .from('experiences')
+      .select('created_at')
+      .eq('target_month', month)
+      .order('created_at', { ascending: false })
+      .limit(1),
+  ])
+
+  // created_at 컬럼이 없는 구버전 스키마는 시간 fallback만 생략하고 진행한다.
+  if (!latestOrderError || latestOrderError.code !== '42703') {
+    const orderAt = String((latestOrderRows as any[] | null)?.[0]?.created_at || '')
+    latestUploadAt = pickLatestTimestamp(latestUploadAt, orderAt)
+  }
+  if (!latestExpError || latestExpError.code !== '42703') {
+    const expAt = String((latestExpRows as any[] | null)?.[0]?.created_at || '')
+    latestUploadAt = pickLatestTimestamp(latestUploadAt, expAt)
+  }
+
   return {
     orderCount: Number(orderCount || 0),
     expCount: Number(expCount || 0),
+    latestUploadAt: formatUploadTimestamp(latestUploadAt),
   }
 }
 
@@ -1439,12 +1490,14 @@ watch(
 
     let orderCount = 0
     let expCount = 0
+    let latestUploadAt = ''
     let dbChecked = false
     try {
-      const counts = await fetchMonthUploadCounts(month)
+      const meta = await fetchMonthUploadMeta(month)
       if (syncId !== monthSyncSeq.value) return
-      orderCount = counts.orderCount
-      expCount = counts.expCount
+      orderCount = meta.orderCount
+      expCount = meta.expCount
+      latestUploadAt = meta.latestUploadAt
       dbChecked = true
     } catch (error) {
       console.warn('Failed to fetch upload counts for month:', month, error)
@@ -1477,6 +1530,9 @@ watch(
       orderNew: wf.uploadStats.orderNew > 0 ? wf.uploadStats.orderNew : orderCount,
       orderExcluded: wf.uploadStats.orderExcluded || 0,
       expInserted: wf.uploadStats.expInserted > 0 ? wf.uploadStats.expInserted : expCount,
+    }
+    if (!uploadResultTimestamp.value && latestUploadAt) {
+      uploadResultTimestamp.value = latestUploadAt
     }
     mappingFailedItems.value = wf.unmappedProducts.map((serialized) => {
       const parsed = deserializeUnmappedItem(serialized)

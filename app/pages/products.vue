@@ -25,10 +25,12 @@
     <!-- Filters -->
     <template v-else>
       <div class="filter-bar">
-        <div class="input-with-icon search-box">
-          <Search :size="16" :stroke-width="1.8" class="input-icon" />
-          <input v-model="searchQuery" class="input" placeholder="상품명 또는 상품번호로 검색..." />
-        </div>
+        <SearchInput
+          v-model="searchQuery"
+          class="search-box"
+          placeholder="상품명 또는 상품번호로 검색..."
+          width="100%"
+        />
         <select v-model="filterPetType" class="select">
             <option value="">전체 펫 타입</option>
             <option value="DOG">강아지</option>
@@ -223,7 +225,8 @@
 </template>
 
 <script setup lang="ts">
-import { PlusCircle, Search, Edit3, X, PackageOpen, Trash2 } from 'lucide-vue-next'
+import { PlusCircle, Edit3, X, PackageOpen, Trash2 } from 'lucide-vue-next'
+import { matchesSearchQuery } from '~/composables/useTextSearch'
 
 definePageMeta({ layout: 'default' })
 
@@ -312,10 +315,12 @@ onMounted(() => {
 const filteredProducts = computed(() => {
   return products.value
     .filter(p => {
-      const matchSearch = !searchQuery.value ||
-        p.product_name.includes(searchQuery.value) ||
-        (p.option_name || '').includes(searchQuery.value) ||
-        p.product_id.toLowerCase().includes(searchQuery.value.toLowerCase())
+      const matchSearch = matchesSearchQuery(
+        searchQuery.value,
+        p.product_name,
+        p.option_name || '',
+        p.product_id,
+      )
       const matchPet = !filterPetType.value || p.pet_type === filterPetType.value
       return matchSearch && matchPet
     })
