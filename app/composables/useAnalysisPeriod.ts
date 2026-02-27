@@ -6,9 +6,9 @@ interface AnalysisMonthOption {
 
 const STORAGE_KEY = 'jhbiofarm_analysis_month'
 const MONTH_OPTIONS_CACHE_KEY = 'jhbiofarm_analysis_month_options_v1'
-const REFRESH_TIMEOUT_MS = 12000
+const REFRESH_TIMEOUT_MS = 6000
 const REFRESH_RETRY_COUNT = 2
-const REFRESH_SAFETY_MS = 15000
+const REFRESH_SAFETY_MS = 8000
 const MAX_DB_RANGE_MONTHS = 60
 
 function isValidMonthToken(value: string): boolean {
@@ -194,20 +194,24 @@ export function useAnalysisPeriod() {
 
     try {
       const [{ data: latestRow, error: latestError }, { data: oldestRow, error: oldestError }] = await Promise.all([
-        runQueryWithTimeout((signal) => supabase
-          .from('purchases')
-          .select('target_month')
-          .order('target_month', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-          .abortSignal(signal)),
-        runQueryWithTimeout((signal) => supabase
-          .from('purchases')
-          .select('target_month')
-          .order('target_month', { ascending: true })
-          .limit(1)
-          .maybeSingle()
-          .abortSignal(signal)),
+        runQueryWithTimeout(async (signal) => {
+          const query = supabase
+            .from('purchases')
+            .select('target_month')
+            .order('target_month', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          return await (query as any).abortSignal(signal)
+        }),
+        runQueryWithTimeout(async (signal) => {
+          const query = supabase
+            .from('purchases')
+            .select('target_month')
+            .order('target_month', { ascending: true })
+            .limit(1)
+            .maybeSingle()
+          return await (query as any).abortSignal(signal)
+        }),
       ])
 
       if (latestError) throw latestError
@@ -240,11 +244,13 @@ export function useAnalysisPeriod() {
           const month = candidateMonths[idx]
           if (!month) continue
           try {
-            const { count, error } = await runQueryWithTimeout((signal) => supabase
-              .from('purchases')
-              .select('purchase_id', { count: 'exact', head: true })
-              .eq('target_month', month)
-              .abortSignal(signal))
+            const { count, error } = await runQueryWithTimeout(async (signal) => {
+              const query = supabase
+                .from('purchases')
+                .select('purchase_id', { count: 'exact', head: true })
+                .eq('target_month', month)
+              return await (query as any).abortSignal(signal)
+            })
             if (error) {
               console.warn('Failed to fetch month count:', month, error)
               countMap.set(month, 0)

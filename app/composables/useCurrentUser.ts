@@ -20,7 +20,6 @@ export function useCurrentUser() {
   }))
   const profileLoaded = useState<boolean>('profile_loaded', () => false)
   const profileFetching = useState<boolean>('profile_fetching', () => false)
-  const authBootstrapped = useState<boolean>('current_user_auth_bootstrapped', () => false)
   const authListenerBound = useState<boolean>('current_user_auth_listener_bound', () => false)
   const watcherBound = useState<boolean>('current_user_watcher_bound', () => false)
 
@@ -142,30 +141,7 @@ export function useCurrentUser() {
     profileLoaded.value = false
   }
 
-  async function bootstrapAuthProfile() {
-    try {
-      const { data, error } = await supabase.auth.getUser()
-      if (error) {
-        console.error('Failed to read auth user:', error)
-        const cached = readProfileCache()
-        if (cached) {
-          setProfileLoaded(cached, false)
-        } else {
-          resetProfile()
-        }
-        return
-      }
-      const uid = data.user?.id
-      if (uid) {
-        await fetchProfile(uid)
-      } else {
-        resetProfile()
-      }
-    } catch (e) {
-      console.error('Failed to bootstrap auth profile:', e)
-      resetProfile()
-    }
-  }
+  // 제거됨: async function bootstrapAuthProfile()
 
   // Auto-fetch profile when auth user/session changes
   if (import.meta.client) {
@@ -199,11 +175,7 @@ export function useCurrentUser() {
         }
       })
     }
-
-    if (!authBootstrapped.value) {
-      authBootstrapped.value = true
-      void bootstrapAuthProfile()
-    }
+    // 제거됨: bootstrapAuthProfile 호출
   }
 
   return {
