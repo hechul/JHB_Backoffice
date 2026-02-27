@@ -19,8 +19,10 @@ export function useCurrentUser() {
     role: 'viewer',
   }))
   const profileLoaded = useState<boolean>('profile_loaded', () => false)
+  const profileFetching = useState<boolean>('profile_fetching', () => false)
   const authBootstrapped = useState<boolean>('current_user_auth_bootstrapped', () => false)
   const authListenerBound = useState<boolean>('current_user_auth_listener_bound', () => false)
+  const watcherBound = useState<boolean>('current_user_watcher_bound', () => false)
 
   const isViewer = computed(() => profileLoaded.value && profile.value.role === 'viewer')
   const isAdmin = computed(() => profileLoaded.value && profile.value.role === 'admin')
@@ -39,14 +41,14 @@ export function useCurrentUser() {
     if (!import.meta.client) return
     try {
       localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(next))
-    } catch {}
+    } catch { }
   }
 
   function clearProfileCache() {
     if (!import.meta.client) return
     try {
       localStorage.removeItem(PROFILE_CACHE_KEY)
-    } catch {}
+    } catch { }
   }
 
   function readProfileCache(userId?: string): CurrentUser | null {
@@ -94,6 +96,9 @@ export function useCurrentUser() {
     const uid = userId || supabaseUser.value?.id
     if (!uid) return
 
+    if (profileFetching.value) return // 중복 호출 방지
+    profileFetching.value = true
+
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -116,6 +121,8 @@ export function useCurrentUser() {
     } catch (e) {
       console.error('Failed to fetch profile:', e)
       applyProfileFallback(uid)
+    } finally {
+      profileFetching.value = false
     }
   }
 
@@ -162,13 +169,16 @@ export function useCurrentUser() {
 
   // Auto-fetch profile when auth user/session changes
   if (import.meta.client) {
-    watch(supabaseUser, async (newUser) => {
-      if (newUser?.id) {
-        await fetchProfile(newUser.id)
-      } else if (!newUser) {
-        resetProfile()
-      }
-    }, { immediate: true })
+    if (!watcherBound.value) {
+      watcherBound.value = true
+      watch(supabaseUser, async (newUser) => {
+        if (newUser?.id) {
+          await fetchProfile(newUser.id)
+        } else if (!newUser) {
+          resetProfile()
+        }
+      }, { immediate: true })
+    }
 
     if (!authListenerBound.value) {
       authListenerBound.value = true
