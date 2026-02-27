@@ -109,16 +109,16 @@
         </div>
         <div class="header-actions">
           <!-- Period Selector -->
-          <div v-if="showPeriodSelector && (monthsLoading || hasMonthData)" class="period-selector">
-            <button class="period-nav" :disabled="periodControlDisabled" @click="prevMonth">
+          <div v-if="showPeriodSelector" class="period-selector period-selector-fixed">
+            <button class="period-nav" @click="prevMonth">
               <ChevronLeft :size="16" :stroke-width="2" />
             </button>
-            <button class="period-current" :disabled="periodControlDisabled" @click="showPeriodMenu = !showPeriodMenu">
+            <button class="period-current" @click="togglePeriodMenu">
               <CalendarDays :size="14" :stroke-width="2" />
               <span>{{ periodDisplayLabel }}</span>
               <ChevronDown :size="14" :stroke-width="2" />
             </button>
-            <button class="period-nav" :disabled="periodControlDisabled" @click="nextMonth">
+            <button class="period-nav" @click="nextMonth">
               <ChevronRight :size="16" :stroke-width="2" />
             </button>
 
@@ -145,13 +145,18 @@
               </button>
             </div>
           </div>
-          <div v-else-if="showPeriodSelector" class="period-empty">
-            <span>{{ monthsLoading ? '기간 불러오는 중...' : '업로드된 월 데이터 없음' }}</span>
-            <button v-if="!monthsLoading" class="period-retry-btn" @click="retryLoadMonths">다시 불러오기</button>
-          </div>
           <span v-if="showPeriodSelector && monthsError && !monthsLoading" class="period-error">
             {{ monthsError }}
           </span>
+          <button
+            class="header-refresh-btn"
+            type="button"
+            title="새로고침"
+            aria-label="페이지 새로고침"
+            @click="handlePageRefresh"
+          >
+            <RefreshCw :size="16" :stroke-width="1.8" />
+          </button>
           <!-- Notifications (Phase 2) -->
           <div class="header-icon-disabled" title="준비중">
             <Bell :size="18" :stroke-width="1.8" />
@@ -192,6 +197,7 @@ import {
   PanelLeftOpen,
   Menu,
   LogOut,
+  RefreshCw,
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -258,7 +264,6 @@ const roleLabel = computed(() => {
 })
 const showPeriodSelector = computed(() => periodEnabledPaths.some((path) => route.path.startsWith(path)))
 const hasMonthData = computed(() => availableMonths.value.length > 0)
-const periodControlDisabled = computed(() => monthsLoading.value || !hasMonthData.value)
 const periodDisplayLabel = computed(() => {
   if (monthsLoading.value && !hasMonthData.value) return '기간 불러오는 중...'
   return selectedPeriodLabel.value
@@ -274,6 +279,11 @@ function handleLogout() {
   logout()
 }
 
+function handlePageRefresh() {
+  if (!process.client) return
+  window.location.reload()
+}
+
 function selectPeriodMonth(value: string) {
   selectMonth(value)
   showPeriodMenu.value = false
@@ -282,6 +292,11 @@ function selectPeriodMonth(value: string) {
 async function retryLoadMonths() {
   showPeriodMenu.value = false
   await refreshMonths()
+}
+
+function togglePeriodMenu() {
+  if (availableMonths.value.length === 0) return
+  showPeriodMenu.value = !showPeriodMenu.value
 }
 
 watch(() => route.path, () => {
@@ -590,6 +605,31 @@ watch(
   position: relative;
 }
 
+/* Keep month control visual stable even during refresh/hydration states */
+.period-selector-fixed .period-nav,
+.period-selector-fixed .period-current {
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+.period-selector-fixed .period-nav,
+.period-selector-fixed .period-nav svg {
+  color: var(--color-text-secondary) !important;
+  stroke: currentColor;
+}
+
+.period-selector-fixed .period-current,
+.period-selector-fixed .period-current span,
+.period-selector-fixed .period-current svg {
+  color: var(--color-text) !important;
+  stroke: currentColor;
+}
+
+.period-selector-fixed button[disabled] {
+  opacity: 1 !important;
+  cursor: pointer !important;
+}
+
 .period-empty {
   display: flex;
   align-items: center;
@@ -619,8 +659,10 @@ watch(
 }
 
 .period-nav:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+  opacity: 1;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
 }
 
 .period-current {
@@ -645,8 +687,11 @@ watch(
 }
 
 .period-current:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+  opacity: 1;
+  cursor: pointer;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border-color: var(--color-border);
 }
 
 .period-dropdown {
@@ -775,6 +820,24 @@ watch(
   color: var(--text-muted);
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.header-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  transition: all 0.12s ease;
+}
+
+.header-refresh-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
 }
 
 .content {
