@@ -19,6 +19,7 @@ export function useCurrentUser() {
     role: 'viewer',
   }))
   const profileLoaded = useState<boolean>('profile_loaded', () => false)
+  const profileRevision = useState<number>('profile_revision', () => 0)
   const profileFetching = useState<boolean>('profile_fetching', () => false)
   const authListenerBound = useState<boolean>('current_user_auth_listener_bound', () => false)
   const watcherBound = useState<boolean>('current_user_watcher_bound', () => false)
@@ -72,6 +73,7 @@ export function useCurrentUser() {
   function setProfileLoaded(next: CurrentUser, persist = true) {
     profile.value = next
     profileLoaded.value = true
+    profileRevision.value += 1
     if (persist) persistProfileCache(next)
   }
 
@@ -139,6 +141,7 @@ export function useCurrentUser() {
   function resetProfile() {
     profile.value = { id: '', name: '', email: '', role: 'viewer' }
     profileLoaded.value = false
+    profileRevision.value += 1
   }
 
   // 제거됨: async function bootstrapAuthProfile()
@@ -184,6 +187,7 @@ export function useCurrentUser() {
     isAdmin,
     canModify,
     profileLoaded,
+    profileRevision,
     fetchProfile,
     logout,
   }

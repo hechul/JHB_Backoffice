@@ -201,7 +201,7 @@ import {
 } from 'lucide-vue-next'
 
 const route = useRoute()
-const { user, isViewer, profileLoaded, logout } = useCurrentUser()
+const { user, isViewer, profileLoaded, profileRevision, logout } = useCurrentUser()
 const { selectedMonth, selectedPeriodLabel, availableMonths, monthsLoading, monthsError, refreshMonths, selectMonth, prevMonth, nextMonth } = useAnalysisPeriod()
 
 const sidebarCollapsed = ref(false)
@@ -313,11 +313,10 @@ onMounted(async () => {
 })
 
 watch(
-  () => profileLoaded.value,
-  async (loaded) => {
+  () => [profileLoaded.value, profileRevision.value],
+  async ([loaded]) => {
     if (!loaded) return
     if (monthsLoading.value) return
-    if (availableMonths.value.length > 0) return
     await refreshMonths()
   },
   { immediate: true }

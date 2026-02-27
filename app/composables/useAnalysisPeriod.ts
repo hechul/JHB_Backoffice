@@ -98,6 +98,7 @@ export function useAnalysisPeriod() {
   const selectedMonth = useState<string>('analysis_selected_month', () => getCurrentMonthToken())
   const initialized = useState<boolean>('analysis_selected_month_initialized', () => false)
   const hasStoredSelection = useState<boolean>('analysis_selected_month_has_storage', () => false)
+  const selectionTouched = useState<boolean>('analysis_selected_month_touched', () => false)
   const monthsLoading = useState<boolean>('analysis_available_months_loading', () => false)
   const monthsError = useState<string>('analysis_available_months_error', () => '')
   const availableMonths = useState<AnalysisMonthOption[]>('analysis_available_months', () => [])
@@ -149,6 +150,7 @@ export function useAnalysisPeriod() {
       selectedMonth.value = getCurrentMonthToken()
       hasStoredSelection.value = false
     }
+    selectionTouched.value = false
     initialized.value = true
   }
 
@@ -280,11 +282,26 @@ export function useAnalysisPeriod() {
       persistMonthOptionsCache()
 
       const currentValid = validMonthValues.value.has(selectedMonth.value)
+      const preferredMonth = pickPreferredMonth(availableMonths.value)
+      const selectedOption = availableMonths.value.find((month) => month.value === selectedMonth.value)
+      const hasDataMonth = availableMonths.value.some((month) => month.count > 0)
+      const selectedIsZeroMonth = Number(selectedOption?.count || 0) === 0
+
       if (!currentValid && availableMonths.value.length > 0) {
-        selectedMonth.value = pickPreferredMonth(availableMonths.value)
+        selectedMonth.value = preferredMonth
         persistSelection()
       } else if (!hasStoredSelection.value && availableMonths.value.length > 0) {
-        selectedMonth.value = pickPreferredMonth(availableMonths.value)
+        selectedMonth.value = preferredMonth
+        persistSelection()
+      } else if (
+        hasStoredSelection.value
+        && hasDataMonth
+        && !selectionTouched.value
+        && selectedIsZeroMonth
+        && preferredMonth !== selectedMonth.value
+      ) {
+        // 인증 지연으로 0건 월이 localStorage에 고정된 경우 자동 복구한다.
+        selectedMonth.value = preferredMonth
         persistSelection()
       }
 
@@ -308,6 +325,7 @@ export function useAnalysisPeriod() {
     if (!validMonthValues.value.has(value)) return
     selectedMonth.value = value
     hasStoredSelection.value = true
+    selectionTouched.value = true
     persistSelection()
   }
 

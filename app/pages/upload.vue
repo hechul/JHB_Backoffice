@@ -321,7 +321,7 @@ interface MappingApplyResult {
 
 const supabase = useSupabaseClient()
 const toast = useToast()
-const { isViewer, profileLoaded } = useCurrentUser()
+const { isViewer, profileLoaded, profileRevision } = useCurrentUser()
 const { selectedMonth, refreshMonths } = useAnalysisPeriod()
 const { getWorkflow, setUploadResult, setMappingPending, setUnmappedProducts, resetMonth } = useMonthlyWorkflow()
 
@@ -1477,7 +1477,7 @@ const uploadResults = computed(() => {
 })
 
 watch(
-  () => [selectedMonth.value, profileLoaded.value],
+  () => [selectedMonth.value, profileLoaded.value, profileRevision.value],
   async ([month, loaded]) => {
     if (!loaded) return
     const syncId = ++monthSyncSeq.value

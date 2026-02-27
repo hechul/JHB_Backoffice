@@ -246,7 +246,7 @@ interface ProductMeta {
 
 const supabase = useSupabaseClient()
 const toast = useToast()
-const { isViewer, profileLoaded } = useCurrentUser()
+const { isViewer, profileLoaded, profileRevision } = useCurrentUser()
 const { selectedMonth, selectedPeriodLabel, availableMonths, selectMonth } = useAnalysisPeriod()
 const route = useRoute()
 const router = useRouter()
@@ -725,7 +725,7 @@ watch(
 )
 
 watch(
-  () => [selectedMonth.value, profileLoaded.value],
+  () => [selectedMonth.value, profileLoaded.value, profileRevision.value],
   async ([month, loaded]) => {
     if (!month || !loaded) return
     await fetchCustomers()
