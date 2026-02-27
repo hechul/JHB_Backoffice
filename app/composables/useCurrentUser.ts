@@ -148,11 +148,12 @@ export function useCurrentUser() {
 
   // Auto-fetch profile when auth user/session changes
   if (import.meta.client) {
-    // 서버 지연 (Vercel 환경 등) 발생 시 '확인중' 표시가 길어지는 것을 막기 위해, 즉시 캐시된 정보를 UI에 렌더링 (Optimistic UI)
+    // 캐시는 UI 표시용 힌트로만 사용한다.
+    // profileLoaded를 true로 먼저 올리면 세션 확정 전 DB 조회가 선행되어 빈 결과가 고정될 수 있다.
     if (!profileLoaded.value) {
       const cached = readProfileCache(supabaseUser.value?.id)
       if (cached) {
-        setProfileLoaded(cached, false)
+        profile.value = cached
       }
     }
 
