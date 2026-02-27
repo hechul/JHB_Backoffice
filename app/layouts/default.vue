@@ -115,7 +115,7 @@
             </button>
             <button class="period-current" :disabled="periodControlDisabled" @click="showPeriodMenu = !showPeriodMenu">
               <CalendarDays :size="14" :stroke-width="2" />
-              <span>{{ monthsLoading ? '기간 불러오는 중...' : selectedPeriodLabel }}</span>
+              <span>{{ periodDisplayLabel }}</span>
               <ChevronDown :size="14" :stroke-width="2" />
             </button>
             <button class="period-nav" :disabled="periodControlDisabled" @click="nextMonth">
@@ -125,7 +125,10 @@
             <!-- Period Dropdown -->
             <div v-if="showPeriodMenu" class="period-dropdown">
               <div class="period-dropdown-header">기간 선택</div>
-              <div v-if="availableMonths.length === 0" class="period-dropdown-empty">업로드된 월 데이터가 없습니다.</div>
+              <div v-if="availableMonths.length === 0" class="period-dropdown-empty">
+                <span>{{ monthsLoading ? '기간 불러오는 중...' : '업로드된 월 데이터가 없습니다.' }}</span>
+                <button v-if="!monthsLoading" class="period-retry-btn" @click="retryLoadMonths">다시 불러오기</button>
+              </div>
               <button
                 v-for="m in availableMonths"
                 :key="m.value"
@@ -142,7 +145,13 @@
               </button>
             </div>
           </div>
-          <div v-else-if="showPeriodSelector" class="period-empty">업로드된 월 데이터 없음</div>
+          <div v-else-if="showPeriodSelector" class="period-empty">
+            <span>{{ monthsLoading ? '기간 불러오는 중...' : '업로드된 월 데이터 없음' }}</span>
+            <button v-if="!monthsLoading" class="period-retry-btn" @click="retryLoadMonths">다시 불러오기</button>
+          </div>
+          <span v-if="showPeriodSelector && monthsError && !monthsLoading" class="period-error">
+            {{ monthsError }}
+          </span>
           <!-- Notifications (Phase 2) -->
           <div class="header-icon-disabled" title="준비중">
             <Bell :size="18" :stroke-width="1.8" />
@@ -187,7 +196,7 @@ import {
 
 const route = useRoute()
 const { user, isViewer, profileLoaded, logout } = useCurrentUser()
-const { selectedMonth, selectedPeriodLabel, availableMonths, monthsLoading, refreshMonths, selectMonth, prevMonth, nextMonth } = useAnalysisPeriod()
+const { selectedMonth, selectedPeriodLabel, availableMonths, monthsLoading, monthsError, refreshMonths, selectMonth, prevMonth, nextMonth } = useAnalysisPeriod()
 
 const sidebarCollapsed = ref(false)
 const mobileMenuOpen = ref(false)
@@ -250,6 +259,10 @@ const roleLabel = computed(() => {
 const showPeriodSelector = computed(() => periodEnabledPaths.some((path) => route.path.startsWith(path)))
 const hasMonthData = computed(() => availableMonths.value.length > 0)
 const periodControlDisabled = computed(() => monthsLoading.value || !hasMonthData.value)
+const periodDisplayLabel = computed(() => {
+  if (monthsLoading.value && !hasMonthData.value) return '기간 불러오는 중...'
+  return selectedPeriodLabel.value
+})
 
 const today = computed(() => {
   const d = new Date()
@@ -266,6 +279,11 @@ function selectPeriodMonth(value: string) {
   showPeriodMenu.value = false
 }
 
+async function retryLoadMonths() {
+  showPeriodMenu.value = false
+  await refreshMonths()
+}
+
 watch(() => route.path, () => {
   mobileMenuOpen.value = false
   showPeriodMenu.value = false
@@ -278,6 +296,16 @@ watch(showPeriodSelector, (visible) => {
 onMounted(async () => {
   await refreshMonths()
 })
+
+watch(
+  () => profileLoaded.value,
+  async (loaded) => {
+    if (!loaded) return
+    if (monthsLoading.value) return
+    if (availableMonths.value.length > 0) return
+    await refreshMonths()
+  },
+)
 </script>
 
 <style scoped>
@@ -563,6 +591,9 @@ onMounted(async () => {
 }
 
 .period-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
   padding: 0 var(--space-sm);
   font-size: 0.75rem;
   color: var(--color-text-muted);
@@ -642,9 +673,34 @@ onMounted(async () => {
 }
 
 .period-dropdown-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
   padding: var(--space-sm) var(--space-md);
   font-size: 0.75rem;
   color: var(--color-text-muted);
+}
+
+.period-retry-btn {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 0.6875rem;
+  padding: 4px 8px;
+}
+
+.period-retry-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.period-error {
+  max-width: 180px;
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+  line-height: 1.2;
 }
 
 .period-option {
