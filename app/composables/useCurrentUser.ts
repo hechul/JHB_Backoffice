@@ -169,6 +169,14 @@ export function useCurrentUser() {
 
   // Auto-fetch profile when auth user/session changes
   if (import.meta.client) {
+    // 서버 지연 (Vercel 환경 등) 발생 시 '확인중' 표시가 길어지는 것을 막기 위해, 즉시 캐시된 정보를 UI에 렌더링 (Optimistic UI)
+    if (!profileLoaded.value) {
+      const cached = readProfileCache(supabaseUser.value?.id)
+      if (cached) {
+        setProfileLoaded(cached, false)
+      }
+    }
+
     if (!watcherBound.value) {
       watcherBound.value = true
       watch(supabaseUser, async (newUser) => {
