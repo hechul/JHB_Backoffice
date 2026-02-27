@@ -104,11 +104,11 @@
 
       <!-- Search Bar -->
       <div class="tab-search">
-        <input
+        <SearchInput
           v-model="searchQuery"
-          type="text"
-          class="search-input"
+          class="tab-search-input"
           placeholder="주문번호, 구매자명, 상품명으로 검색..."
+          width="100%"
         />
       </div>
 
@@ -483,6 +483,7 @@ import {
   extractExperienceOptionKeyword,
   deduplicateExperiences,
 } from '~/composables/useFilterMatching'
+import { matchesSearchQuery } from '~/composables/useTextSearch'
 
 type BadgeVariant = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral'
 type SourceType = 'rank' | 'manual' | 'unmatched'
@@ -505,6 +506,7 @@ interface PurchaseRow {
   needs_review: boolean
   is_manual: boolean
   filter_ver: string | null
+  quantity_warning: boolean
 }
 
 interface ExperienceRow {
@@ -580,8 +582,20 @@ interface FilterStats {
   target: number
 }
 
+interface PurchaseFilterSnapshot {
+  purchase_id: string
+  is_fake: boolean
+  match_reason: string | null
+  match_rank: number | null
+  matched_exp_id: number | null
+  needs_review: boolean
+  filter_ver: string | null
+  quantity_warning: boolean
+}
+
 const FILTER_VER = 'v5.0.0'
 const UPDATE_CONCURRENCY = 10
+const FETCH_PAGE_SIZE = 1000
 
 const supabase = useSupabaseClient()
 const toast = useToast()
@@ -609,6 +623,7 @@ const realPurchaseResults = ref<ResultRow[]>([])
 const unmatchedResults = ref<UnmatchedRow[]>([])
 const manualResults = ref<ResultRow[]>([])
 const searchQuery = ref('')
+const fetchSeq = ref(0)
 
 async function runConcurrentUpdates<T>(items: T[], worker: (item: T) => Promise<void>, chunkSize = UPDATE_CONCURRENCY) {
   for (let i = 0; i < items.length; i += chunkSize) {
@@ -642,9 +657,7 @@ const confidenceScore = computed(() => {
 
 // 검색 필터링
 function matchesSearch(query: string, ...fields: string[]): boolean {
-  if (!query) return true
-  const q = query.trim().toLowerCase()
-  return fields.some((f) => (f || '').toLowerCase().includes(q))
+  return matchesSearchQuery(query, ...fields)
 }
 
 const filteredRank = computed(() => rankResults.value.filter((r) => matchesSearch(searchQuery.value, r.orderId, r.buyer, r.product, r.matchedName)))
@@ -887,35 +900,74 @@ function syncFilterState() {
   filterState.value = 'idle'
 }
 
+async function restoreFilterSnapshots(
+  purchaseSnapshots: PurchaseFilterSnapshot[],
+  experienceReasonSnapshots: Map<number, string | null>,
+) {
+  await runConcurrentUpdates(purchaseSnapshots, async (snapshot) => {
+    const { error } = await supabase
+      .from('purchases')
+      .update({
+        is_fake: snapshot.is_fake,
+        match_reason: snapshot.match_reason,
+        match_rank: snapshot.match_rank,
+        matched_exp_id: snapshot.matched_exp_id,
+        needs_review: snapshot.needs_review,
+        filter_ver: snapshot.filter_ver,
+        quantity_warning: snapshot.quantity_warning,
+      })
+      .eq('purchase_id', snapshot.purchase_id)
+    if (error) throw error
+  })
+
+  const reasonEntries = Array.from(experienceReasonSnapshots.entries())
+  await runConcurrentUpdates(reasonEntries, async ([expId, reason]) => {
+    const { error } = await supabase
+      .from('experiences')
+      .update({ unmatch_reason: reason })
+      .eq('id', expId)
+    if (error) throw error
+  })
+}
+
 async function loadRawData(month: string): Promise<{ purchases: PurchaseRow[]; experiences: ExperienceRow[] }> {
-  let purchaseQuery = supabase
-    .from('purchases')
-    .select('purchase_id, target_month, buyer_id, buyer_name, receiver_name, product_id, product_name, option_info, quantity, order_date, is_fake, match_reason, match_rank, matched_exp_id, needs_review, is_manual, filter_ver')
-    .order('order_date', { ascending: true })
+  const purchaseData: any[] = []
+  const expData: any[] = []
 
-  let experienceQuery = supabase
-    .from('experiences')
-    .select('id, target_month, campaign_id, mission_product_name, mapped_product_id, option_info, receiver_name, naver_id, purchase_date, unmatch_reason')
-    .order('purchase_date', { ascending: true })
+  for (let from = 0; ; from += FETCH_PAGE_SIZE) {
+    let purchaseQuery = supabase
+      .from('purchases')
+      .select('purchase_id, target_month, buyer_id, buyer_name, receiver_name, product_id, product_name, option_info, quantity, order_date, is_fake, match_reason, match_rank, matched_exp_id, needs_review, is_manual, filter_ver, quantity_warning')
+      .order('order_date', { ascending: true })
+      .order('purchase_id', { ascending: true })
+      .range(from, from + FETCH_PAGE_SIZE - 1)
+    if (month !== 'all') purchaseQuery = purchaseQuery.eq('target_month', month)
 
-  if (month !== 'all') {
-    purchaseQuery = purchaseQuery.eq('target_month', month)
-    experienceQuery = experienceQuery.eq('target_month', month)
-  } else {
-    purchaseQuery = purchaseQuery.limit(50000)
-    experienceQuery = experienceQuery.limit(50000)
+    const { data, error } = await purchaseQuery
+    if (error) throw error
+    const rows = data || []
+    purchaseData.push(...rows)
+    if (rows.length < FETCH_PAGE_SIZE) break
   }
 
-  const [{ data: purchaseData, error: purchaseError }, { data: expData, error: expError }] = await Promise.all([
-    purchaseQuery,
-    experienceQuery,
-  ])
+  for (let from = 0; ; from += FETCH_PAGE_SIZE) {
+    let experienceQuery = supabase
+      .from('experiences')
+      .select('id, target_month, campaign_id, mission_product_name, mapped_product_id, option_info, receiver_name, naver_id, purchase_date, unmatch_reason')
+      .order('purchase_date', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + FETCH_PAGE_SIZE - 1)
+    if (month !== 'all') experienceQuery = experienceQuery.eq('target_month', month)
 
-  if (purchaseError) throw purchaseError
-  if (expError) throw expError
+    const { data, error } = await experienceQuery
+    if (error) throw error
+    const rows = data || []
+    expData.push(...rows)
+    if (rows.length < FETCH_PAGE_SIZE) break
+  }
 
   return {
-    purchases: ((purchaseData || []) as any[]).map((row) => ({
+    purchases: (purchaseData as any[]).map((row) => ({
       purchase_id: String(row.purchase_id || ''),
       target_month: String(row.target_month || ''),
       buyer_id: String(row.buyer_id || ''),
@@ -933,8 +985,9 @@ async function loadRawData(month: string): Promise<{ purchases: PurchaseRow[]; e
       needs_review: Boolean(row.needs_review),
       is_manual: Boolean(row.is_manual),
       filter_ver: row.filter_ver || null,
+      quantity_warning: Boolean(row.quantity_warning),
     })),
-    experiences: ((expData || []) as any[]).map((row) => ({
+    experiences: (expData as any[]).map((row) => ({
       id: Number(row.id),
       target_month: String(row.target_month || ''),
       campaign_id: Number(row.campaign_id || 0),
@@ -950,10 +1003,12 @@ async function loadRawData(month: string): Promise<{ purchases: PurchaseRow[]; e
 }
 
 async function fetchFilterData() {
+  const seq = ++fetchSeq.value
   loading.value = true
   try {
     const month = selectedMonth.value
     const { purchases, experiences } = await loadRawData(month)
+    if (seq !== fetchSeq.value) return
     allPurchases.value = purchases
     // 체험단 중복 제거 적용
     const dedupedExperiences = deduplicateExperiences(experiences as any) as typeof experiences
@@ -1020,20 +1075,16 @@ async function fetchFilterData() {
       .limit(1)
     if (month !== 'all') logQuery = logQuery.eq('target_month', month)
     const { data: logData } = await logQuery
+    if (seq !== fetchSeq.value) return
     lastRunLabel.value = logData?.[0]?.executed_at ? formatDateTime(logData[0].executed_at) : '미실행'
 
     syncFilterState()
   } catch (error: any) {
+    if (seq !== fetchSeq.value) return
     console.error('Failed to fetch filter data:', error)
     toast.error('필터링 데이터를 불러오지 못했습니다.')
-    rankResults.value = []
-    unmatchedResults.value = []
-    manualResults.value = []
-    currentFilterStats.value = { total: 0, influencer: 0, target: 0 }
-    lastRunLabel.value = '미실행'
-    filterState.value = 'idle'
   } finally {
-    loading.value = false
+    if (seq === fetchSeq.value) loading.value = false
   }
 }
 
@@ -1094,12 +1145,20 @@ async function runFilter() {
 
   const month = selectedMonth.value
   const startedAt = Date.now()
+  let loadedPurchases: PurchaseRow[] = []
+  let loadedExperiences: ExperienceRow[] = []
+  let purchaseSnapshots: PurchaseFilterSnapshot[] = []
+  let experienceReasonSnapshots = new Map<number, string | null>()
+  let hasPurchaseMutation = false
+  let hasExperienceMutation = false
   filterState.value = 'running'
   progressPercent.value = 5
   progressLabel.value = '분석 대상 데이터를 불러오는 중...'
 
   try {
     const { purchases, experiences } = await loadRawData(month)
+    loadedPurchases = purchases
+    loadedExperiences = experiences
     if (purchases.length === 0) {
       toast.info('분석할 주문 데이터가 없습니다.')
       filterState.value = 'idle'
@@ -1107,6 +1166,22 @@ async function runFilter() {
       progressLabel.value = ''
       return
     }
+
+    purchaseSnapshots = purchases
+      .filter((row) => !row.is_manual)
+      .map((row) => ({
+        purchase_id: row.purchase_id,
+        is_fake: row.is_fake,
+        match_reason: row.match_reason,
+        match_rank: row.match_rank,
+        matched_exp_id: row.matched_exp_id,
+        needs_review: row.needs_review,
+        filter_ver: row.filter_ver,
+        quantity_warning: row.quantity_warning,
+      }))
+    experienceReasonSnapshots = new Map(
+      experiences.map((exp) => [exp.id, exp.unmatch_reason || null] as const),
+    )
 
     progressPercent.value = 18
     progressLabel.value = '기존 자동 판정 결과를 초기화하는 중...'
@@ -1125,6 +1200,7 @@ async function runFilter() {
       .eq('target_month', month)
       .eq('is_manual', false)
     if (resetError) throw resetError
+    hasPurchaseMutation = true
 
     progressPercent.value = 34
     progressLabel.value = '1~5단계 순차 매칭을 수행하는 중...'
@@ -1177,6 +1253,7 @@ async function runFilter() {
       .update({ unmatch_reason: null })
       .eq('target_month', month)
     if (clearReasonError) throw clearReasonError
+    hasExperienceMutation = true
 
     const unmatchedEntries = Array.from(matching.unmatchedReasons.entries())
     await runConcurrentUpdates(unmatchedEntries, async ([expId, reason]) => {
@@ -1222,9 +1299,31 @@ async function runFilter() {
   } catch (error: any) {
     console.error('Failed to run filter:', error)
     filterState.value = 'failed'
-    toast.error(`필터링 실행 실패: ${error?.message || '알 수 없는 오류'}`)
+    let rollbackFailed = false
+    if (hasPurchaseMutation || hasExperienceMutation) {
+      try {
+        progressPercent.value = 92
+        progressLabel.value = '실패로 인해 이전 상태를 복구하는 중...'
+        await restoreFilterSnapshots(purchaseSnapshots, experienceReasonSnapshots)
+        toast.info('필터링 실패로 인해 이전 판정 상태로 자동 복구했습니다.')
+      } catch (rollbackError) {
+        rollbackFailed = true
+        console.error('Failed to restore filter snapshots:', rollbackError)
+      }
+    }
+    toast.error(
+      rollbackFailed
+        ? `필터링 실행 실패 + 자동 복구 실패: ${error?.message || '알 수 없는 오류'}`
+        : `필터링 실행 실패: ${error?.message || '알 수 없는 오류'}`,
+    )
     try {
-      const { purchases, experiences } = await loadRawData(month)
+      let purchases = loadedPurchases
+      let experiences = loadedExperiences
+      if (purchases.length === 0 || experiences.length === 0) {
+        const loaded = await loadRawData(month)
+        if (purchases.length === 0) purchases = loaded.purchases
+        if (experiences.length === 0) experiences = loaded.experiences
+      }
       await persistFilterLog({
         status: 'error',
         durationSec: (Date.now() - startedAt) / 1000,
@@ -1405,26 +1504,8 @@ watch(
   border-bottom: 1px solid var(--color-border);
 }
 
-.search-input {
-  width: 100%;
+.tab-search-input {
   max-width: 400px;
-  padding: var(--space-sm) var(--space-md);
-  font-size: 0.875rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  transition: border-color 0.15s ease;
-}
-
-.search-input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.search-input::placeholder {
-  color: var(--color-text-tertiary);
 }
 
 .filter-state-card {

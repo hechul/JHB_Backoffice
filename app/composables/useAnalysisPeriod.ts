@@ -38,6 +38,31 @@ function formatMonthLabel(value: string): string {
   return `${Number(year)}년 ${Number(month)}월`
 }
 
+function nextMonthToken(value: string): string {
+  const [yearRaw, monthRaw] = value.split('-')
+  const year = Number(yearRaw)
+  const month = Number(monthRaw)
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return value
+  const d = new Date(year, month - 1, 1)
+  d.setMonth(d.getMonth() + 1)
+  return toMonthToken(d)
+}
+
+function buildMonthRange(fromMonth: string, toMonth: string): string[] {
+  if (!isValidMonthToken(fromMonth) || !isValidMonthToken(toMonth)) return []
+  if (fromMonth > toMonth) return []
+  const result: string[] = []
+  let cursor = fromMonth
+  let guard = 0
+  while (cursor <= toMonth && guard < 240) {
+    result.push(cursor)
+    if (cursor === toMonth) break
+    cursor = nextMonthToken(cursor)
+    guard += 1
+  }
+  return result
+}
+
 export function useAnalysisPeriod() {
   const supabase = useSupabaseClient()
   const selectedMonth = useState<string>('analysis_selected_month', () => getCurrentMonthToken())
@@ -76,40 +101,65 @@ export function useAnalysisPeriod() {
     if (!process.client) return
     monthsLoading.value = true
     try {
-      const countMap = new Map<string, number>()
-      const pageSize = 1000
-      let from = 0
-
-      while (true) {
-        const { data, error } = await supabase
+      const [{ data: latestRow, error: latestError }, { data: oldestRow, error: oldestError }] = await Promise.all([
+        supabase
           .from('purchases')
           .select('target_month')
-          .order('purchase_id', { ascending: true })
-          .range(from, from + pageSize - 1)
+          .order('target_month', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('purchases')
+          .select('target_month')
+          .order('target_month', { ascending: true })
+          .limit(1)
+          .maybeSingle(),
+      ])
 
-        if (error) throw error
-        const rows = (data || []) as Array<{ target_month: string | null }>
-        if (rows.length === 0) break
+      if (latestError) throw latestError
+      if (oldestError) throw oldestError
 
-        for (const row of rows) {
-          const month = String(row.target_month || '').trim()
-          if (!isValidMonthToken(month)) continue
-          countMap.set(month, (countMap.get(month) || 0) + 1)
-        }
-
-        if (rows.length < pageSize) break
-        from += pageSize
-      }
+      const latestMonth = String(latestRow?.target_month || '').trim()
+      const oldestMonth = String(oldestRow?.target_month || '').trim()
+      const dbRangeMonths = isValidMonthToken(latestMonth) && isValidMonthToken(oldestMonth)
+        ? buildMonthRange(oldestMonth, latestMonth)
+        : []
 
       const baseMonths = buildRollingMonths(3)
-      const merged = baseMonths.map((month) => [month, countMap.get(month) || 0] as const)
+      const candidateMonths = Array.from(new Set<string>([
+        ...baseMonths,
+        ...dbRangeMonths,
+      ]))
 
-      availableMonths.value = merged
-        .sort((a, b) => b[0].localeCompare(a[0]))
-        .map(([value, count]) => ({
+      const countMap = new Map<string, number>()
+      const workers = Math.max(1, Math.min(6, candidateMonths.length))
+      let cursor = 0
+
+      const runWorker = async () => {
+        while (cursor < candidateMonths.length) {
+          const idx = cursor
+          cursor += 1
+          const month = candidateMonths[idx]
+          if (!month) continue
+          const { count, error } = await supabase
+            .from('purchases')
+            .select('purchase_id', { count: 'exact', head: true })
+            .eq('target_month', month)
+          if (error) throw error
+          countMap.set(month, Number(count || 0))
+        }
+      }
+
+      await Promise.all(Array.from({ length: workers }, () => runWorker()))
+      const baseMonthSet = new Set(baseMonths)
+
+      availableMonths.value = candidateMonths
+        .sort((a, b) => b.localeCompare(a))
+        .filter((value) => baseMonthSet.has(value) || (countMap.get(value) || 0) > 0)
+        .map((value) => ({
           value,
           label: formatMonthLabel(value),
-          count,
+          count: countMap.get(value) || 0,
         }))
 
       const currentValid = validMonthValues.value.has(selectedMonth.value)

@@ -76,7 +76,7 @@
           </thead>
           <tbody>
             <tr
-              v-for="c in filteredCustomers"
+              v-for="c in pagedCustomers"
               :key="c.customerKey"
               class="clickable"
               @click="openCustomerDetail(c)"
@@ -113,15 +113,22 @@
 
       <!-- Pagination -->
       <div class="pagination">
-        <span class="pagination-info">총 {{ filteredCustomers.length }}명 중 1-10</span>
+        <span class="pagination-info">{{ paginationInfoLabel }}</span>
         <div class="pagination-controls">
-          <button class="pagination-btn" disabled>
+          <button class="pagination-btn" :disabled="currentPage <= 1" @click="goPrevPage">
             <ChevronLeft :size="14" :stroke-width="2" />
           </button>
-          <button class="pagination-btn active">1</button>
-          <button class="pagination-btn">2</button>
-          <button class="pagination-btn">3</button>
-          <button class="pagination-btn">
+          <button
+            v-for="(item, idx) in paginationItems"
+            :key="`page-${item}-${idx}`"
+            class="pagination-btn"
+            :class="{ active: typeof item === 'number' && item === currentPage }"
+            :disabled="typeof item !== 'number'"
+            @click="typeof item === 'number' ? goPage(item) : undefined"
+          >
+            {{ typeof item === 'number' ? item : '…' }}
+          </button>
+          <button class="pagination-btn" :disabled="currentPage >= totalPages" @click="goNextPage">
             <ChevronRight :size="14" :stroke-width="2" />
           </button>
         </div>
@@ -199,6 +206,8 @@ import {
   ChevronRight,
 } from 'lucide-vue-next'
 import type { LocationQuery } from 'vue-router'
+import * as XLSX from 'xlsx'
+import { matchesSearchQuery } from '~/composables/useTextSearch'
 
 type CustomerStage = 'Entry' | 'Growth' | 'Premium'
 
@@ -255,6 +264,9 @@ const customers = ref<CustomerRow[]>([])
 const customerOrders = ref<CustomerOrderRow[]>([])
 const productMetaById = ref<Record<string, ProductMeta>>({})
 const productPetTypeByName = ref<Record<string, ProductMeta['pet_type']>>({})
+const PAGE_SIZE = 10
+const DB_FETCH_PAGE_SIZE = 1000
+const currentPage = ref(1)
 
 function parseOrderDate(value: string): Date {
   const d = new Date(value)
@@ -396,23 +408,32 @@ async function loadProductMeta() {
 async function fetchCustomers() {
   loading.value = true
   try {
-    let query = supabase
-      .from('purchases')
-      .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, order_date, target_month')
-      .eq('is_fake', false)
-      .eq('needs_review', false)
-      .order('order_date', { ascending: false })
+    const collected: any[] = []
+    for (let from = 0; ; from += DB_FETCH_PAGE_SIZE) {
+      let query = supabase
+        .from('purchases')
+        .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, order_date, target_month')
+        .eq('is_fake', false)
+        .eq('needs_review', false)
+        .order('order_date', { ascending: false })
+        .order('purchase_id', { ascending: false })
+        .range(from, from + DB_FETCH_PAGE_SIZE - 1)
 
-    if (selectedMonth.value !== 'all') query = query.eq('target_month', selectedMonth.value)
+      if (selectedMonth.value !== 'all') query = query.eq('target_month', selectedMonth.value)
 
-    const { data, error } = await query
-    if (error) {
-      console.error('Failed to fetch customers:', error)
-      toast.error('고객 데이터를 불러오지 못했습니다.')
-      return
+      const { data, error } = await query
+      if (error) {
+        console.error('Failed to fetch customers:', error)
+        toast.error('고객 데이터를 불러오지 못했습니다.')
+        return
+      }
+
+      const rows = data || []
+      collected.push(...rows)
+      if (rows.length < DB_FETCH_PAGE_SIZE) break
     }
 
-    const rows = (data || []) as PurchaseRow[]
+    const rows = collected as PurchaseRow[]
     const grouped = new Map<string, PurchaseRow[]>()
     for (const row of rows) {
       const key = row.customer_key || `${row.buyer_id}_${row.buyer_name}`
@@ -486,7 +507,7 @@ async function fetchCustomerOrders(customer: CustomerRow) {
 
 const filteredCustomers = computed(() => {
   return customers.value.filter((c) => {
-    if (searchQuery.value && !c.name.includes(searchQuery.value) && !c.id.includes(searchQuery.value)) return false
+    if (!matchesSearchQuery(searchQuery.value, c.name, c.id, c.buyerName, c.buyerId)) return false
     if (filterPetType.value && c.petType !== filterPetType.value) return false
     if (filterStage.value && c.stage !== filterStage.value) return false
     if (filterChurn.value === 'true' && !c.churnRisk) return false
@@ -498,6 +519,62 @@ const filteredCustomers = computed(() => {
     return true
   })
 })
+
+const totalPages = computed(() => {
+  const total = filteredCustomers.value.length
+  return Math.max(1, Math.ceil(total / PAGE_SIZE))
+})
+
+const pagedCustomers = computed(() => {
+  const start = (currentPage.value - 1) * PAGE_SIZE
+  return filteredCustomers.value.slice(start, start + PAGE_SIZE)
+})
+
+const paginationInfoLabel = computed(() => {
+  const total = filteredCustomers.value.length
+  if (total === 0) return '총 0명'
+  const start = (currentPage.value - 1) * PAGE_SIZE + 1
+  const end = Math.min(start + PAGE_SIZE - 1, total)
+  return `총 ${total}명 중 ${start}-${end}`
+})
+
+const paginationItems = computed<Array<number | string>>(() => {
+  const total = totalPages.value
+  const current = currentPage.value
+  if (total <= 7) return Array.from({ length: total }, (_, idx) => idx + 1)
+
+  const items: Array<number | string> = [1]
+  let start = Math.max(2, current - 1)
+  let end = Math.min(total - 1, current + 1)
+
+  if (current <= 3) {
+    start = 2
+    end = 4
+  } else if (current >= total - 2) {
+    start = total - 3
+    end = total - 1
+  }
+
+  if (start > 2) items.push('ellipsis-prev')
+  for (let page = start; page <= end; page++) items.push(page)
+  if (end < total - 1) items.push('ellipsis-next')
+
+  items.push(total)
+  return items
+})
+
+function goPage(page: number) {
+  if (page < 1 || page > totalPages.value) return
+  currentPage.value = page
+}
+
+function goPrevPage() {
+  goPage(currentPage.value - 1)
+}
+
+function goNextPage() {
+  goPage(currentPage.value + 1)
+}
 
 const activeFilters = computed(() => {
   const filters: { key: string; label: string }[] = []
@@ -633,7 +710,17 @@ watch(
 watch(
   [searchQuery, filterPetType, filterStage, filterChurn, filterPurchaseCount, selectedMonth],
   () => {
+    currentPage.value = 1
     syncFiltersToQuery()
+  },
+)
+
+watch(
+  () => filteredCustomers.value.length,
+  () => {
+    if (currentPage.value > totalPages.value) {
+      currentPage.value = totalPages.value
+    }
   },
 )
 
@@ -665,22 +752,14 @@ function downloadFilteredCustomers() {
     c.id,
     c.petType === 'DOG' ? '강아지' : c.petType === 'CAT' ? '고양이' : '모두',
     stageLabel(c.stage),
-    String(c.purchaseCount),
+    c.purchaseCount,
     c.lastOrder,
     c.churnRisk ? '위험' : '정상',
   ])
-  const csv = [header, ...rows]
-    .map((line) => line.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(','))
-    .join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `고객조회_${selectedMonth.value === 'all' ? 'all' : selectedMonth.value}.csv`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
+  XLSX.utils.book_append_sheet(wb, ws, '고객분석')
+  XLSX.writeFile(wb, `고객분석_${selectedMonth.value === 'all' ? 'all' : selectedMonth.value}.xlsx`)
 }
 
 onMounted(async () => {

@@ -244,6 +244,8 @@ import {
   type ParsedWorkbookSheet,
   type ColumnValidation,
 } from '~/composables/useExcelParser'
+import { matchesSearchQuery } from '~/composables/useTextSearch'
+import * as XLSX from 'xlsx'
 
 interface MappingItem {
   originalName: string
@@ -272,6 +274,51 @@ interface ExperienceInsertRow {
   purchase_date: string
 }
 
+interface PurchaseDbRow {
+  purchase_id: string
+  upload_batch_id: string
+  target_month: string
+  buyer_id: string
+  buyer_name: string
+  receiver_name: string | null
+  customer_key: string
+  product_id: string
+  product_name: string
+  option_info: string | null
+  quantity: number
+  order_date: string
+  order_status: string
+  claim_status: string | null
+  delivery_type: string | null
+  is_fake: boolean
+  match_reason: string | null
+  match_rank: number | null
+  matched_exp_id: number | null
+  needs_review: boolean
+  is_manual: boolean
+  filter_ver: string | null
+  quantity_warning: boolean
+}
+
+interface ExperienceDbRow {
+  id: number
+  upload_batch_id: string
+  target_month: string
+  campaign_id: number
+  mission_product_name: string
+  mapped_product_id: string | null
+  option_info: string | null
+  receiver_name: string
+  naver_id: string
+  purchase_date: string
+  unmatch_reason: string | null
+}
+
+interface MappingApplyResult {
+  purchaseUpdated: number
+  experienceUpdated: number
+}
+
 const supabase = useSupabaseClient()
 const toast = useToast()
 const { isViewer } = useCurrentUser()
@@ -296,6 +343,7 @@ const isSourceParsing = ref(false)
 type UploadState = 'empty' | 'uploading' | 'uploaded' | 'mapping_required'
 const uploadState = ref<UploadState>('empty')
 const mappingFailedItems = ref<MappingItem[]>([])
+const uploadResultTimestamp = ref('')
 
 const uploadResultStats = ref({ orderNew: 0, orderExcluded: 0, expInserted: 0 })
 
@@ -448,6 +496,192 @@ async function runQueryWithRetry<T>(
 
   if (lastError instanceof Error) throw lastError
   throw new Error(`${label} 요청이 실패했습니다.`)
+}
+
+function chunkArray<T>(items: T[], chunkSize = DB_BATCH_SIZE): T[][] {
+  if (items.length === 0) return []
+  const size = Math.max(1, Math.floor(chunkSize))
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
+
+function applyOptionFilter(query: any, optionValue: string) {
+  if (optionValue) {
+    return query.eq('option_info', optionValue)
+  }
+  return query.or('option_info.is.null,option_info.eq.')
+}
+
+function toPurchaseRestorePayload(row: PurchaseDbRow) {
+  return {
+    upload_batch_id: row.upload_batch_id,
+    target_month: row.target_month,
+    buyer_id: row.buyer_id,
+    buyer_name: row.buyer_name,
+    receiver_name: row.receiver_name,
+    customer_key: row.customer_key,
+    product_id: row.product_id,
+    product_name: row.product_name,
+    option_info: row.option_info,
+    quantity: row.quantity,
+    order_date: row.order_date,
+    order_status: row.order_status,
+    claim_status: row.claim_status,
+    delivery_type: row.delivery_type,
+    is_fake: row.is_fake,
+    match_reason: row.match_reason,
+    match_rank: row.match_rank,
+    matched_exp_id: row.matched_exp_id,
+    needs_review: row.needs_review,
+    is_manual: row.is_manual,
+    filter_ver: row.filter_ver,
+    quantity_warning: row.quantity_warning,
+  }
+}
+
+async function fetchExistingPurchasesSnapshot(purchaseIds: string[]): Promise<Map<string, PurchaseDbRow>> {
+  const ids = Array.from(new Set(purchaseIds.map((id) => String(id || '').trim()).filter(Boolean)))
+  const snapshot = new Map<string, PurchaseDbRow>()
+  if (ids.length === 0) return snapshot
+
+  const columns = [
+    'purchase_id',
+    'upload_batch_id',
+    'target_month',
+    'buyer_id',
+    'buyer_name',
+    'receiver_name',
+    'customer_key',
+    'product_id',
+    'product_name',
+    'option_info',
+    'quantity',
+    'order_date',
+    'order_status',
+    'claim_status',
+    'delivery_type',
+    'is_fake',
+    'match_reason',
+    'match_rank',
+    'matched_exp_id',
+    'needs_review',
+    'is_manual',
+    'filter_ver',
+    'quantity_warning',
+  ].join(', ')
+
+  for (const batch of chunkArray(ids)) {
+    const { data, error } = await runQueryWithRetry(
+      '업로드 롤백용 기존 주문 스냅샷 조회',
+      (signal) =>
+        supabase
+          .from('purchases')
+          .select(columns)
+          .in('purchase_id', batch)
+          .abortSignal(signal),
+    )
+    if (error) throw error
+
+    for (const row of ((data || []) as PurchaseDbRow[])) {
+      snapshot.set(String(row.purchase_id), row)
+    }
+  }
+
+  return snapshot
+}
+
+async function deletePurchasesByIds(ids: string[]) {
+  const uniqueIds = Array.from(new Set(ids.map((id) => String(id || '').trim()).filter(Boolean)))
+  for (const batch of chunkArray(uniqueIds)) {
+    const { error } = await runQueryWithRetry(
+      '업로드 롤백용 신규 주문 삭제',
+      (signal) =>
+        supabase
+          .from('purchases')
+          .delete()
+          .in('purchase_id', batch)
+          .abortSignal(signal),
+    )
+    if (error) throw error
+  }
+}
+
+async function restorePurchaseSnapshots(rows: PurchaseDbRow[]) {
+  const restoreRows = rows.filter((row) => Boolean(row?.purchase_id))
+  for (const batch of chunkArray(restoreRows)) {
+    await Promise.all(batch.map(async (row) => {
+      const { error } = await runQueryWithRetry(
+        `업로드 롤백용 기존 주문 복원(${row.purchase_id})`,
+        (signal) =>
+          supabase
+            .from('purchases')
+            .update(toPurchaseRestorePayload(row))
+            .eq('purchase_id', row.purchase_id)
+            .abortSignal(signal),
+      )
+      if (error) throw error
+    }))
+  }
+}
+
+async function fetchCampaignExperiencesSnapshot(month: string, campaignId: number): Promise<ExperienceDbRow[]> {
+  const { data, error } = await runQueryWithRetry(
+    '업로드 롤백용 기존 체험단 스냅샷 조회',
+    (signal) =>
+      supabase
+        .from('experiences')
+        .select('id, upload_batch_id, target_month, campaign_id, mission_product_name, mapped_product_id, option_info, receiver_name, naver_id, purchase_date, unmatch_reason')
+        .eq('target_month', month)
+        .eq('campaign_id', campaignId)
+        .abortSignal(signal),
+  )
+  if (error) throw error
+  return (data || []) as ExperienceDbRow[]
+}
+
+async function clearCampaignExperiences(month: string, campaignId: number) {
+  const { error } = await runQueryWithRetry(
+    '체험단 캠페인 데이터 정리',
+    (signal) =>
+      supabase
+        .from('experiences')
+        .delete()
+        .eq('target_month', month)
+        .eq('campaign_id', campaignId)
+        .abortSignal(signal),
+  )
+  if (error) throw error
+}
+
+async function restoreCampaignExperiencesSnapshot(rows: ExperienceDbRow[]) {
+  const restoreRows = rows.map((row) => ({
+    id: row.id,
+    upload_batch_id: row.upload_batch_id,
+    target_month: row.target_month,
+    campaign_id: row.campaign_id,
+    mission_product_name: row.mission_product_name,
+    mapped_product_id: row.mapped_product_id,
+    option_info: row.option_info,
+    receiver_name: row.receiver_name,
+    naver_id: row.naver_id,
+    purchase_date: row.purchase_date,
+    unmatch_reason: row.unmatch_reason,
+  }))
+
+  for (const batch of chunkArray(restoreRows)) {
+    const { error } = await runQueryWithRetry(
+      '업로드 롤백용 기존 체험단 복원',
+      (signal) =>
+        supabase
+          .from('experiences')
+          .insert(batch)
+          .abortSignal(signal),
+    )
+    if (error) throw error
+  }
 }
 
 // 상품 카탈로그 (Supabase 실 데이터)
@@ -753,12 +987,12 @@ function handleSourceDrop(e: DragEvent) {
 
 // ── 매핑 (Supabase 실 데이터) ──
 function suggestionsFor(item: MappingItem) {
-  const q = item.searchQuery.trim().toLowerCase()
+  const q = item.searchQuery.trim()
   if (!q) return []
   return productCatalog.value
     .filter((p) => {
-      const display = productDisplayName(p).toLowerCase()
-      return display.includes(q) || p.product_name.toLowerCase().includes(q) || (p.option_name || '').toLowerCase().includes(q)
+      const display = productDisplayName(p)
+      return matchesSearchQuery(q, display, p.product_name, p.option_name || '')
     })
     .slice(0, 5)
 }
@@ -790,49 +1024,67 @@ function removeMappingItem(item: MappingItem) {
   mappingFailedItems.value = mappingFailedItems.value.filter((row) => row !== item)
 }
 
-async function applyMappedProductToPurchases(item: MappingItem, mappedProductId: string) {
-  if (!mappedProductId || selectedMonth.value === 'all') return
+async function applyMappedProductToDataset(item: MappingItem, mappedProductId: string): Promise<MappingApplyResult> {
+  if (!mappedProductId || selectedMonth.value === 'all') {
+    return { purchaseUpdated: 0, experienceUpdated: 0 }
+  }
 
-  // products 테이블에서 정규화된 상품명 조회
   const matchedProduct = productCatalog.value.find((p) => p.product_id === mappedProductId)
-  const normalizedProductName = matchedProduct
-    ? productDisplayName(matchedProduct).split(' / ')[0]  // 옵션 제외한 상품명
-    : item.originalName
+  const normalizedProductName = matchedProduct?.product_name || item.originalName
+  const normalizedOption = matchedProduct?.option_name || null
 
-  const updatePayload: Record<string, any> = {
+  const purchasePayload: Record<string, any> = {
     product_id: mappedProductId,
-    product_name: matchedProduct?.product_name || normalizedProductName,
+    product_name: normalizedProductName,
   }
-  // 옵션도 정규화
-  if (matchedProduct?.option_name) {
-    updatePayload.option_info = matchedProduct.option_name
-  }
+  if (normalizedOption) purchasePayload.option_info = normalizedOption
 
-  let query = supabase
+  let purchaseQuery = supabase
     .from('purchases')
-    .update(updatePayload)
+    .update(purchasePayload)
     .eq('target_month', selectedMonth.value)
     .eq('product_name', item.originalName)
-
-  if (item.originalOption) {
-    query = query.eq('option_info', item.originalOption)
-  } else {
-    query = query.or('option_info.is.null,option_info.eq.')
+  purchaseQuery = applyOptionFilter(purchaseQuery, item.originalOption)
+  const { data: purchaseData, error: purchaseError } = await purchaseQuery.select('purchase_id')
+  if (purchaseError) {
+    console.error('Failed to apply mapped product to purchases:', purchaseError)
+    throw new Error(`주문 DB 반영 실패: ${purchaseError.message}`)
   }
 
-  const { error } = await query
-  if (error) {
-    console.error('Failed to apply mapped product to purchases:', error)
-    throw new Error(`DB 반영 실패: ${error.message}`)
+  const experiencePayload: Record<string, any> = {
+    mapped_product_id: mappedProductId,
+    mission_product_name: normalizedProductName,
   }
+  if (normalizedOption) experiencePayload.option_info = normalizedOption
+
+  let expQuery = supabase
+    .from('experiences')
+    .update(experiencePayload)
+    .eq('target_month', selectedMonth.value)
+    .eq('mission_product_name', item.originalName)
+  expQuery = applyOptionFilter(expQuery, item.originalOption)
+  const { data: expData, error: expError } = await expQuery.select('id')
+  if (expError) {
+    console.error('Failed to apply mapped product to experiences:', expError)
+    throw new Error(`체험단 DB 반영 실패: ${expError.message}`)
+  }
+
+  const result = {
+    purchaseUpdated: Array.isArray(purchaseData) ? purchaseData.length : 0,
+    experienceUpdated: Array.isArray(expData) ? expData.length : 0,
+  }
+  if (result.purchaseUpdated + result.experienceUpdated === 0) {
+    throw new Error('적용 대상이 없어 반영되지 않았습니다. 원본 상품명/옵션 조건을 확인해 주세요.')
+  }
+  return result
 }
 
 async function connectItem(item: MappingItem) {
   if (!item.mappedProductId || item.isProcessing) return
   item.isProcessing = true
   try {
-    await applyMappedProductToPurchases(item, item.mappedProductId)
-    toast.success(`"${item.mappedProduct}" 연결 완료`)
+    const applied = await applyMappedProductToDataset(item, item.mappedProductId)
+    toast.success(`"${item.mappedProduct}" 연결 완료 (주문 ${applied.purchaseUpdated}건, 체험단 ${applied.experienceUpdated}건)`)
     removeMappingItem(item)
     syncMappingState()
   } catch (err: any) {
@@ -877,13 +1129,13 @@ async function registerAsNew(item: MappingItem) {
       item.mappedProductId = newId
       item.searchQuery = item.mappedProduct
       try {
-        await applyMappedProductToPurchases(item, newId)
+        const applied = await applyMappedProductToDataset(item, newId)
         removeMappingItem(item)
         syncMappingState()
-        toast.success(`"${item.mappedProduct}" 상품이 등록되었습니다.`)
+        toast.success(`"${item.mappedProduct}" 상품이 등록되었습니다. (주문 ${applied.purchaseUpdated}건, 체험단 ${applied.experienceUpdated}건 반영)`)
       } catch (err: any) {
-        // 상품은 등록됨, purchases 반영만 실패
-        toast.error(`상품은 등록되었지만 주문 반영에 실패했습니다: ${err.message}`)
+        // 상품은 등록됨, 매핑 반영만 실패
+        toast.error(`상품은 등록되었지만 매핑 반영에 실패했습니다: ${err.message}`)
         // 항목은 유지해서 재시도 가능하게
       }
     } else {
@@ -902,6 +1154,38 @@ async function startUpload() {
   const targetMonth = selectedMonth.value
   const batchId = crypto.randomUUID()
   const campaignNameForLog = inferredCampaignName.value || `${targetMonth} 웨이프로젝트`
+  const touchedPurchaseIds = new Set<string>()
+  let purchaseSnapshotById = new Map<string, PurchaseDbRow>()
+  let ordersMutated = false
+  let rollbackCampaignId: number | null = null
+  let experienceSnapshot: ExperienceDbRow[] = []
+  let experiencesMutated = false
+
+  async function rollbackUploadMutations() {
+    const hasRollbackTarget = ordersMutated || (experiencesMutated && rollbackCampaignId !== null)
+    if (!hasRollbackTarget) return
+
+    if (experiencesMutated && rollbackCampaignId !== null) {
+      await clearCampaignExperiences(targetMonth, rollbackCampaignId)
+      if (experienceSnapshot.length > 0) {
+        await restoreCampaignExperiencesSnapshot(experienceSnapshot)
+      }
+    }
+
+    if (ordersMutated) {
+      const existingIdSet = new Set(purchaseSnapshotById.keys())
+      const insertedIds = Array.from(touchedPurchaseIds).filter((id) => !existingIdSet.has(id))
+      if (insertedIds.length > 0) {
+        await deletePurchasesByIds(insertedIds)
+      }
+
+      const restoreRows = Array.from(purchaseSnapshotById.values())
+        .filter((row) => touchedPurchaseIds.has(String(row.purchase_id || '')))
+      if (restoreRows.length > 0) {
+        await restorePurchaseSnapshots(restoreRows)
+      }
+    }
+  }
 
   try {
     let orderNew = 0, orderExcluded = 0, expInserted = 0
@@ -914,6 +1198,9 @@ async function startUpload() {
       const { valid, excluded } = preprocessOrders(parsedOrderRows.value)
       orderExcluded = excluded
       const resolvedOrderMap = new Map<string, ReturnType<typeof resolveMappedProduct>>()
+      const purchaseIds = valid.map((row) => String(row.purchase_id || '').trim()).filter(Boolean)
+      for (const id of purchaseIds) touchedPurchaseIds.add(id)
+      purchaseSnapshotById = await fetchExistingPurchasesSnapshot(purchaseIds)
 
       // 스마트스토어 주문 상품도 상품목록 기준으로 미등록 여부를 먼저 체크한다.
       for (const row of valid) {
@@ -961,6 +1248,7 @@ async function startUpload() {
               .abortSignal(signal),
         )
         if (error) throw new Error(`주문 적재 오류: ${error.message}`)
+        if (!ordersMutated) ordersMutated = true
         orderNew += data?.length || 0
 
         const processed = Math.min(i + batch.length, valid.length)
@@ -1007,18 +1295,10 @@ async function startUpload() {
       uploadProgress.value = 80
 
       if (campaignId) {
-        // 재업로드 시 기존 체험단 데이터 삭제 (중복 방지)
-        const { error: delErr } = await runQueryWithRetry(
-          '기존 체험단 데이터 정리',
-          (signal) =>
-            supabase
-              .from('experiences')
-              .delete()
-              .eq('target_month', targetMonth)
-              .eq('campaign_id', campaignId)
-              .abortSignal(signal),
-        )
-        if (delErr) throw new Error(`기존 체험단 정리 오류: ${delErr.message}`)
+        rollbackCampaignId = campaignId
+        experienceSnapshot = await fetchCampaignExperiencesSnapshot(targetMonth, campaignId)
+        await clearCampaignExperiences(targetMonth, campaignId)
+        experiencesMutated = true
         const rows: ExperienceInsertRow[] = expData.map((r) => {
           const resolved = resolveMappedProduct(r.mission_product_name, r.option_info, productLookup)
 
@@ -1101,35 +1381,45 @@ async function startUpload() {
         uploadStats: { orderNew, orderExcluded, expInserted },
         unmappedProducts: serializedUnmapped,
       })
+      uploadResultTimestamp.value = getWorkflow(targetMonth).lastOrderUpload || ''
       toast.success('업로드가 완료되었습니다.')
     }, 300)
   } catch (err) {
     console.error('Upload error:', err)
-    toast.error('업로드 중 오류가 발생했습니다.')
+    try {
+      await rollbackUploadMutations()
+      toast.error('업로드 중 오류가 발생해 자동 복구를 수행했습니다. 다시 시도해 주세요.')
+    } catch (rollbackError) {
+      console.error('Upload rollback error:', rollbackError)
+      toast.error('업로드 실패 후 자동 복구 중 오류가 발생했습니다. 관리자 확인이 필요합니다.')
+    }
     uploadState.value = 'empty'
+    uploadProgress.value = 0
   }
 }
 
 function downloadTemplate(type: 'order' | 'influencer') {
-  const fileName = type === 'order' ? '주문업로드_예시양식.csv' : '체험단업로드_예시양식.csv'
-  const content = type === 'order'
-    ? '상품주문번호,상품명,상품번호,옵션정보,수량,구매자명,구매자ID,수취인명,주문일시,주문상태,클레임상태\n2025021200000001,유산균 파우더 30포,P-1001,기본,1,김지윤,kimj****,김지윤,2025-02-12 10:32,결제완료,없음\n'
-    : '미션상품명,옵션정보,수취인명,아이디,구매인증일,캠페인명\n유산균 파우더 30포,기본,김지윤,kimj****,2025-02-12,2025년 2월 블로그 체험단\n'
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a'); a.href = url; a.download = fileName
-  document.body.appendChild(a); a.click(); document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  const wb = XLSX.utils.book_new()
+  const isOrder = type === 'order'
+  const headers = isOrder
+    ? ['상품주문번호', '상품명', '상품번호', '옵션정보', '수량', '구매자명', '구매자ID', '수취인명', '주문일시', '주문상태', '클레임상태']
+    : ['미션상품명', '옵션정보', '수취인명', '아이디', '구매인증일', '캠페인명']
+  const sample = isOrder
+    ? ['2025021200000001', '유산균 파우더 30포', 'P-1001', '기본', 1, '김지윤', 'kimj****', '김지윤', '2025-02-12 10:32', '결제완료', '없음']
+    : ['유산균 파우더 30포', '기본', '김지윤', 'kimj****', '2025-02-12', '2025년 2월 블로그 체험단']
+  const ws = XLSX.utils.aoa_to_sheet([headers, sample])
+  XLSX.utils.book_append_sheet(wb, ws, isOrder ? '주문양식' : '체험단양식')
+  XLSX.writeFile(wb, isOrder ? '주문업로드_예시양식.xlsx' : '체험단업로드_예시양식.xlsx')
 }
 
 const uploadResults = computed(() => {
   if (!hasResult.value) return []
   const s = uploadResultStats.value
-  const now = new Date().toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })
+  const timestamp = uploadResultTimestamp.value || '-'
   const r = []
-  if (s.orderNew > 0) r.push({ time: now, description: '주문 데이터 업로드 반영', count: s.orderNew, type: 'success' })
-  if (s.expInserted > 0) r.push({ time: now, description: '체험단 데이터 업로드 반영', count: s.expInserted, type: 'info' })
-  if (s.orderExcluded > 0) r.push({ time: now, description: '취소/반품 주문 제외 처리', count: s.orderExcluded, type: 'warning' })
+  if (s.orderNew > 0) r.push({ time: timestamp, description: '주문 데이터 업로드 반영', count: s.orderNew, type: 'success' })
+  if (s.expInserted > 0) r.push({ time: timestamp, description: '체험단 데이터 업로드 반영', count: s.expInserted, type: 'info' })
+  if (s.orderExcluded > 0) r.push({ time: timestamp, description: '취소/반품 주문 제외 처리', count: s.orderExcluded, type: 'warning' })
   return r
 })
 
@@ -1145,6 +1435,7 @@ watch(
 
     const wf = getWorkflow(month)
     inferredCampaignName.value = wf.campaignLabel === '미등록' ? '' : wf.campaignLabel
+    uploadResultTimestamp.value = wf.lastOrderUpload !== '미업로드' ? wf.lastOrderUpload : ''
 
     let orderCount = 0
     let expCount = 0
@@ -1177,6 +1468,7 @@ watch(
       }
       mappingFailedItems.value = []
       uploadResultStats.value = { orderNew: 0, orderExcluded: 0, expInserted: 0 }
+      uploadResultTimestamp.value = ''
       uploadState.value = 'empty'
       return
     }
