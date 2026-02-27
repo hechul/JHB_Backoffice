@@ -74,6 +74,7 @@
 - **권한 재조회 안정화**: `useCurrentUser`를 `supabaseUser` 변경 시마다 프로필 재조회하도록 수정하고 role 값을 소문자 정규화
 - **새로고침 권한 부트스트랩 보강**: `useCurrentUser`에 `auth.getUser()` 기반 초기 부트스트랩 + `onAuthStateChange` 리스너를 추가해, 새로고침 직후 세션 로딩 지연에도 프로필/role 재동기화가 되도록 수정
 - **권한 표시 개선**: 레이아웃 상단 role 표시는 프로필 로딩 전 `확인중`으로 표시해 새로고침 직후 `Viewer` 오인 노출 방지
+- **권한 로딩 무한 `확인중` 방지 보강**: `useCurrentUser`의 프로필 조회에서 `profiles.status` 의존 컬럼을 제거하고, 조회 실패/프로필 누락 시 로컬 캐시 기반 폴백으로 `profileLoaded`를 종료하도록 수정해 헤더 role이 `확인중`에 고정되는 현상을 완화
 - **역할 시드 핫픽스 SQL 추가**: `docs/sql/2026-02-23_profiles_role_seed_hotfix.sql` (admin/modifier 계정 role 보정용)
 - **역할 점검/보정 SQL 추가**: `docs/sql/2026-02-23_profiles_role_check_and_fix.sql` (현재 `profiles.role` 확인 + admin/modifier 보정용)
 - **체험단 상품명 정규화 룰 추가**: `upload.vue`에서 미션상품명에 키워드(애착트릿/츄라잇/엔자이츄/케어푸/두부모래/이즈바이트/트릿백/츄르짜개/도시락/맛보기)가 포함되면 표준 상품명으로 정규화 후 매핑하도록 반영

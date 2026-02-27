@@ -10,6 +10,7 @@ interface CurrentUser {
 export function useCurrentUser() {
   const supabase = useSupabaseClient()
   const supabaseUser = useSupabaseUser()
+  const PROFILE_CACHE_KEY = 'jhbiofarm_current_user_profile_v1'
 
   const profile = useState<CurrentUser>('current_user', () => ({
     id: '',
@@ -34,6 +35,61 @@ export function useCurrentUser() {
     return 'viewer'
   }
 
+  function persistProfileCache(next: CurrentUser) {
+    if (!import.meta.client) return
+    try {
+      localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(next))
+    } catch {}
+  }
+
+  function clearProfileCache() {
+    if (!import.meta.client) return
+    try {
+      localStorage.removeItem(PROFILE_CACHE_KEY)
+    } catch {}
+  }
+
+  function readProfileCache(userId?: string): CurrentUser | null {
+    if (!import.meta.client) return null
+    try {
+      const raw = localStorage.getItem(PROFILE_CACHE_KEY)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as CurrentUser
+      if (!parsed?.id) return null
+      if (userId && parsed.id !== userId) return null
+      return {
+        id: String(parsed.id || ''),
+        name: String(parsed.name || ''),
+        email: String(parsed.email || ''),
+        role: normalizeRole(parsed.role),
+      }
+    } catch {
+      return null
+    }
+  }
+
+  function setProfileLoaded(next: CurrentUser, persist = true) {
+    profile.value = next
+    profileLoaded.value = true
+    if (persist) persistProfileCache(next)
+  }
+
+  function applyProfileFallback(userId: string) {
+    const cached = readProfileCache(userId)
+    if (cached) {
+      setProfileLoaded(cached, false)
+      return
+    }
+
+    const authEmail = String(supabaseUser.value?.email || '')
+    setProfileLoaded({
+      id: userId,
+      name: splitEmail(authEmail),
+      email: authEmail,
+      role: 'viewer',
+    }, false)
+  }
+
   async function fetchProfile(userId?: string) {
     const uid = userId || supabaseUser.value?.id
     if (!uid) return
@@ -41,26 +97,25 @@ export function useCurrentUser() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, full_name, role, status')
+        .select('id, email, full_name, role')
         .eq('id', uid)
         .maybeSingle()
 
       if (data && !error) {
         const email = (data as any).email || ''
-        profile.value = {
+        setProfileLoaded({
           id: (data as any).id,
           name: (data as any).full_name || splitEmail(email),
           email,
           role: normalizeRole((data as any).role),
-        }
-        profileLoaded.value = true
+        })
       } else {
         console.error('Failed to fetch profile row:', error)
-        resetProfile()
+        applyProfileFallback(uid)
       }
     } catch (e) {
       console.error('Failed to fetch profile:', e)
-      resetProfile()
+      applyProfileFallback(uid)
     }
   }
 
@@ -70,6 +125,7 @@ export function useCurrentUser() {
 
   async function logout() {
     await supabase.auth.signOut()
+    clearProfileCache()
     resetProfile()
     navigateTo('/login')
   }
@@ -84,7 +140,12 @@ export function useCurrentUser() {
       const { data, error } = await supabase.auth.getUser()
       if (error) {
         console.error('Failed to read auth user:', error)
-        resetProfile()
+        const cached = readProfileCache()
+        if (cached) {
+          setProfileLoaded(cached, false)
+        } else {
+          resetProfile()
+        }
         return
       }
       const uid = data.user?.id
