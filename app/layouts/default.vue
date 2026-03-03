@@ -316,7 +316,6 @@ watch(
   () => [profileLoaded.value, profileRevision.value],
   async ([loaded]) => {
     if (!loaded) return
-    if (monthsLoading.value) return
     await refreshMonths()
   },
   { immediate: true }

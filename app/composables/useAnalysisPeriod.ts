@@ -10,6 +10,7 @@ const REFRESH_TIMEOUT_MS = 6000
 const REFRESH_RETRY_COUNT = 2
 const REFRESH_SAFETY_MS = 8000
 const MAX_DB_RANGE_MONTHS = 60
+const MONTH_COUNT_RPC_NAME = 'get_purchase_month_counts'
 
 function isValidMonthToken(value: string): boolean {
   return /^\d{4}-\d{2}$/.test(value)
@@ -103,6 +104,7 @@ export function useAnalysisPeriod() {
   const monthsError = useState<string>('analysis_available_months_error', () => '')
   const availableMonths = useState<AnalysisMonthOption[]>('analysis_available_months', () => [])
   const refreshSeq = useState<number>('analysis_available_months_refresh_seq', () => 0)
+  const refreshInFlight = useState<Promise<void> | null>('analysis_available_months_refresh_inflight', () => null)
 
   const validMonthValues = computed(() => new Set(['all', ...availableMonths.value.map((month) => month.value)]))
 
@@ -181,142 +183,211 @@ export function useAnalysisPeriod() {
     throw new Error('기간 조회 실패')
   }
 
-  async function refreshMonths() {
-    if (!process.client) return
-    const seq = ++refreshSeq.value
-    monthsLoading.value = true
-    monthsError.value = ''
-
-    const safetyTimer = setTimeout(() => {
-      if (seq !== refreshSeq.value) return
-      if (!monthsLoading.value) return
-      monthsLoading.value = false
-      monthsError.value = '기간 조회가 지연되어 이전 목록을 표시합니다.'
-    }, REFRESH_SAFETY_MS)
-
+  async function fetchMonthCountMapViaRpc(): Promise<Map<string, number> | null> {
     try {
-      const [{ data: latestRow, error: latestError }, { data: oldestRow, error: oldestError }] = await Promise.all([
-        runQueryWithTimeout(async (signal) => {
-          const query = supabase
-            .from('purchases')
-            .select('target_month')
-            .order('target_month', { ascending: false })
-            .limit(1)
-            .maybeSingle()
+      const { data, error } = await runQueryWithTimeout(async (signal) => {
+        const query = supabase.rpc(MONTH_COUNT_RPC_NAME as any)
+        if (typeof (query as any).abortSignal === 'function') {
           return await (query as any).abortSignal(signal)
-        }),
-        runQueryWithTimeout(async (signal) => {
-          const query = supabase
-            .from('purchases')
-            .select('target_month')
-            .order('target_month', { ascending: true })
-            .limit(1)
-            .maybeSingle()
-          return await (query as any).abortSignal(signal)
-        }),
-      ])
+        }
+        return await query
+      })
 
-      if (latestError) throw latestError
-      if (oldestError) throw oldestError
+      if (error) {
+        const code = String((error as any)?.code || '').toUpperCase()
+        const message = String((error as any)?.message || '').toLowerCase()
+        const rpcMissing = code === 'PGRST202' || code === '42883' || message.includes('does not exist')
+        if (!rpcMissing) {
+          console.warn('Month count RPC failed, fallback to legacy query path:', error)
+        }
+        return null
+      }
 
-      const latestMonth = String(latestRow?.target_month || '').trim()
-      const oldestMonth = String(oldestRow?.target_month || '').trim()
-      const dbRange = isValidMonthToken(latestMonth) && isValidMonthToken(oldestMonth)
-        ? buildMonthRange(oldestMonth, latestMonth)
-        : []
-
-      const dbRangeMonths = dbRange.length > MAX_DB_RANGE_MONTHS
-        ? dbRange.slice(-MAX_DB_RANGE_MONTHS)
-        : dbRange
-
-      const baseMonths = buildRollingMonths(3)
-      const candidateMonths = Array.from(new Set<string>([
-        ...baseMonths,
-        ...dbRangeMonths,
-      ])).filter(isValidMonthToken)
-
+      const rows = Array.isArray(data) ? (data as any[]) : []
       const countMap = new Map<string, number>()
-      const workers = Math.max(1, Math.min(6, candidateMonths.length))
-      let cursor = 0
+      for (const row of rows) {
+        const month = String(row?.target_month ?? row?.month ?? row?.period ?? '').trim()
+        if (!isValidMonthToken(month)) continue
+        const rawCount = Number(row?.count ?? row?.total ?? row?.order_count ?? row?.purchase_count ?? 0)
+        const count = Number.isFinite(rawCount) ? Math.max(0, Math.floor(rawCount)) : 0
+        countMap.set(month, count)
+      }
+      return countMap
+    } catch (error) {
+      console.warn('Month count RPC call failed, fallback to legacy query path:', error)
+      return null
+    }
+  }
 
-      const runWorker = async () => {
-        while (cursor < candidateMonths.length) {
-          const idx = cursor
-          cursor += 1
-          const month = candidateMonths[idx]
-          if (!month) continue
-          try {
-            const { count, error } = await runQueryWithTimeout(async (signal) => {
-              const query = supabase
-                .from('purchases')
-                .select('purchase_id', { count: 'exact', head: true })
-                .eq('target_month', month)
-              return await (query as any).abortSignal(signal)
-            })
-            if (error) {
-              console.warn('Failed to fetch month count:', month, error)
-              countMap.set(month, 0)
-              continue
-            }
-            countMap.set(month, Number(count || 0))
-          } catch (error) {
-            console.warn('Failed to fetch month count with timeout:', month, error)
+  async function fetchMonthCountMapLegacy(baseMonths: string[]): Promise<{ candidateMonths: string[]; countMap: Map<string, number> }> {
+    const [{ data: latestRow, error: latestError }, { data: oldestRow, error: oldestError }] = await Promise.all([
+      runQueryWithTimeout(async (signal) => {
+        const query = supabase
+          .from('purchases')
+          .select('target_month')
+          .order('target_month', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        return await (query as any).abortSignal(signal)
+      }),
+      runQueryWithTimeout(async (signal) => {
+        const query = supabase
+          .from('purchases')
+          .select('target_month')
+          .order('target_month', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        return await (query as any).abortSignal(signal)
+      }),
+    ])
+
+    if (latestError) throw latestError
+    if (oldestError) throw oldestError
+
+    const latestMonth = String(latestRow?.target_month || '').trim()
+    const oldestMonth = String(oldestRow?.target_month || '').trim()
+    const dbRange = isValidMonthToken(latestMonth) && isValidMonthToken(oldestMonth)
+      ? buildMonthRange(oldestMonth, latestMonth)
+      : []
+
+    const dbRangeMonths = dbRange.length > MAX_DB_RANGE_MONTHS
+      ? dbRange.slice(-MAX_DB_RANGE_MONTHS)
+      : dbRange
+
+    const candidateMonths = Array.from(new Set<string>([
+      ...baseMonths,
+      ...dbRangeMonths,
+    ])).filter(isValidMonthToken)
+
+    const countMap = new Map<string, number>()
+    const workers = Math.max(1, Math.min(6, candidateMonths.length))
+    let cursor = 0
+
+    const runWorker = async () => {
+      while (cursor < candidateMonths.length) {
+        const idx = cursor
+        cursor += 1
+        const month = candidateMonths[idx]
+        if (!month) continue
+        try {
+          const { count, error } = await runQueryWithTimeout(async (signal) => {
+            const query = supabase
+              .from('purchases')
+              .select('purchase_id', { count: 'exact', head: true })
+              .eq('target_month', month)
+            return await (query as any).abortSignal(signal)
+          })
+          if (error) {
+            console.warn('Failed to fetch month count:', month, error)
             countMap.set(month, 0)
+            continue
           }
+          countMap.set(month, Number(count || 0))
+        } catch (error) {
+          console.warn('Failed to fetch month count with timeout:', month, error)
+          countMap.set(month, 0)
         }
       }
+    }
 
-      await Promise.all(Array.from({ length: workers }, () => runWorker()))
-      if (seq !== refreshSeq.value) return
+    await Promise.all(Array.from({ length: workers }, () => runWorker()))
+    return { candidateMonths, countMap }
+  }
 
-      const baseMonthSet = new Set(baseMonths)
-      availableMonths.value = candidateMonths
-        .sort((a, b) => b.localeCompare(a))
-        .filter((month) => baseMonthSet.has(month) || (countMap.get(month) || 0) > 0)
-        .map((month) => ({
-          value: month,
-          label: formatMonthLabel(month),
-          count: countMap.get(month) || 0,
-        }))
+  async function refreshMonths() {
+    if (!process.client) return
+    if (refreshInFlight.value) return await refreshInFlight.value
 
-      persistMonthOptionsCache()
-
-      const currentValid = validMonthValues.value.has(selectedMonth.value)
-      const preferredMonth = pickPreferredMonth(availableMonths.value)
-      const selectedOption = availableMonths.value.find((month) => month.value === selectedMonth.value)
-      const hasDataMonth = availableMonths.value.some((month) => month.count > 0)
-      const selectedIsZeroMonth = Number(selectedOption?.count || 0) === 0
-
-      if (!currentValid && availableMonths.value.length > 0) {
-        selectedMonth.value = preferredMonth
-        persistSelection()
-      } else if (!hasStoredSelection.value && availableMonths.value.length > 0) {
-        selectedMonth.value = preferredMonth
-        persistSelection()
-      } else if (
-        hasStoredSelection.value
-        && hasDataMonth
-        && !selectionTouched.value
-        && selectedIsZeroMonth
-        && preferredMonth !== selectedMonth.value
-      ) {
-        // 인증 지연으로 0건 월이 localStorage에 고정된 경우 자동 복구한다.
-        selectedMonth.value = preferredMonth
-        persistSelection()
-      }
-
+    const task = (async () => {
+      const seq = ++refreshSeq.value
+      monthsLoading.value = true
       monthsError.value = ''
-    } catch (error) {
-      if (seq !== refreshSeq.value) return
-      console.error('Failed to refresh analysis months:', error)
-      monthsError.value = '기간 조회에 실패했습니다. 다시 시도해 주세요.'
-      if (availableMonths.value.length === 0) {
-        availableMonths.value = readMonthOptionsCache()
-      }
-    } finally {
-      clearTimeout(safetyTimer)
-      if (seq === refreshSeq.value) {
+
+      const safetyTimer = setTimeout(() => {
+        if (seq !== refreshSeq.value) return
+        if (!monthsLoading.value) return
         monthsLoading.value = false
+        monthsError.value = '기간 조회가 지연되어 이전 목록을 표시합니다.'
+      }, REFRESH_SAFETY_MS)
+
+      try {
+        const baseMonths = buildRollingMonths(3)
+        const rpcCountMap = await fetchMonthCountMapViaRpc()
+        let candidateMonths: string[] = []
+        let countMap = new Map<string, number>()
+
+        if (rpcCountMap) {
+          countMap = rpcCountMap
+          candidateMonths = Array.from(new Set<string>([
+            ...baseMonths,
+            ...Array.from(countMap.keys()),
+          ])).filter(isValidMonthToken)
+        } else {
+          const legacy = await fetchMonthCountMapLegacy(baseMonths)
+          candidateMonths = legacy.candidateMonths
+          countMap = legacy.countMap
+        }
+
+        if (seq !== refreshSeq.value) return
+
+        const baseMonthSet = new Set(baseMonths)
+        availableMonths.value = candidateMonths
+          .sort((a, b) => b.localeCompare(a))
+          .filter((month) => baseMonthSet.has(month) || (countMap.get(month) || 0) > 0)
+          .map((month) => ({
+            value: month,
+            label: formatMonthLabel(month),
+            count: countMap.get(month) || 0,
+          }))
+
+        persistMonthOptionsCache()
+
+        const currentValid = validMonthValues.value.has(selectedMonth.value)
+        const preferredMonth = pickPreferredMonth(availableMonths.value)
+        const selectedOption = availableMonths.value.find((month) => month.value === selectedMonth.value)
+        const hasDataMonth = availableMonths.value.some((month) => month.count > 0)
+        const selectedIsZeroMonth = Number(selectedOption?.count || 0) === 0
+
+        if (!currentValid && availableMonths.value.length > 0) {
+          selectedMonth.value = preferredMonth
+          persistSelection()
+        } else if (!hasStoredSelection.value && availableMonths.value.length > 0) {
+          selectedMonth.value = preferredMonth
+          persistSelection()
+        } else if (
+          hasStoredSelection.value
+          && hasDataMonth
+          && !selectionTouched.value
+          && selectedIsZeroMonth
+          && preferredMonth !== selectedMonth.value
+        ) {
+          // 인증 지연으로 0건 월이 localStorage에 고정된 경우 자동 복구한다.
+          selectedMonth.value = preferredMonth
+          persistSelection()
+        }
+
+        monthsError.value = ''
+      } catch (error) {
+        if (seq !== refreshSeq.value) return
+        console.error('Failed to refresh analysis months:', error)
+        monthsError.value = '기간 조회에 실패했습니다. 다시 시도해 주세요.'
+        if (availableMonths.value.length === 0) {
+          availableMonths.value = readMonthOptionsCache()
+        }
+      } finally {
+        clearTimeout(safetyTimer)
+        if (seq === refreshSeq.value) {
+          monthsLoading.value = false
+        }
+      }
+    })()
+
+    refreshInFlight.value = task
+    try {
+      await task
+    } finally {
+      if (refreshInFlight.value === task) {
+        refreshInFlight.value = null
       }
     }
   }

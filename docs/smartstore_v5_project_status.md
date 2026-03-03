@@ -153,6 +153,8 @@
 - **헤더 새로고침 버튼 추가**: 간헐적인 상태 꼬임을 사용자가 즉시 복구할 수 있도록 헤더 우측에 페이지 새로고침 아이콘 버튼을 추가
 - **실행 이력 월별 누락 보강**: `/logs`의 수동 분류 이력 조회를 월 필터 우선 방식으로 보강. `override_logs.target_month` 컬럼이 있는 경우 서버 필터로 조회하고, 없는 구버전 스키마는 최근 로그 페이지 스캔 + `purchases.target_month` 대조 fallback으로 월 누락 가능성을 완화
 - **실구매 탭 수동 재분류 지원**: `/filter`의 `실구매 건` 행을 상세 패널로 열 수 있게 변경하고, 상세 패널에서 `실구매 → 체험단` 전환 후 저장 가능하도록 반영(양방향 수동 판정 변경 지원)
+- **월 선택기 쿼리 fan-out 완화**: `useAnalysisPeriod`에 `refreshMonths` in-flight dedupe를 추가하고, 월별 건수 조회를 `get_purchase_month_counts` RPC 1회 호출 우선 + 기존 레거시 방식 fallback으로 변경해 새로고침/재진입 시 월 로딩 흔들림을 완화
+- **월 집계 RPC SQL 추가**: `docs/sql/2026-03-03_month_count_rpc.sql` (함수 `public.get_purchase_month_counts`)
 - **세션 확정 전 선조회 방지 보강**: `useCurrentUser`에서 캐시 프로필을 즉시 `profileLoaded=true`로 올리던 동작을 제거하고 UI 표시용 값으로만 사용하도록 조정. 새로고침 직후 세션 확정 전 anon 조회가 먼저 실행되어 0건이 고착되는 현상을 완화
 - **Vercel 새로고침 안정화(SSR 비활성)**: 백오피스 특성에 맞춰 `nuxt.config.ts`에 `ssr: false`를 적용해 SSR 하이드레이션/세션 타이밍 충돌로 인한 새로고침 후 0건 표시/무한 확인중 현상을 구조적으로 회피
 - **SSR/CSR 세션 재동기화 보강(새로고침 0건 방지)**: `useCurrentUser`에 `profileRevision` 리비전을 추가하고 `/upload`, `/filter`, `/customers`, `/logs`, `default` 레이아웃의 watcher를 `profileLoaded + profileRevision` 기준으로 재조회되게 변경해, 인증 지연 구간에서 0건으로 로드된 뒤 갱신이 멈추는 문제를 완화
