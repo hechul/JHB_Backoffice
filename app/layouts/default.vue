@@ -63,10 +63,20 @@
         <!-- 설정 -->
         <div v-if="!isViewer" class="nav-group">
           <div v-show="!sidebarCollapsed" class="nav-group-label">설정</div>
-          <div class="nav-item nav-item-disabled">
+          <NuxtLink
+            v-if="isAdmin"
+            to="/settings/users"
+            class="nav-item"
+            :class="{ active: isActive('/settings/users') }"
+            @click="mobileMenuOpen = false"
+          >
             <UserCog :size="18" :stroke-width="1.8" />
             <span v-show="!sidebarCollapsed">계정 관리</span>
-            <span v-show="!sidebarCollapsed" class="nav-badge-soon">준비중</span>
+          </NuxtLink>
+          <div v-else class="nav-item nav-item-disabled">
+            <UserCog :size="18" :stroke-width="1.8" />
+            <span v-show="!sidebarCollapsed">계정 관리</span>
+            <span v-show="!sidebarCollapsed" class="nav-badge-soon">관리자 전용</span>
           </div>
         </div>
       </nav>
@@ -157,10 +167,7 @@
           >
             <RefreshCw :size="16" :stroke-width="1.8" />
           </button>
-          <!-- Notifications (Phase 2) -->
-          <div class="header-icon-disabled" title="준비중">
-            <Bell :size="18" :stroke-width="1.8" />
-          </div>
+          <NotificationBell />
           <span class="header-date">{{ today }}</span>
         </div>
       </header>
@@ -188,7 +195,6 @@ import {
   BarChart3,
   Package,
   UserCog,
-  Bell,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -201,7 +207,7 @@ import {
 } from 'lucide-vue-next'
 
 const route = useRoute()
-const { user, isViewer, profileLoaded, profileRevision, logout } = useCurrentUser()
+const { user, isViewer, isAdmin, profileLoaded, profileRevision, logout } = useCurrentUser()
 const { selectedMonth, selectedPeriodLabel, availableMonths, monthsLoading, monthsError, refreshMonths, selectMonth, prevMonth, nextMonth } = useAnalysisPeriod()
 
 const sidebarCollapsed = ref(false)
@@ -231,15 +237,16 @@ const allMenuItems = computed(() => {
     { path: '/logs', label: '실행 이력', group: '매출 분석' },
   ]
   if (isViewer.value) return items
-  return [
+  const result = [
     { path: '/dashboard', label: '대시보드', group: '매출 분석' },
     { path: '/upload', label: '데이터 업로드', group: '매출 분석' },
     { path: '/filter', label: '필터링', group: '매출 분석' },
     { path: '/customers', label: '고객 분석', group: '매출 분석' },
     { path: '/logs', label: '실행 이력', group: '매출 분석' },
     { path: '/products', label: '상품 목록', group: '상품 관리' },
-    { path: '/settings/users', label: '계정 관리', group: '설정' },
   ]
+  if (isAdmin.value) result.push({ path: '/settings/users', label: '계정 관리', group: '설정' })
+  return result
 })
 
 const isActive = (path: string) => route.path === path
@@ -807,18 +814,6 @@ watch(
   padding: 1px 6px;
   border-radius: 8px;
   letter-spacing: 0.02em;
-}
-
-.header-icon-disabled {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  color: var(--text-muted);
-  opacity: 0.35;
-  cursor: not-allowed;
 }
 
 .header-refresh-btn {
