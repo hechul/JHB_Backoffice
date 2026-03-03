@@ -166,15 +166,31 @@
                 <th>상품명</th>
                 <th>옵션</th>
                 <th>주문일</th>
+                <th>현재 결과</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(rp, idx) in filteredReal" :key="rp.orderId">
+              <tr
+                v-for="(rp, idx) in filteredReal"
+                :key="rp.orderId"
+                class="clickable"
+                @click="openDetail(rp, 'realPurchase')"
+              >
                 <td class="font-medium" style="font-family: var(--font-mono); font-size: 0.75rem;">{{ rp.orderId }}</td>
                 <td>{{ rp.buyer }}</td>
                 <td class="truncate" style="max-width:200px;">{{ rp.product }}</td>
                 <td class="truncate" style="max-width:140px;">{{ rp.optionInfo }}</td>
                 <td>{{ rp.orderDate }}</td>
+                <td>
+                  <StatusBadge :label="rp.result === 'fake' ? '체험단' : '실구매'" :variant="rp.result === 'fake' ? 'danger' : 'success'" />
+                </td>
+                <td>
+                  <button v-if="!isViewer" class="btn btn-secondary btn-sm" @click.stop="openDetail(rp, 'realPurchase')">
+                    상세에서 변경
+                  </button>
+                  <span v-else class="text-sm text-muted">열람 전용</span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -486,7 +502,7 @@ import {
 import { matchesSearchQuery } from '~/composables/useTextSearch'
 
 type BadgeVariant = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral'
-type SourceType = 'rank' | 'manual' | 'unmatched'
+type SourceType = 'rank' | 'realPurchase' | 'manual' | 'unmatched'
 
 interface PurchaseRow {
   purchase_id: string
@@ -1344,7 +1360,7 @@ async function runFilter() {
 function openDetail(item: any, type: SourceType) {
   selectedItem.value = { ...item }
   selectedSource.value = type
-  originalResult.value = (type === 'rank' || type === 'manual') ? item.result : null
+  originalResult.value = (type === 'rank' || type === 'realPurchase' || type === 'manual') ? item.result : null
   showDetail.value = true
 }
 
@@ -1398,19 +1414,30 @@ async function saveDetailResult() {
     return
   }
 
-  const { error: logError } = await supabase
+  const logPayload: Record<string, any> = {
+    changed_by_account_id: user.value.id || null,
+    changed_by: user.value.name || user.value.email || 'unknown',
+    purchase_id: purchaseId,
+    action: afterIsFake ? 'fake지정' : 'fake해제',
+    prev_is_fake: beforeIsFake,
+    new_is_fake: afterIsFake,
+    prev_matched_exp_id: previousMatchedExpId,
+    new_matched_exp_id: afterIsFake ? previousMatchedExpId : null,
+    note: '필터 상세 패널에서 수동 변경',
+    target_month: selectedMonth.value === 'all' ? null : selectedMonth.value,
+  }
+
+  let { error: logError } = await supabase
     .from('override_logs')
-    .insert({
-      changed_by_account_id: user.value.id || null,
-      changed_by: user.value.name || user.value.email || 'unknown',
-      purchase_id: purchaseId,
-      action: afterIsFake ? 'fake지정' : 'fake해제',
-      prev_is_fake: beforeIsFake,
-      new_is_fake: afterIsFake,
-      prev_matched_exp_id: previousMatchedExpId,
-      new_matched_exp_id: afterIsFake ? previousMatchedExpId : null,
-      note: '필터 상세 패널에서 수동 변경',
-    })
+    .insert(logPayload)
+
+  if (logError && logError.code === '42703') {
+    delete logPayload.target_month
+    const fallback = await supabase
+      .from('override_logs')
+      .insert(logPayload)
+    logError = fallback.error
+  }
 
   if (logError) console.error('Failed to insert override log:', logError)
 

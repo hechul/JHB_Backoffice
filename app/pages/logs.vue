@@ -239,6 +239,23 @@ interface ManualLogRow {
   changedBy: string
 }
 
+interface OverrideLogRaw {
+  log_id: number | string | null
+  changed_at: string | null
+  changed_by: string | null
+  purchase_id: string | null
+  action: string | null
+  prev_is_fake: boolean | null
+  new_is_fake: boolean | null
+  note: string | null
+  new_matched_exp_id: number | string | null
+  target_month?: string | null
+}
+
+const OVERRIDE_LOG_LIMIT = 200
+const OVERRIDE_SCAN_PAGE_SIZE = 500
+const OVERRIDE_SCAN_MAX_PAGES = 20
+
 const supabase = useSupabaseClient()
 const toast = useToast()
 const activeTab = ref('filter')
@@ -248,6 +265,7 @@ const { isViewer, profileLoaded, profileRevision } = useCurrentUser()
 const { selectedMonth, selectedPeriodLabel } = useAnalysisPeriod()
 const filterLogs = ref<FilterLogRow[]>([])
 const manualLogs = ref<ManualLogRow[]>([])
+const supportsOverrideTargetMonth = ref(true)
 
 function toggleExpand(type: string, index: number) {
   if (type === 'filter') {
@@ -289,6 +307,82 @@ function extractDuration(summary: any): string {
   return '-'
 }
 
+async function fetchOverrideRows(month: string): Promise<OverrideLogRaw[]> {
+  const baseSelect = 'log_id, changed_at, changed_by, purchase_id, action, prev_is_fake, new_is_fake, note, new_matched_exp_id'
+
+  if (month === 'all') {
+    const { data, error } = await supabase
+      .from('override_logs')
+      .select(baseSelect)
+      .order('changed_at', { ascending: false })
+      .limit(OVERRIDE_LOG_LIMIT)
+    if (error) throw error
+    return (data || []) as OverrideLogRaw[]
+  }
+
+  if (supportsOverrideTargetMonth.value) {
+    const { data, error } = await supabase
+      .from('override_logs')
+      .select(`${baseSelect}, target_month`)
+      .eq('target_month', month)
+      .order('changed_at', { ascending: false })
+      .limit(OVERRIDE_LOG_LIMIT)
+
+    if (!error) {
+      return (data || []) as OverrideLogRaw[]
+    }
+    if (error.code !== '42703') throw error
+    supportsOverrideTargetMonth.value = false
+  }
+
+  // 하위 호환: override_logs.target_month 컬럼이 없는 스키마는 최근 로그를 페이지 스캔하여 월을 필터링한다.
+  const matchedRows: OverrideLogRaw[] = []
+  for (let page = 0; page < OVERRIDE_SCAN_MAX_PAGES && matchedRows.length < OVERRIDE_LOG_LIMIT; page += 1) {
+    const from = page * OVERRIDE_SCAN_PAGE_SIZE
+    const to = from + OVERRIDE_SCAN_PAGE_SIZE - 1
+
+    const { data, error } = await supabase
+      .from('override_logs')
+      .select(baseSelect)
+      .order('changed_at', { ascending: false })
+      .range(from, to)
+    if (error) throw error
+
+    const chunk = (data || []) as OverrideLogRaw[]
+    if (chunk.length === 0) break
+
+    const purchaseIds = Array.from(
+      new Set(chunk.map((row) => String(row.purchase_id || '').trim()).filter(Boolean)),
+    )
+    const monthByPurchaseId = new Map<string, string>()
+    if (purchaseIds.length > 0) {
+      const { data: purchaseRows, error: purchaseError } = await supabase
+        .from('purchases')
+        .select('purchase_id, target_month')
+        .in('purchase_id', purchaseIds)
+      if (!purchaseError) {
+        for (const row of (purchaseRows || []) as any[]) {
+          monthByPurchaseId.set(String(row.purchase_id || ''), String(row.target_month || ''))
+        }
+      }
+    }
+
+    for (const row of chunk) {
+      const rowMonth = monthByPurchaseId.get(String(row.purchase_id || '')) || String(row.changed_at || '').slice(0, 7)
+      if (rowMonth !== month) continue
+      matchedRows.push({
+        ...row,
+        target_month: rowMonth,
+      })
+      if (matchedRows.length >= OVERRIDE_LOG_LIMIT) break
+    }
+
+    if (chunk.length < OVERRIDE_SCAN_PAGE_SIZE) break
+  }
+
+  return matchedRows
+}
+
 async function fetchLogs() {
   try {
     let filterQuery = supabase
@@ -321,14 +415,9 @@ async function fetchLogs() {
       } satisfies FilterLogRow
     })
 
-    const { data: mData, error: mError } = await supabase
-      .from('override_logs')
-      .select('log_id, changed_at, changed_by, purchase_id, action, prev_is_fake, new_is_fake, note, new_matched_exp_id')
-      .order('changed_at', { ascending: false })
-      .limit(200)
-    if (mError) throw mError
+    const mData = await fetchOverrideRows(selectedMonth.value)
 
-    const purchaseIds = Array.from(new Set(((mData || []) as any[]).map((row) => String(row.purchase_id || '')).filter(Boolean)))
+    const purchaseIds = Array.from(new Set((mData as any[]).map((row) => String(row.purchase_id || '')).filter(Boolean)))
     const purchaseMap = new Map<string, { buyer_name: string; product_name: string; target_month: string; matched_exp_id: number | null }>()
     if (purchaseIds.length > 0) {
       const { data: pData, error: pError } = await supabase
@@ -347,7 +436,7 @@ async function fetchLogs() {
       }
     }
 
-    const expIds = Array.from(new Set(((mData || []) as any[])
+    const expIds = Array.from(new Set((mData as any[])
       .map((row) => Number(row.new_matched_exp_id))
       .filter((id) => Number.isFinite(id) && id > 0)))
     const expMap = new Map<number, { receiver_name: string; naver_id: string }>()
@@ -366,10 +455,10 @@ async function fetchLogs() {
       }
     }
 
-    manualLogs.value = ((mData || []) as any[])
+    manualLogs.value = (mData as any[])
       .map((row) => {
         const purchase = purchaseMap.get(String(row.purchase_id))
-        const month = purchase?.target_month || String(row.changed_at || '').slice(0, 7)
+        const month = String(row.target_month || purchase?.target_month || String(row.changed_at || '').slice(0, 7))
         if (selectedMonth.value !== 'all' && month !== selectedMonth.value) return null
 
         const exp = expMap.get(Number(row.new_matched_exp_id))
