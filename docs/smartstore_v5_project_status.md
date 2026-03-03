@@ -158,7 +158,7 @@
 - **세션 확정 전 선조회 방지 보강**: `useCurrentUser`에서 캐시 프로필을 즉시 `profileLoaded=true`로 올리던 동작을 제거하고 UI 표시용 값으로만 사용하도록 조정. 새로고침 직후 세션 확정 전 anon 조회가 먼저 실행되어 0건이 고착되는 현상을 완화
 - **Vercel 새로고침 안정화(SSR 비활성)**: 백오피스 특성에 맞춰 `nuxt.config.ts`에 `ssr: false`를 적용해 SSR 하이드레이션/세션 타이밍 충돌로 인한 새로고침 후 0건 표시/무한 확인중 현상을 구조적으로 회피
 - **SSR/CSR 세션 재동기화 보강(새로고침 0건 방지)**: `useCurrentUser`에 `profileRevision` 리비전을 추가하고 `/upload`, `/filter`, `/customers`, `/logs`, `default` 레이아웃의 watcher를 `profileLoaded + profileRevision` 기준으로 재조회되게 변경해, 인증 지연 구간에서 0건으로 로드된 뒤 갱신이 멈추는 문제를 완화
-- **월 선택 고정값 복구 보강**: `useAnalysisPeriod`에서 저장된 월이 현재월(0건)로 고착되어 있고 실제 데이터 월이 존재하는 경우, 최신 데이터 월로 자동 복구하도록 보강
+- **월 선택 자동복구 제거(선택 월 우선)**: `useAnalysisPeriod`에서 저장된 월이 0건이어도 자동으로 다른 월로 이동하지 않도록 조정해, 사용자가 선택한 월(미업로드 월 포함)을 그대로 유지하도록 변경
 
 ---
 
