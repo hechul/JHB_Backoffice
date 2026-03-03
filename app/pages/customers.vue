@@ -176,12 +176,14 @@
               <tr>
                 <th>날짜</th>
                 <th>상품</th>
+                <th>옵션</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(order, i) in customerOrders" :key="i">
                 <td class="text-sm">{{ order.date }}</td>
                 <td class="text-sm">{{ order.product }}</td>
+                <td class="text-sm">{{ order.optionInfo }}</td>
               </tr>
             </tbody>
           </table>
@@ -227,6 +229,7 @@ interface CustomerRow {
 interface CustomerOrderRow {
   date: string
   product: string
+  optionInfo: string
 }
 
 interface PurchaseRow {
@@ -408,6 +411,10 @@ async function loadProductMeta() {
 async function fetchCustomers() {
   loading.value = true
   try {
+    // 상품 관리에서 펫 타입이 수정된 뒤 재진입해도 최신 값을 반영하도록
+    // 고객 집계 직전에 항상 상품 메타를 다시 조회한다.
+    await loadProductMeta()
+
     const collected: any[] = []
     for (let from = 0; ; from += DB_FETCH_PAGE_SIZE) {
       let query = supabase
@@ -474,7 +481,7 @@ async function fetchCustomers() {
 async function fetchCustomerOrders(customer: CustomerRow) {
   let query = supabase
     .from('purchases')
-    .select('order_date, product_name, target_month')
+    .select('order_date, product_name, option_info, target_month')
     .eq('is_fake', false)
     .eq('needs_review', false)
     .order('order_date', { ascending: false })
@@ -502,6 +509,7 @@ async function fetchCustomerOrders(customer: CustomerRow) {
   customerOrders.value = ((data || []) as any[]).map((row) => ({
     date: String(row.order_date || '').slice(0, 10),
     product: row.product_name || '-',
+    optionInfo: String(row.option_info || '').trim() || '-',
   }))
 }
 
@@ -765,6 +773,7 @@ function downloadFilteredCustomers() {
 }
 
 onMounted(async () => {
+  // 초기 메타 로드(안전망). 실제 고객 집계 시에도 loadProductMeta를 선행 호출한다.
   await loadProductMeta()
 })
 </script>
