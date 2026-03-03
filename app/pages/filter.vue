@@ -16,7 +16,7 @@
     <div class="card">
       <div class="card-header">
         <h3 class="card-title">필터링</h3>
-        <div class="flex gap-sm items-center">
+        <div class="filter-header-actions">
           <span class="text-sm text-muted">마지막 실행: {{ lastRunLabel }}</span>
           <button v-if="showResults" class="btn btn-secondary btn-sm" @click="downloadFilteredCsv">
             <Download :size="14" :stroke-width="2" />
@@ -24,7 +24,7 @@
           </button>
         </div>
       </div>
-      <div class="flex items-center gap-lg">
+      <div class="filter-stats-row">
         <div class="filter-stat">
           <span class="filter-stat-label">총 주문</span>
           <span class="filter-stat-value">{{ currentFilterStats.total.toLocaleString() }}건</span>
@@ -41,9 +41,8 @@
         </div>
         <button
           v-if="!isViewer"
-          class="btn btn-primary btn-lg"
+          class="btn btn-primary btn-lg filter-run-btn"
           :disabled="isRunning || selectedMonth === 'all'"
-          style="margin-left: auto;"
           :class="{ 'btn-loading': isRunning }"
           @click="showConfirmModal = true"
         >
@@ -1587,6 +1586,18 @@ watch(
   color: var(--color-text-muted);
 }
 
+.filter-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.filter-stats-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
 .filter-stat {
   display: flex;
   flex-direction: column;
@@ -1608,6 +1619,10 @@ watch(
   width: 1px;
   height: 36px;
   background: var(--color-border);
+}
+
+.filter-run-btn {
+  margin-left: auto;
 }
 
 .filter-progress {
@@ -1697,5 +1712,62 @@ watch(
 
 .detail-summary {
   margin: 0;
+}
+
+@media (max-width: 1024px) {
+  .filter-header-actions {
+    flex-wrap: wrap;
+  }
+
+  .filter-stats-row {
+    flex-wrap: wrap;
+  }
+
+  .result-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .filter-page {
+    gap: var(--space-lg);
+  }
+
+  .filter-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .filter-stats-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-md);
+  }
+
+  .filter-stat-divider {
+    display: none;
+  }
+
+  .filter-run-btn {
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+  }
+
+  .result-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .result-summary-card {
+    align-items: flex-start;
+  }
+
+  .tab-search {
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  .tab-search-input {
+    max-width: none;
+  }
 }
 </style>

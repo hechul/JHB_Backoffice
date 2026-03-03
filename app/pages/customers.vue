@@ -813,6 +813,15 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 
+.filter-row .select {
+  min-width: 136px;
+}
+
+.filter-row :deep(.input-with-icon) {
+  min-width: 240px;
+  flex: 1 1 240px;
+}
+
 .stage-indicator {
   display: flex;
   align-items: center;
@@ -832,5 +841,53 @@ onMounted(async () => {
   background: var(--color-primary);
   border-radius: 2px;
   transition: width 0.3s ease;
+}
+
+@media (max-width: 1024px) {
+  .filter-bar {
+    padding: var(--space-md) var(--space-lg);
+  }
+
+  .filter-row {
+    gap: var(--space-sm);
+  }
+
+  .filter-row .select {
+    flex: 1 1 calc(33.333% - var(--space-sm));
+  }
+}
+
+@media (max-width: 768px) {
+  .customers-page {
+    gap: var(--space-lg);
+  }
+
+  .filter-bar {
+    padding: var(--space-md);
+  }
+
+  .filter-row {
+    align-items: stretch;
+  }
+
+  .filter-row :deep(.input-with-icon) {
+    width: 100% !important;
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
+  .filter-row .select {
+    min-width: 0;
+    width: 100%;
+    flex: 1 1 calc(50% - var(--space-sm));
+  }
+
+  .stage-indicator {
+    gap: 6px;
+  }
+
+  .stage-progress {
+    width: 40px;
+  }
 }
 </style>

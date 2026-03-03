@@ -1106,4 +1106,101 @@ onBeforeUnmount(() => {
   font-weight: 500;
   color: var(--color-danger);
 }
+
+@media (max-width: 1280px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .charts-grid,
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1024px) {
+  .trend-chart-area {
+    height: 180px;
+  }
+
+  .pet-chart {
+    gap: var(--space-lg);
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard {
+    gap: var(--space-lg);
+  }
+
+  .status-row {
+    flex-wrap: wrap;
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-md);
+  }
+
+  .pet-chart {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-md);
+  }
+
+  .pet-donut {
+    width: 128px;
+    height: 128px;
+  }
+
+  .legend-label {
+    width: auto;
+    min-width: 48px;
+  }
+
+  .top-product-item {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+
+  .top-product-stats {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .top-product-bar-wrap {
+    width: 120px;
+  }
+
+  .stage-bars {
+    height: 150px;
+    padding-top: var(--space-md);
+  }
+
+  .stage-bar-outer {
+    width: 34px;
+    height: 96px;
+  }
+
+  .stage-actions {
+    flex-direction: column;
+  }
+
+  .stage-action-btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .churn-item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .churn-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
 </style>

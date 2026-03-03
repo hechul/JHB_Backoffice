@@ -20,7 +20,7 @@
             <FileSpreadsheet :size="18" :stroke-width="1.8" style="color: var(--color-primary)" />
             통합 엑셀 업로드 (2개 시트)
           </h3>
-          <div class="flex gap-sm items-center">
+          <div class="upload-header-actions">
             <button class="btn btn-ghost btn-sm" @click="downloadTemplate('order')">
               <Download :size="14" :stroke-width="2" />
               주문 양식
@@ -154,7 +154,7 @@
           <AlertTriangle :size="16" :stroke-width="2" style="color: var(--color-warning)" />
           새 상품 연결 필요 (주문/체험단)
         </h3>
-        <div class="flex items-center gap-sm">
+        <div class="mapping-header-actions">
           <StatusBadge :label="`남은 ${remainingMappingCount}건`" variant="warning" />
           <StatusBadge :label="`완료 ${mappedCount}건`" variant="success" />
         </div>
@@ -165,49 +165,51 @@
         <span>주문/체험단 데이터의 상품/옵션 조합 중 등록되지 않은 항목입니다. 기존 상품 검색으로 연결하거나 새로 등록해 주세요.</span>
       </div>
 
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>원본 상품명</th>
-            <th>옵션</th>
-            <th>연결할 상품</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in mappingFailedItems" :key="`${item.originalName}::${item.originalOption || '-'}`">
-            <td class="font-medium">{{ item.originalName }}</td>
-            <td>{{ item.originalOption || '-' }}</td>
-            <td>
-              <div class="mapping-search-wrap">
-                <SearchInput v-model="item.searchQuery" placeholder="상품 검색..." width="260px" />
-                <div v-if="item.searchQuery.trim() && suggestionsFor(item).length > 0" class="mapping-suggestions">
-                  <button
-                    v-for="option in suggestionsFor(item)"
-                    :key="`${item.originalName}-${option.product_id}`"
-                    class="mapping-suggestion-item"
-                    @click="selectSuggestion(item, option)"
-                  >
-                    {{ productDisplayName(option) }}
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>원본 상품명</th>
+              <th>옵션</th>
+              <th>연결할 상품</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in mappingFailedItems" :key="`${item.originalName}::${item.originalOption || '-'}`">
+              <td class="font-medium">{{ item.originalName }}</td>
+              <td>{{ item.originalOption || '-' }}</td>
+              <td>
+                <div class="mapping-search-wrap">
+                  <SearchInput v-model="item.searchQuery" placeholder="상품 검색..." width="260px" />
+                  <div v-if="item.searchQuery.trim() && suggestionsFor(item).length > 0" class="mapping-suggestions">
+                    <button
+                      v-for="option in suggestionsFor(item)"
+                      :key="`${item.originalName}-${option.product_id}`"
+                      class="mapping-suggestion-item"
+                      @click="selectSuggestion(item, option)"
+                    >
+                      {{ productDisplayName(option) }}
+                    </button>
+                  </div>
+                </div>
+                <span v-if="item.mappedProduct" class="text-xs text-success">선택됨: {{ item.mappedProduct }}</span>
+              </td>
+              <td>
+                <div v-if="!isViewer" class="mapping-row-actions">
+                  <button class="btn btn-primary btn-sm" :disabled="!item.mappedProductId || !!item.isProcessing" @click="connectItem(item)">
+                    연결
+                  </button>
+                  <button class="btn btn-secondary btn-sm" :disabled="!!item.isProcessing || !!item.mappedProductId" @click="registerAsNew(item)">
+                    {{ item.isProcessing ? '등록 중...' : '새로 등록' }}
                   </button>
                 </div>
-              </div>
-              <span v-if="item.mappedProduct" class="text-xs text-success">선택됨: {{ item.mappedProduct }}</span>
-            </td>
-            <td>
-              <div v-if="!isViewer" class="flex gap-sm">
-                <button class="btn btn-primary btn-sm" :disabled="!item.mappedProductId || !!item.isProcessing" @click="connectItem(item)">
-                  연결
-                </button>
-                <button class="btn btn-secondary btn-sm" :disabled="!!item.isProcessing || !!item.mappedProductId" @click="registerAsNew(item)">
-                  {{ item.isProcessing ? '등록 중...' : '새로 등록' }}
-                </button>
-              </div>
-              <span v-else class="text-sm text-muted">관리자만 가능</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+                <span v-else class="text-sm text-muted">관리자만 가능</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div v-if="!hasResult && !isUploading" class="card">
@@ -1616,6 +1618,13 @@ watch(
   gap: var(--space-lg);
 }
 
+.upload-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
 .file-selected {
   display: flex;
   align-items: center;
@@ -1779,9 +1788,21 @@ watch(
   color: #1E40AF;
 }
 
+.mapping-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
 .mapping-search-wrap {
   position: relative;
   width: 260px;
+}
+
+.mapping-row-actions {
+  display: flex;
+  gap: var(--space-sm);
 }
 
 .mapping-suggestions {
@@ -1813,6 +1834,52 @@ watch(
 @media (max-width: 1024px) {
   .upload-grid {
     grid-template-columns: 1fr;
+  }
+
+  .next-step-banner {
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+}
+
+@media (max-width: 768px) {
+  .upload-page {
+    gap: var(--space-lg);
+  }
+
+  .upload-header-actions {
+    width: 100%;
+  }
+
+  .file-selected {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .drop-zone {
+    padding: var(--space-xl) var(--space-md);
+  }
+
+  .next-step-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .mapping-header-actions {
+    width: 100%;
+  }
+
+  .mapping-search-wrap {
+    width: 100%;
+  }
+
+  .mapping-row-actions {
+    flex-direction: column;
+  }
+
+  .mapping-row-actions .btn {
+    width: 100%;
+    justify-content: center;
   }
 }
 </style>
