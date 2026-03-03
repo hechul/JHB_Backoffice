@@ -608,7 +608,7 @@ interface PurchaseFilterSnapshot {
   quantity_warning: boolean
 }
 
-const FILTER_VER = 'v5.0.0'
+const FILTER_VER = 'v5.1.0'
 const UPDATE_CONCURRENCY = 10
 const FETCH_PAGE_SIZE = 1000
 
@@ -1334,7 +1334,7 @@ async function runFilter() {
       },
     })
 
-    toast.success(`분석 완료: 매칭 ${matching.matches.length}건, 확인 필요 ${manualRows.value.length}건`)
+    toast.success(`분석 완료(${FILTER_VER}): 매칭 ${matching.matches.length}건, 확인 필요 ${manualRows.value.length}건`)
   } catch (error: any) {
     console.error('Failed to run filter:', error)
     filterState.value = 'failed'

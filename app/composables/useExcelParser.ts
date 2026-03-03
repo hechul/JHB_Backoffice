@@ -230,6 +230,10 @@ function isIsoDate(value: string): boolean {
     return /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
+function isMonthDayOnly(value: string): boolean {
+    return /^\d{1,2}[./]\d{1,2}$/.test(String(value || '').trim())
+}
+
 function isLikelyLegacyExperienceRow(cells: string[]): boolean {
     const purchaseDate = (cells[2] || '').trim()
     const missionProductName = (cells[3] || '').trim()
@@ -239,7 +243,8 @@ function isLikelyLegacyExperienceRow(cells: string[]): boolean {
     if (purchaseDate.includes('구매인증일')) return false
     if (purchaseDate.includes('구매날짜')) return false
     if (missionProductName.includes('상품명')) return false
-    if (!isIsoDate(normalizeDate(purchaseDate))) return false
+    const normalizedPurchaseDate = normalizeDate(purchaseDate)
+    if (!isIsoDate(normalizedPurchaseDate) && !isMonthDayOnly(purchaseDate)) return false
     return true
 }
 
@@ -319,8 +324,22 @@ export function validateColumns(
     return { total: requiredColumns.length, matched, missing }
 }
 
+function toIsoDateParts(year: number, month: number, day: number): string {
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return ''
+    if (year < 1900 || year > 2100) return ''
+    if (month < 1 || month > 12) return ''
+    if (day < 1 || day > 31) return ''
+    const d = new Date(year, month - 1, day)
+    if (
+        d.getFullYear() !== year
+        || d.getMonth() !== month - 1
+        || d.getDate() !== day
+    ) return ''
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
 // ── 날짜 정규화 ──
-function normalizeDate(value: string): string {
+function normalizeDate(value: string, fallbackYear: number | null = null): string {
     if (!value) return ''
     const raw = String(value).trim()
     const compact = raw.replace(/\s+/g, '')
@@ -328,13 +347,45 @@ function normalizeDate(value: string): string {
     // YYYY-MM-DD 이미 포맷 되어 있으면
     if (/^\d{4}-\d{2}-\d{2}$/.test(compact)) return compact
 
-    // YYYY-MM-DD HH:mm:ss 형태
-    const match1 = compact.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
-    if (match1) return `${match1[1]}-${match1[2].padStart(2, '0')}-${match1[3].padStart(2, '0')}`
+    // YYYY-MM-DD HH:mm:ss 또는 YYYY/MM/DD HH:mm:ss 또는 YYYY.MM.DD HH:mm:ss
+    const yearFirst = compact.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/)
+    if (yearFirst) {
+        const iso = toIsoDateParts(Number(yearFirst[1]), Number(yearFirst[2]), Number(yearFirst[3]))
+        if (iso) return iso
+    }
 
-    // YYYY.MM.DD 또는 YYYY/MM/DD
-    const match2 = compact.match(/^(\d{4})[./](\d{1,2})[./](\d{1,2})/)
-    if (match2) return `${match2[1]}-${match2[2].padStart(2, '0')}-${match2[3].padStart(2, '0')}`
+    // MM/DD/YY(YY 또는 YYYY)
+    const monthFirstWithYear = compact.match(/^(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})$/)
+    if (monthFirstWithYear) {
+        const month = Number(monthFirstWithYear[1])
+        const day = Number(monthFirstWithYear[2])
+        const rawYear = Number(monthFirstWithYear[3])
+        const year = monthFirstWithYear[3].length === 2 ? (rawYear >= 70 ? 1900 + rawYear : 2000 + rawYear) : rawYear
+        const iso = toIsoDateParts(year, month, day)
+        if (iso) return iso
+    }
+
+    // MM.DD, MM/DD (연도 없는 형식) → 같은 시트에서 추정한 fallbackYear 사용
+    const monthDayOnly = compact.match(/^(\d{1,2})[./](\d{1,2})$/)
+    if (monthDayOnly) {
+        if (fallbackYear) {
+            const iso = toIsoDateParts(fallbackYear, Number(monthDayOnly[1]), Number(monthDayOnly[2]))
+            if (iso) return iso
+        }
+        return raw
+    }
+
+    // Excel serial date (예: 46055, 46072.687)
+    if (/^\d+(\.\d+)?$/.test(compact)) {
+        const serial = Number(compact)
+        if (Number.isFinite(serial) && serial > 20000 && serial < 80000) {
+            const parsed = XLSX.SSF.parse_date_code(serial)
+            if (parsed && parsed.y && parsed.m && parsed.d) {
+                const iso = toIsoDateParts(Number(parsed.y), Number(parsed.m), Number(parsed.d))
+                if (iso) return iso
+            }
+        }
+    }
 
     // Date 객체 시도
     const d = new Date(raw)
@@ -346,6 +397,30 @@ function normalizeDate(value: string): string {
     }
 
     return raw
+}
+
+function inferExperienceYear(rows: Record<string, string>[]): number | null {
+    const yearCounts = new Map<number, number>()
+
+    for (const row of rows) {
+        const rawDate = getExperienceField(row, '구매인증일')
+        if (!rawDate) continue
+
+        const normalized = normalizeDate(rawDate)
+        if (!isIsoDate(normalized)) continue
+
+        const year = Number(normalized.slice(0, 4))
+        if (!Number.isFinite(year) || year < 2000 || year > 2100) continue
+        yearCounts.set(year, (yearCounts.get(year) || 0) + 1)
+    }
+
+    if (yearCounts.size === 0) return null
+
+    return Array.from(yearCounts.entries())
+        .sort((a, b) => {
+            if (b[1] !== a[1]) return b[1] - a[1]
+            return b[0] - a[0]
+        })[0]?.[0] || null
 }
 
 // ── 유효 주문 상태 필터 ──
@@ -413,12 +488,13 @@ export function preprocessOrders(
 export function preprocessExperiences(
     rows: Record<string, string>[],
 ): ProcessedExperience[] {
+    const inferredYear = inferExperienceYear(rows)
     const processed: ProcessedExperience[] = []
     for (const row of rows) {
         const missionProductName = getExperienceField(row, '미션상품명')
         const receiverName = getExperienceField(row, '수취인명')
         const naverId = getExperienceField(row, '아이디')
-        const purchaseDate = normalizeDate(getExperienceField(row, '구매인증일'))
+        const purchaseDate = normalizeDate(getExperienceField(row, '구매인증일'), inferredYear)
         const optionInfo = getExperienceField(row, '옵션정보')
         const campaignName = getExperienceField(row, '캠페인명')
 

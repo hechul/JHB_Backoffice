@@ -1,10 +1,11 @@
 /**
  * 필터링 매칭 엔진 — 키워드 추출 + 5‑Rank 순차 매칭
  *
- * 변경점(2026-02-24):
+ * 변경점(2026-03-03):
  *   - 상품명 비교: 전체 문자열 → 핵심 키워드 추출 후 일치 비교
  *   - 옵션 비교: 전체 문자열 → 상품별 키워드 추출 후 일치 비교
- *   - 체험단 미지원 상품(트릿백/츄르짜개/샘플팩/맛보기/동결건조 리뉴얼전): 매칭 대상 제외
+ *   - 체험단 미지원 상품(샘플팩/맛보기/동결건조 리뉴얼전): 매칭 대상 제외
+ *   - 디스펜서(츄르짜개)는 옵션 비교를 생략
  */
 
 /* ─── 공통 인터페이스 ─── */
@@ -97,8 +98,6 @@ const PRODUCT_KEYWORDS: string[] = [
 
 /** 체험단 미지원 상품 키워드 — 필터링 매칭 대상에서 제외 */
 const NON_CAMPAIGN_KEYWORDS: Set<string> = new Set([
-  '트릿백',
-  '츄르짜개',
   '샘플팩',
   '맛보기',
   '동결건조리뉴얼전',
@@ -111,6 +110,9 @@ const NON_CAMPAIGN_KEYWORDS: Set<string> = new Set([
 export function extractProductKeyword(rawName: string): string | null {
   const name = normalizeText(rawName)
   if (!name) return null
+
+  // "고양이 간식 디스펜서" 표현은 츄르짜개 라인으로 통합한다.
+  if (name.includes('츄르짜개') || name.includes('디스펜서')) return '츄르짜개'
 
   // 리뉴얼 전 동결건조:
   // 동결건조(또는 오탈자 동견건조)가 포함되고 애착트릿이 없으면 별도 키워드로 분리.
@@ -264,6 +266,9 @@ function productMatches(purchase: FilterPurchaseRow, exp: FilterExperienceRow): 
  */
 function optionsMatch(purchase: FilterPurchaseRow, exp: FilterExperienceRow): boolean {
   const productKw = extractProductKeyword(purchase.product_name)
+  // 디스펜서(츄르짜개)는 색상/옵션 편차가 커서 옵션 비교에서 제외한다.
+  if (productKw === '츄르짜개') return true
+
   if (!productKw) {
     // 키워드 규칙 없음 → 정규화 문자열 비교 폴백
     const pOpt = normalizeText(purchase.option_info)
@@ -544,8 +549,12 @@ export function buildMatchingResult(
   }
 
   // 미매칭 사유
+  // NOTE:
+  // 매칭은 deduplicateExperiences(experiences) 기준으로 수행하므로,
+  // 미매칭 집계도 동일한 deduped 집합을 기준으로 계산해야
+  // 중복 체험단 행이 "미매칭"으로 부풀려지는 현상을 막을 수 있다.
   const unmatchedReasons = new Map<number, string>()
-  for (const exp of experiences) {
+  for (const exp of candidateExperiences) {
     if (matchedExpIds.has(exp.id)) continue
     unmatchedReasons.set(exp.id, computeUnmatchReason(exp, purchases))
   }
