@@ -25,7 +25,7 @@
           icon-color="#10B981"
         />
       </div>
-      <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers({ purchaseCount: '3' })">
+      <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers({ purchaseCount: '2' })">
         <KpiCard
           label="재구매 고객"
           :value="currentMetrics.repeatCustomers"
@@ -179,6 +179,7 @@ interface PurchaseRow {
   target_month: string
   is_fake: boolean
   needs_review: boolean
+  filter_ver: string | null
 }
 
 interface ProductMeta {
@@ -374,15 +375,8 @@ function customerGroupKey(row: PurchaseRow): string {
   return String(row.customer_key || '').trim() || `${String(row.buyer_id || '').trim()}_${String(row.buyer_name || '').trim()}`
 }
 
-function purchaseCountKey(row: Pick<PurchaseRow, 'purchase_id' | 'order_date' | 'product_id' | 'buyer_id' | 'buyer_name'>): string {
-  const purchaseId = String(row.purchase_id || '').trim()
-  if (purchaseId) return purchaseId
-  return [
-    String(row.order_date || '').trim(),
-    String(row.product_id || '').trim(),
-    String(row.buyer_id || '').trim(),
-    String(row.buyer_name || '').trim(),
-  ].join('|')
+function purchaseDateKey(row: Pick<PurchaseRow, 'order_date'>): string {
+  return String(row.order_date || '').slice(0, 10)
 }
 
 function derivePetType(rows: PurchaseRow[]): ProductMeta['pet_type'] {
@@ -433,27 +427,21 @@ function formatMonthLabel(token: string): string {
 }
 
 function buildTrendMonths(): string[] {
-  if (selectedMonth.value !== 'all') {
-    const result: string[] = []
-    for (let i = 5; i >= 0; i -= 1) {
-      result.push(shiftMonthToken(selectedMonth.value, -i))
-    }
-    return result
-  }
-
   const monthTokens = availableMonths.value
     .map((item) => String(item.value || ''))
     .filter((token) => /^\d{4}-\d{2}$/.test(token))
-    .sort((a, b) => b.localeCompare(a))
+    .sort((a, b) => a.localeCompare(b))
 
   if (monthTokens.length > 0) {
-    return monthTokens.slice(0, 6).reverse()
+    return monthTokens
   }
 
-  const current = toMonthToken(new Date())
+  const pivot = selectedMonth.value !== 'all' && /^\d{4}-\d{2}$/.test(selectedMonth.value)
+    ? selectedMonth.value
+    : toMonthToken(new Date())
   const fallback: string[] = []
   for (let i = 5; i >= 0; i -= 1) {
-    fallback.push(shiftMonthToken(current, -i))
+    fallback.push(shiftMonthToken(pivot, -i))
   }
   return fallback
 }
@@ -497,7 +485,8 @@ async function fetchPurchases(month: string): Promise<PurchaseRow[]> {
   for (let from = 0; ; from += PAGE_SIZE) {
     let query = supabase
       .from('purchases')
-      .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, order_date, target_month, is_fake, needs_review')
+      .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, order_date, target_month, is_fake, needs_review, filter_ver')
+      .not('filter_ver', 'is', null)
       .order('order_date', { ascending: false })
       .order('purchase_id', { ascending: false })
       .range(from, from + PAGE_SIZE - 1)
@@ -519,6 +508,7 @@ async function fetchPurchases(month: string): Promise<PurchaseRow[]> {
       target_month: String(row.target_month || ''),
       is_fake: Boolean(row.is_fake),
       needs_review: Boolean(row.needs_review),
+      filter_ver: row.filter_ver ? String(row.filter_ver) : null,
     })))
     if (chunk.length < PAGE_SIZE) break
   }
@@ -535,15 +525,16 @@ async function fetchTrendCounts(monthTokens: string[]): Promise<Map<string, numb
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from('purchases')
-      .select('target_month, is_fake, needs_review')
+      .select('target_month, is_fake, needs_review, filter_ver')
       .in('target_month', monthTokens)
+      .not('filter_ver', 'is', null)
       .order('target_month', { ascending: true })
       .range(from, from + PAGE_SIZE - 1)
 
     if (error) throw error
     const chunk = (data || []) as any[]
     for (const row of chunk) {
-      if (Boolean(row.is_fake) || Boolean(row.needs_review)) continue
+      if (Boolean(row.is_fake) || Boolean(row.needs_review) || !row.filter_ver) continue
       const month = String(row.target_month || '')
       countMap.set(month, (countMap.get(month) || 0) + 1)
     }
@@ -554,7 +545,7 @@ async function fetchTrendCounts(monthTokens: string[]): Promise<Map<string, numb
 }
 
 function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
-  const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review)
+  const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
 
   const grouped = new Map<string, PurchaseRow[]>()
   for (const row of realRows) {
@@ -568,7 +559,7 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
     const sorted = [...customerRows].sort((a, b) => parseOrderDate(b.order_date).getTime() - parseOrderDate(a.order_date).getTime())
     const latest = sorted[0]
     if (!latest) continue
-    const purchaseCount = new Set(customerRows.map((row) => purchaseCountKey(row))).size
+    const purchaseCount = new Set(customerRows.map((row) => purchaseDateKey(row)).filter(Boolean)).size
     if (purchaseCount <= 0) continue
     const lastOrder = String(latest.order_date || '').slice(0, 10)
     customerAggs.push({
@@ -581,7 +572,8 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
     })
   }
 
-  const repeatCustomers = customerAggs.filter((row) => row.purchaseCount >= 3).length
+  // 재구매 고객: 서로 다른 주문일 기준 2회 이상 구매한 고객
+  const repeatCustomers = customerAggs.filter((row) => row.purchaseCount >= 2).length
   const churnCustomers = customerAggs.filter((row) => row.daysSinceLastOrder > 90)
 
   currentMetrics.value = {

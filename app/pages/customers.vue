@@ -28,6 +28,7 @@
         <select v-model="filterPurchaseCount" class="select">
           <option value="">구매 횟수 전체</option>
           <option value="1">1회</option>
+          <option value="2">2회 이상</option>
           <option value="3">3회 이상</option>
           <option value="5">5회 이상</option>
           <option value="10">10회 이상</option>
@@ -432,6 +433,7 @@ async function fetchCustomers() {
       let query = supabase
         .from('purchases')
         .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, order_date, target_month')
+        .not('filter_ver', 'is', null)
         .eq('is_fake', false)
         .eq('needs_review', false)
         .order('order_date', { ascending: false })
@@ -496,6 +498,7 @@ async function fetchCustomerOrders(customer: CustomerRow) {
   let query = supabase
     .from('purchases')
     .select('order_date, product_name, option_info, target_month')
+    .not('filter_ver', 'is', null)
     .eq('is_fake', false)
     .eq('needs_review', false)
     .order('order_date', { ascending: false })
@@ -663,7 +666,7 @@ function applyFiltersFromQuery(query: LocationQuery) {
   filterChurn.value = churn === 'true' || churn === 'false' ? churn : ''
 
   const purchaseCount = asSingleQueryValue(query.purchaseCount) || asSingleQueryValue(query.purchase_count)
-  filterPurchaseCount.value = ['1', '3', '5', '10'].includes(purchaseCount) ? purchaseCount : ''
+  filterPurchaseCount.value = ['1', '2', '3', '5', '10'].includes(purchaseCount) ? purchaseCount : ''
 }
 
 function normalizedQuery(query: LocationQuery) {

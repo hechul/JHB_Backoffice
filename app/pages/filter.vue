@@ -1281,6 +1281,16 @@ async function runFilter() {
       if (error) throw error
     })
 
+    // 필터링 실행월의 자동 대상 주문에 필터 버전을 일괄 각인한다.
+    // (매칭되지 않아 업데이트 대상에서 빠진 실구매 건도 고객분석에 반영되도록 보장)
+    const { error: stampFilterVersionError } = await supabase
+      .from('purchases')
+      .update({ filter_ver: FILTER_VER })
+      .eq('target_month', month)
+      .eq('is_manual', false)
+      .is('filter_ver', null)
+    if (stampFilterVersionError) throw stampFilterVersionError
+
     const durationSec = (Date.now() - startedAt) / 1000
     progressPercent.value = 90
     progressLabel.value = '실행 이력을 기록하는 중...'
