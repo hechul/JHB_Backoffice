@@ -216,13 +216,13 @@ const periodEnabledPaths = ['/dashboard', '/customers', '/logs', '/upload', '/fi
 
 const analysisMenuItems = computed(() => {
   const items = [
-    { path: '/dashboard', label: '대시보드', icon: BarChart3, disabled: true },
+    { path: '/dashboard', label: '대시보드', icon: BarChart3, disabled: false },
     { path: '/customers', label: '고객 분석', icon: Users, disabled: false },
     { path: '/logs', label: '실행 이력', icon: FileText, disabled: false },
   ]
   if (isViewer.value) return items
   return [
-    { path: '/dashboard', label: '대시보드', icon: BarChart3, disabled: true },
+    { path: '/dashboard', label: '대시보드', icon: BarChart3, disabled: false },
     { path: '/upload', label: '데이터 업로드', icon: Upload, disabled: false },
     { path: '/filter', label: '필터링', icon: Filter, disabled: false },
     { path: '/customers', label: '고객 분석', icon: Users, disabled: false },

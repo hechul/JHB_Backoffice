@@ -70,6 +70,7 @@
               <th>펫 타입</th>
               <th>성장 단계</th>
               <th>구매 횟수</th>
+              <th>구매 상품 수</th>
               <th>최근 주문</th>
               <th>이탈 위험</th>
             </tr>
@@ -93,6 +94,7 @@
                 </div>
               </td>
               <td>{{ c.purchaseCount }}회</td>
+              <td>{{ c.productCount }}개</td>
               <td class="text-sm text-secondary">{{ c.lastOrder }}</td>
               <td>
                 <StatusBadge
@@ -105,7 +107,7 @@
               </td>
             </tr>
             <tr v-if="filteredCustomers.length === 0">
-              <td colspan="7" class="empty-row">조건에 맞는 고객이 없습니다.</td>
+              <td colspan="8" class="empty-row">조건에 맞는 고객이 없습니다.</td>
             </tr>
           </tbody>
         </table>
@@ -160,6 +162,10 @@
             <div class="detail-item">
               <span class="detail-label">총 구매 횟수</span>
               <span class="detail-value">{{ selectedCustomer.purchaseCount }}회</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">총 구매 상품 수</span>
+              <span class="detail-value">{{ selectedCustomer.productCount }}개</span>
             </div>
             <div class="detail-item">
               <span class="detail-label">이탈 위험</span>
@@ -222,6 +228,7 @@ interface CustomerRow {
   petType: 'DOG' | 'CAT' | 'BOTH'
   stage: CustomerStage
   purchaseCount: number
+  productCount: number
   lastOrder: string
   churnRisk: boolean
 }
@@ -362,12 +369,17 @@ function derivePetType(rows: PurchaseRow[]): 'DOG' | 'CAT' | 'BOTH' {
   return 'BOTH'
 }
 
-function purchaseCountKey(row: Pick<PurchaseRow, 'purchase_id' | 'order_date' | 'product_id' | 'buyer_id' | 'buyer_name'>): string {
+function purchaseDateKey(row: Pick<PurchaseRow, 'order_date'>): string {
+  return String(row.order_date || '').slice(0, 10)
+}
+
+function purchaseItemKey(row: Pick<PurchaseRow, 'purchase_id' | 'order_date' | 'product_id' | 'product_name' | 'buyer_id' | 'buyer_name'>): string {
   const purchaseId = String(row.purchase_id || '').trim()
   if (purchaseId) return purchaseId
   return [
-    String(row.order_date || '').trim(),
+    String(row.order_date || '').slice(0, 10),
     String(row.product_id || '').trim(),
+    String(row.product_name || '').trim(),
     String(row.buyer_id || '').trim(),
     String(row.buyer_name || '').trim(),
   ].join('|')
@@ -454,8 +466,9 @@ async function fetchCustomers() {
       const latest = sorted[0]
       if (!latest) continue
 
-      const purchaseCount = new Set(customerRows.map((row) => purchaseCountKey(row))).size
+      const purchaseCount = new Set(customerRows.map((row) => purchaseDateKey(row)).filter(Boolean)).size
       if (purchaseCount <= 0) continue
+      const productCount = new Set(customerRows.map((row) => purchaseItemKey(row)).filter(Boolean)).size
 
       const lastOrder = String(latest.order_date || '').slice(0, 10)
       result.push({
@@ -467,6 +480,7 @@ async function fetchCustomers() {
         petType: derivePetType(customerRows),
         stage: deriveStageByCount(purchaseCount),
         purchaseCount,
+        productCount,
         lastOrder,
         churnRisk: daysFromNow(lastOrder) > 90,
       })
@@ -756,13 +770,14 @@ async function openCustomerDetail(customer: CustomerRow) {
 }
 
 function downloadFilteredCustomers() {
-  const header = ['이름', 'ID', '펫타입', '성장단계', '구매횟수', '최근주문', '이탈위험']
+  const header = ['이름', 'ID', '펫타입', '성장단계', '구매횟수', '구매상품수', '최근주문', '이탈위험']
   const rows = filteredCustomers.value.map((c) => [
     c.name,
     c.id,
     c.petType === 'DOG' ? '강아지' : c.petType === 'CAT' ? '고양이' : '모두',
     stageLabel(c.stage),
     c.purchaseCount,
+    c.productCount,
     c.lastOrder,
     c.churnRisk ? '위험' : '정상',
   ])

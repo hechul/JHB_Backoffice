@@ -1,134 +1,171 @@
 <template>
   <div class="notification-bell" ref="bellRef">
-    <button class="bell-btn" @click="togglePanel" :class="{ active: showPanel }">
+    <button class="bell-btn" @click="togglePanel" :class="{ active: showPanel }" :disabled="!profileLoaded">
       <Bell :size="18" :stroke-width="1.8" />
       <span v-if="unreadCount > 0" class="bell-badge">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
     </button>
 
-    <!-- Dropdown Panel -->
     <Transition name="dropdown">
       <div v-if="showPanel" class="notification-panel">
         <div class="panel-header">
           <span class="panel-title">알림</span>
-          <button v-if="unreadCount > 0" class="mark-all-btn" @click="markAllRead">모두 읽음</button>
+          <div class="panel-actions">
+            <button class="panel-action-btn" :disabled="loading" @click.stop="refreshNotifications()">
+              <RefreshCw :size="12" :stroke-width="2" />
+              새로고침
+            </button>
+            <button v-if="unreadCount > 0" class="panel-action-btn" @click.stop="handleMarkAllRead">모두 읽음</button>
+          </div>
         </div>
+
         <div class="panel-body">
-          <div
-            v-for="notif in notifications"
-            :key="notif.id"
-            class="notif-item"
-            :class="{ unread: !notif.isRead }"
-            @click="handleNotifClick(notif)"
-          >
-            <div class="notif-icon-wrap" :class="notif.type + '-wrap'">
-              <component :is="getIcon(notif.type)" :size="14" :stroke-width="2" />
-            </div>
-            <div class="notif-content">
-              <span class="notif-title">{{ notif.title }}</span>
-              <span class="notif-message">{{ notif.message }}</span>
-              <span class="notif-time">{{ notif.time }}</span>
-            </div>
-            <div v-if="!notif.isRead" class="notif-dot"></div>
+          <div v-if="!tableReady" class="notif-empty">
+            알림 테이블이 설정되지 않았습니다.
+            <br />
+            <span class="text-xs text-muted">`docs/sql/2026-03-03_notifications_phase15.sql` 실행이 필요합니다.</span>
           </div>
-          <div v-if="notifications.length === 0" class="notif-empty">
-            새로운 알림이 없습니다.
+          <div v-else-if="loading && notifications.length === 0" class="notif-empty">
+            알림 불러오는 중...
           </div>
+          <div v-else-if="errorMessage" class="notif-empty">
+            {{ errorMessage }}
+          </div>
+          <template v-else>
+            <div
+              v-for="notif in displayNotifications"
+              :key="notif.id"
+              class="notif-item"
+              :class="{ unread: !notif.isRead }"
+              @click="handleNotifClick(notif)"
+            >
+              <div class="notif-icon-wrap" :class="notif.type + '-wrap'">
+                <component :is="getIcon(notif.type)" :size="14" :stroke-width="2" />
+              </div>
+              <div class="notif-content">
+                <span class="notif-title">{{ notif.title }}</span>
+                <span class="notif-message">{{ notif.message }}</span>
+                <span class="notif-time">{{ notif.timeLabel }}</span>
+              </div>
+              <div v-if="!notif.isRead" class="notif-dot"></div>
+            </div>
+
+            <div v-if="displayNotifications.length === 0" class="notif-empty">
+              새로운 알림이 없습니다.
+            </div>
+          </template>
         </div>
       </div>
     </Transition>
 
-    <!-- Overlay -->
     <div v-if="showPanel" class="bell-overlay" @click="showPanel = false"></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Bell, CheckCircle2, Upload, AlertTriangle, XCircle } from 'lucide-vue-next'
+import { Bell, CheckCircle2, Upload, AlertTriangle, XCircle, Info, RefreshCw } from 'lucide-vue-next'
+
+const route = useRoute()
+const { profileLoaded } = useCurrentUser()
+const {
+  notifications,
+  unreadCount,
+  loading,
+  tableReady,
+  errorMessage,
+  refreshNotifications,
+  markRead,
+  markAllRead,
+} = useNotifications()
 
 const showPanel = ref(false)
 const bellRef = ref<HTMLElement | null>(null)
+let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-interface Notification {
-  id: number
-  type: string
+interface DisplayNotification {
+  id: string
+  type: 'success' | 'info' | 'warning' | 'error'
   title: string
   message: string
-  time: string
+  timeLabel: string
   isRead: boolean
-  link?: string
+  link: string
 }
 
-const notifications = ref<Notification[]>([
-  {
-    id: 1,
-    type: 'success',
-    title: '분석 완료',
-    message: '340건 매칭, 1단계: 280건, 2단계: 42건',
-    time: '10분 전',
-    isRead: false,
-    link: '/filter',
-  },
-  {
-    id: 2,
-    type: 'info',
-    title: '데이터 업로드 완료',
-    message: '주문 572건 등록 (신규 58건, 스킵 514건)',
-    time: '12분 전',
-    isRead: false,
-    link: '/upload',
-  },
-  {
-    id: 3,
-    type: 'warning',
-    title: '수량 경고',
-    message: '수량 2개 이상 매칭 건 3건 확인 필요',
-    time: '1시간 전',
-    isRead: true,
-    link: '/filter',
-  },
-  {
-    id: 4,
-    type: 'error',
-    title: '상품 연결 실패',
-    message: '체험단 미션상품 2건 연결 실패 — 직접 연결 필요',
-    time: '어제',
-    isRead: true,
-    link: '/upload',
-  },
-])
+const displayNotifications = computed<DisplayNotification[]>(() => {
+  return notifications.value.map((notif) => ({
+    id: notif.id,
+    type: notif.type,
+    title: notif.title,
+    message: notif.message,
+    timeLabel: formatRelativeTime(notif.createdAt),
+    isRead: notif.isRead,
+    link: notif.link,
+  }))
+})
 
-const unreadCount = computed(() => notifications.value.filter(n => !n.isRead).length)
-
-function togglePanel() {
+async function togglePanel() {
   showPanel.value = !showPanel.value
-}
-
-function markRead(id: number) {
-  const notif = notifications.value.find(n => n.id === id)
-  if (notif) notif.isRead = true
-}
-
-function handleNotifClick(notif: Notification) {
-  markRead(notif.id)
-  if (notif.link) {
-    showPanel.value = false
-    navigateTo(notif.link)
+  if (showPanel.value) {
+    await refreshNotifications()
   }
 }
 
-function markAllRead() {
-  notifications.value.forEach(n => n.isRead = true)
+async function handleNotifClick(notif: DisplayNotification) {
+  await markRead(notif.id)
+  if (!notif.link) return
+  showPanel.value = false
+  await navigateTo(notif.link)
 }
 
-function getIcon(type: string) {
+async function handleMarkAllRead() {
+  await markAllRead()
+}
+
+function formatRelativeTime(value: string): string {
+  const target = new Date(value)
+  if (Number.isNaN(target.getTime())) return '-'
+  const diffMs = Date.now() - target.getTime()
+  if (diffMs < 0) return '방금 전'
+
+  const min = Math.floor(diffMs / (1000 * 60))
+  if (min < 1) return '방금 전'
+  if (min < 60) return `${min}분 전`
+  const hour = Math.floor(min / 60)
+  if (hour < 24) return `${hour}시간 전`
+  const day = Math.floor(hour / 24)
+  if (day < 7) return `${day}일 전`
+  return target.toLocaleDateString('ko-KR')
+}
+
+function getIcon(type: DisplayNotification['type']) {
   switch (type) {
-    case 'success': return CheckCircle2
-    case 'info': return Upload
-    case 'warning': return AlertTriangle
-    case 'error': return XCircle
-    default: return Bell
+    case 'success':
+      return CheckCircle2
+    case 'warning':
+      return AlertTriangle
+    case 'error':
+      return XCircle
+    case 'info':
+      return Upload
+    default:
+      return Info
   }
 }
+
+watch(() => route.fullPath, () => {
+  showPanel.value = false
+})
+
+onMounted(async () => {
+  await refreshNotifications()
+  refreshTimer = setInterval(() => {
+    refreshNotifications()
+  }, 60000)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
+})
 </script>
 
 <style scoped>
@@ -154,6 +191,11 @@ function getIcon(type: string) {
   color: var(--color-text);
 }
 
+.bell-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .bell-badge {
   position: absolute;
   top: 4px;
@@ -172,7 +214,6 @@ function getIcon(type: string) {
   line-height: 1;
 }
 
-/* Panel */
 .notification-panel {
   position: absolute;
   top: calc(100% + 8px);
@@ -192,6 +233,7 @@ function getIcon(type: string) {
   justify-content: space-between;
   padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--color-border-light);
+  gap: var(--space-sm);
 }
 
 .panel-title {
@@ -200,14 +242,32 @@ function getIcon(type: string) {
   color: var(--color-text);
 }
 
-.mark-all-btn {
-  font-size: 0.75rem;
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.panel-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.6875rem;
   color: var(--color-primary);
   font-weight: 500;
-  transition: opacity 0.15s ease;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  transition: all 0.12s ease;
 }
-.mark-all-btn:hover {
-  opacity: 0.7;
+
+.panel-action-btn:hover {
+  background: var(--color-bg);
+}
+
+.panel-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .panel-body {
@@ -244,10 +304,25 @@ function getIcon(type: string) {
   margin-top: 2px;
 }
 
-.success-wrap { background: var(--color-success-light); color: var(--color-success); }
-.info-wrap { background: var(--color-primary-light); color: var(--color-primary); }
-.warning-wrap { background: var(--color-warning-light); color: #B45309; }
-.error-wrap { background: var(--color-danger-light); color: var(--color-danger); }
+.success-wrap {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.info-wrap {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.warning-wrap {
+  background: var(--color-warning-light);
+  color: #B45309;
+}
+
+.error-wrap {
+  background: var(--color-danger-light);
+  color: var(--color-danger);
+}
 
 .notif-content {
   flex: 1;
@@ -289,6 +364,7 @@ function getIcon(type: string) {
   text-align: center;
   font-size: 0.8125rem;
   color: var(--color-text-muted);
+  line-height: 1.5;
 }
 
 .bell-overlay {
@@ -297,17 +373,19 @@ function getIcon(type: string) {
   z-index: 49;
 }
 
-/* Transition */
 .dropdown-enter-active {
   transition: all 0.15s ease-out;
 }
+
 .dropdown-leave-active {
   transition: all 0.1s ease-in;
 }
+
 .dropdown-enter-from {
   opacity: 0;
   transform: translateY(-4px);
 }
+
 .dropdown-leave-to {
   opacity: 0;
   transform: translateY(-4px);

@@ -322,6 +322,7 @@ interface MappingApplyResult {
 const supabase = useSupabaseClient()
 const toast = useToast()
 const { isViewer, profileLoaded, profileRevision } = useCurrentUser()
+const { createNotification } = useNotifications()
 const { selectedMonth, refreshMonths } = useAnalysisPeriod()
 const { getWorkflow, setUploadResult, setMappingPending, setUnmappedProducts, resetMonth } = useMonthlyWorkflow()
 
@@ -1437,6 +1438,20 @@ async function startUpload() {
       uploadResultTimestamp.value = getWorkflow(targetMonth).lastOrderUpload || ''
       toast.success('업로드가 완료되었습니다.')
     }, 300)
+
+    await createNotification({
+      type: unmappedList.length > 0 ? 'warning' : 'success',
+      title: '데이터 업로드 완료',
+      message: `${targetMonth} 주문 ${orderNew}건, 체험단 ${expInserted}건 반영${orderExcluded > 0 ? `, 제외 ${orderExcluded}건` : ''}${unmappedList.length > 0 ? `, 매핑 필요 ${unmappedList.length}건` : ''}`,
+      link: '/upload',
+      payload: {
+        targetMonth,
+        orderNew,
+        expInserted,
+        orderExcluded,
+        mappingPending: unmappedList.length,
+      },
+    })
   } catch (err) {
     console.error('Upload error:', err)
     try {
@@ -1448,6 +1463,17 @@ async function startUpload() {
     }
     uploadState.value = 'empty'
     uploadProgress.value = 0
+
+    await createNotification({
+      type: 'error',
+      title: '데이터 업로드 실패',
+      message: `${targetMonth} 업로드 중 오류가 발생했습니다. 자동 복구 후 다시 시도해 주세요.`,
+      link: '/upload',
+      payload: {
+        targetMonth,
+        error: String((err as any)?.message || '업로드 오류'),
+      },
+    })
   }
 }
 

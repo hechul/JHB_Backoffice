@@ -105,6 +105,7 @@ interface UserRow {
 
 const supabase = useSupabaseClient()
 const toast = useToast()
+const { createNotification } = useNotifications()
 const { user, isAdmin, profileLoaded, profileRevision } = useCurrentUser()
 
 const users = ref<UserRow[]>([])
@@ -231,6 +232,16 @@ async function updateRole(target: UserRow, nextRole: UserRole) {
 
     target.role = nextRole
     toast.success('권한이 변경되었습니다.')
+    await createNotification({
+      type: 'info',
+      title: '계정 권한 변경',
+      message: `${target.name} 계정 권한을 ${roleLabel(nextRole)}(으)로 변경했습니다.`,
+      link: '/settings/users',
+      payload: {
+        targetUserId: target.id,
+        nextRole,
+      },
+    })
   } catch (error: any) {
     console.error('Failed to update role:', error)
     toast.error(`권한 변경 실패: ${error?.message || '알 수 없는 오류'}`)
@@ -262,6 +273,16 @@ async function toggleStatus(target: UserRow) {
 
     target.status = nextStatus
     toast.success(nextStatus === 'active' ? '계정이 활성화되었습니다.' : '계정이 비활성화되었습니다.')
+    await createNotification({
+      type: nextStatus === 'active' ? 'success' : 'warning',
+      title: '계정 상태 변경',
+      message: `${target.name} 계정을 ${nextStatus === 'active' ? '활성화' : '비활성화'}했습니다.`,
+      link: '/settings/users',
+      payload: {
+        targetUserId: target.id,
+        nextStatus,
+      },
+    })
   } catch (error: any) {
     console.error('Failed to update status:', error)
     toast.error(`상태 변경 실패: ${error?.message || '알 수 없는 오류'}`)

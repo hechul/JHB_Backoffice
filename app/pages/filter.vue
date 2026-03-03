@@ -616,6 +616,7 @@ const FETCH_PAGE_SIZE = 1000
 const supabase = useSupabaseClient()
 const toast = useToast()
 const { user, isViewer, profileLoaded, profileRevision } = useCurrentUser()
+const { createNotification } = useNotifications()
 const { selectedMonth } = useAnalysisPeriod()
 const { setFilterResult, setPendingReview } = useMonthlyWorkflow()
 
@@ -1311,6 +1312,19 @@ async function runFilter() {
     setPendingReview(month, manualRows.value.length)
     if (manualRows.value.length > 0) activeTab.value = 'manual'
 
+    await createNotification({
+      type: manualRows.value.length > 0 ? 'warning' : 'success',
+      title: '필터링 완료',
+      message: `${month} 매칭 ${matching.matches.length}건, 확인 필요 ${manualRows.value.length}건`,
+      link: '/filter',
+      payload: {
+        targetMonth: month,
+        matched: matching.matches.length,
+        pendingReview: manualRows.value.length,
+        unmatchedExperiences: matching.unmatchedReasons.size,
+      },
+    })
+
     toast.success(`분석 완료: 매칭 ${matching.matches.length}건, 확인 필요 ${manualRows.value.length}건`)
   } catch (error: any) {
     console.error('Failed to run filter:', error)
@@ -1352,6 +1366,17 @@ async function runFilter() {
     } catch {
       // ignore logging failure
     }
+
+    await createNotification({
+      type: 'error',
+      title: '필터링 실패',
+      message: `${month} 필터링 중 오류가 발생했습니다. 실행 이력에서 상세 원인을 확인해 주세요.`,
+      link: '/logs',
+      payload: {
+        targetMonth: month,
+        error: error?.message || '필터링 실행 오류',
+      },
+    })
   } finally {
     if (filterState.value !== 'failed') syncFilterState()
   }

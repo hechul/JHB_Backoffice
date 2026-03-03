@@ -1,25 +1,28 @@
 <template>
   <div class="dashboard">
-    <!-- KPI Cards -->
+    <div class="status-row">
+      <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
+      <StatusBadge v-if="dashboardLoading" label="데이터 불러오는 중" variant="info" />
+      <span v-else class="text-xs text-muted">실구매 주문 {{ currentMetrics.realPurchase.toLocaleString() }}건 기준</span>
+    </div>
+
     <div class="kpi-grid">
       <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers()">
         <KpiCard
-          label="전체 주문"
-          :value="currentMetrics.totalOrders"
-          :icon="ShoppingBag"
+          label="실구매 고객 수"
+          :value="currentMetrics.realCustomers"
+          :icon="UserPlus"
           icon-bg="#EFF6FF"
           icon-color="#2563EB"
-          :change="12.5"
         />
       </div>
-      <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers({ purchaseType: 'real' })">
+      <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers()">
         <KpiCard
-          label="실구매"
+          label="실구매 건수"
           :value="currentMetrics.realPurchase"
           :icon="CheckCircle"
           icon-bg="#ECFDF5"
           icon-color="#10B981"
-          :change="8.3"
         />
       </div>
       <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers({ purchaseCount: '3' })">
@@ -29,28 +32,24 @@
           :icon="UserCheck"
           icon-bg="#F0FDF4"
           icon-color="#16A34A"
-          :change="5.2"
         />
       </div>
-      <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers()">
+      <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers({ churn: 'true' })">
         <KpiCard
-          label="신규 고객"
-          :value="currentMetrics.newCustomers"
-          :icon="UserPlus"
-          icon-bg="#EFF6FF"
-          icon-color="#3B82F6"
-          :change="14.7"
+          label="이탈 위험 고객"
+          :value="currentMetrics.churnCount"
+          :icon="MoveRight"
+          icon-bg="#FEF2F2"
+          icon-color="#DC2626"
         />
       </div>
     </div>
 
-    <!-- Charts Row -->
     <div class="charts-grid">
-      <!-- 월별 실구매 추이 -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">월별 실구매 추이</h3>
-          <StatusBadge label="최근 6개월" variant="neutral" />
+          <StatusBadge :label="trendRangeLabel" variant="neutral" />
         </div>
         <div class="trend-chart">
           <div class="trend-chart-area">
@@ -59,7 +58,6 @@
         </div>
       </div>
 
-      <!-- 펫 타입 분포 -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">실구매 고객 펫 타입</h3>
@@ -72,26 +70,26 @@
             <div v-for="p in petData" :key="p.label" class="pet-legend-item">
               <span class="legend-dot" :style="{ background: p.color }"></span>
               <span class="legend-label">{{ p.label }}</span>
-              <span class="legend-value">{{ p.value }}%</span>
+              <span class="legend-value">{{ p.count }}명 · {{ p.value }}%</span>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Bottom Row -->
     <div class="bottom-grid">
-      <!-- 인기 상품 TOP 5 -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">실구매 인기 상품 TOP 5</h3>
           <StatusBadge :label="`${selectedPeriodLabel} 기준`" variant="neutral" />
         </div>
-        <div class="top-products">
-          <div v-for="(item, idx) in topProducts" :key="item.name" class="top-product-item">
+        <div v-if="topProducts.length === 0" class="empty-inline">실구매 상품 데이터가 없습니다.</div>
+        <div v-else class="top-products">
+          <div v-for="(item, idx) in topProducts" :key="item.name + idx" class="top-product-item">
             <span class="top-product-rank" :class="'rank-' + (idx + 1)">{{ idx + 1 }}</span>
             <div class="top-product-info">
               <span class="top-product-name">{{ item.name }}</span>
+              <span class="top-product-option">옵션: {{ item.optionInfo || '-' }}</span>
               <span class="top-product-meta">{{ item.pet }} · {{ item.stage }}</span>
             </div>
             <div class="top-product-stats">
@@ -104,43 +102,48 @@
         </div>
       </div>
 
-      <!-- 성장 단계별 고객 수 -->
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">실구매 고객 성장 단계</h3>
+          <h3 class="card-title">고객 성장 단계</h3>
         </div>
         <div class="stage-bars">
           <div v-for="s in stageData" :key="s.name" class="stage-item">
             <div class="stage-bar-outer">
-              <div
-                class="stage-bar-inner"
-                :style="{ height: s.percent + '%' }"
-              ></div>
+              <div class="stage-bar-inner" :style="{ height: s.percent + '%' }"></div>
             </div>
             <span class="stage-count">{{ s.count }}</span>
             <span class="stage-name">{{ s.name }}</span>
           </div>
         </div>
+        <div class="stage-actions">
+          <button
+            v-for="s in stageData"
+            :key="`stage-action-${s.name}`"
+            class="btn btn-ghost btn-sm stage-action-btn"
+            @click="navigateToCustomers({ stage: stageQueryByName(s.name) })"
+          >
+            {{ s.name }} 고객 목록 보기
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Churn Row -->
     <div class="single-grid">
-      <!-- 이탈 위험 고객 -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">이탈 위험 고객</h3>
           <StatusBadge :label="`${currentMetrics.churnCount}명`" variant="danger" dot />
         </div>
-        <div class="churn-list">
-          <div v-for="c in churnData" :key="c.name" class="churn-item">
+        <div v-if="churnData.length === 0" class="empty-inline">현재 기준 이탈 위험 고객이 없습니다.</div>
+        <div v-else class="churn-list">
+          <div v-for="c in churnData" :key="`${c.name}-${c.id}`" class="churn-item">
             <div class="churn-info">
               <span class="churn-name">{{ c.name }}</span>
               <span class="churn-id">{{ c.id }}</span>
             </div>
             <div class="churn-meta">
               <span class="churn-days">{{ c.days }}일 경과</span>
-              <StatusBadge :label="c.pet" :variant="c.pet === '강아지' ? 'primary' : 'info'" />
+              <StatusBadge :label="c.pet" :variant="c.pet === '강아지' ? 'primary' : c.pet === '고양이' ? 'warning' : 'neutral'" />
             </div>
           </div>
         </div>
@@ -155,7 +158,6 @@
 
 <script setup lang="ts">
 import {
-  ShoppingBag,
   CheckCircle,
   UserCheck,
   UserPlus,
@@ -165,10 +167,113 @@ import { Chart, DoughnutController, ArcElement, Tooltip, Legend, LineController,
 
 Chart.register(DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler)
 
+interface PurchaseRow {
+  purchase_id: string
+  customer_key: string
+  buyer_name: string
+  buyer_id: string
+  product_id: string
+  product_name: string
+  option_info: string
+  order_date: string
+  target_month: string
+  is_fake: boolean
+  needs_review: boolean
+}
+
+interface ProductMeta {
+  pet_type: 'DOG' | 'CAT' | 'BOTH'
+  stage: number | null
+}
+
+interface CustomerAgg {
+  name: string
+  id: string
+  petType: 'DOG' | 'CAT' | 'BOTH'
+  purchaseCount: number
+  lastOrder: string
+  daysSinceLastOrder: number
+}
+
+interface DashboardMetrics {
+  realCustomers: number
+  realPurchase: number
+  repeatCustomers: number
+  churnCount: number
+}
+
+interface PetDatum {
+  label: '강아지' | '고양이' | '모두'
+  count: number
+  value: number
+  color: string
+}
+
+interface TopProductRow {
+  name: string
+  optionInfo: string
+  pet: string
+  stage: string
+  count: number
+  percent: number
+}
+
+interface StageDatum {
+  name: string
+  count: number
+  percent: number
+}
+
+interface ChurnRow {
+  name: string
+  id: string
+  days: number
+  pet: string
+}
+
 const router = useRouter()
-const { selectedMonth, selectedPeriodLabel } = useAnalysisPeriod()
+const supabase = useSupabaseClient()
+const toast = useToast()
+const { selectedMonth, selectedPeriodLabel, availableMonths } = useAnalysisPeriod()
+const { profileLoaded, profileRevision } = useCurrentUser()
+
 const petChartCanvas = ref<HTMLCanvasElement | null>(null)
 const trendChartCanvas = ref<HTMLCanvasElement | null>(null)
+const petChartInstance = shallowRef<Chart | null>(null)
+const trendChartInstance = shallowRef<Chart | null>(null)
+
+const dashboardLoading = ref(false)
+const currentMetrics = ref<DashboardMetrics>({
+  realCustomers: 0,
+  realPurchase: 0,
+  repeatCustomers: 0,
+  churnCount: 0,
+})
+const petData = ref<PetDatum[]>([
+  { label: '강아지', count: 0, value: 0, color: '#2563EB' },
+  { label: '고양이', count: 0, value: 0, color: '#F59E0B' },
+  { label: '모두', count: 0, value: 0, color: '#94A3B8' },
+])
+const topProducts = ref<TopProductRow[]>([])
+const stageData = ref<StageDatum[]>([
+  { name: '입문', count: 0, percent: 0 },
+  { name: '성장', count: 0, percent: 0 },
+  { name: '프리미엄', count: 0, percent: 0 },
+])
+const churnData = ref<ChurnRow[]>([])
+const trendMonthTokens = ref<string[]>([])
+const trendValues = ref<number[]>([])
+
+const productMetaById = ref<Record<string, ProductMeta>>({})
+const productMetaByName = ref<Record<string, ProductMeta>>({})
+
+const trendRangeLabel = computed(() => {
+  if (trendMonthTokens.value.length === 0) return '최근 6개월'
+  if (trendMonthTokens.value.length === 1) return `${formatMonthLabel(trendMonthTokens.value[0])}`
+  const first = formatMonthLabel(trendMonthTokens.value[0])
+  const last = formatMonthLabel(trendMonthTokens.value[trendMonthTokens.value.length - 1])
+  return `${first} ~ ${last}`
+})
 
 function navigateToCustomers(query: Record<string, string> = {}) {
   const withMonth = selectedMonth.value !== 'all'
@@ -177,168 +282,535 @@ function navigateToCustomers(query: Record<string, string> = {}) {
   router.push({ path: '/customers', query: withMonth })
 }
 
-const metricsByMonth: Record<string, {
-  totalOrders: number
-  realPurchase: number
-  repeatCustomers: number
-  newCustomers: number
-  churnCount: number
-}> = {
-  '2025-02': {
-    totalOrders: 1842,
-    realPurchase: 1502,
-    repeatCustomers: 312,
-    newCustomers: 186,
-    churnCount: 8,
-  },
-  '2025-01': {
-    totalOrders: 1650,
-    realPurchase: 1334,
-    repeatCustomers: 284,
-    newCustomers: 172,
-    churnCount: 11,
-  },
-  '2024-12': {
-    totalOrders: 1580,
-    realPurchase: 1211,
-    repeatCustomers: 243,
-    newCustomers: 149,
-    churnCount: 15,
-  },
+function stageQueryByName(stageName: string): string {
+  if (stageName === '입문') return 'Entry'
+  if (stageName === '성장') return 'Growth'
+  if (stageName === '프리미엄') return 'Premium'
+  return ''
 }
 
-const allMetrics = {
-  totalOrders: 5072,
-  realPurchase: 4047,
-  repeatCustomers: 839,
-  newCustomers: 507,
-  churnCount: 34,
+function parseOrderDate(value: string): Date {
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? new Date('1970-01-01') : d
 }
 
-const currentMetrics = computed(() => {
-  if (selectedMonth.value === 'all') return allMetrics
-  return metricsByMonth[selectedMonth.value] || metricsByMonth['2025-02']!
-})
+function daysFromNow(dateStr: string): number {
+  const ms = Date.now() - parseOrderDate(dateStr).getTime()
+  return Math.floor(ms / (1000 * 60 * 60 * 24))
+}
 
-// Data
-const petData = [
-  { label: '강아지', value: 58, color: '#2563EB' },
-  { label: '고양이', value: 31, color: '#60A5FA' },
-  { label: '모두', value: 11, color: '#BFDBFE' },
-]
+function normalizeForMatch(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^0-9a-z가-힣]/g, '')
+}
 
-const topProducts = [
-  { name: '유산균 파우더 30포', pet: '강아지', stage: '성장기', count: 127, percent: 100 },
-  { name: '연어 트릿 대형견 200g', pet: '강아지', stage: '성견', count: 98, percent: 77 },
-  { name: '오메가3 캡슐 60정', pet: '공용', stage: '시니어', count: 82, percent: 65 },
-  { name: '치석껌 소형견용 100g', pet: '강아지', stage: '성견', count: 71, percent: 56 },
-  { name: '관절 영양제 500g', pet: '공용', stage: '시니어', count: 63, percent: 50 },
-]
+function normalizeOptionInfo(value: string): string {
+  return String(value || '').trim() || '-'
+}
 
-const stageData = [
-  { name: '입문', count: 420, percent: 100 },
-  { name: '성장', count: 312, percent: 74 },
-  { name: '핵심', count: 186, percent: 44 },
-  { name: '프리미엄', count: 64, percent: 15 },
-]
+function normalizeMissionProductName(rawName: string): string {
+  const name = String(rawName || '').trim()
+  if (!name) return ''
 
-const churnData = [
-  { name: '김지윤', id: 'kimj****', days: 78, pet: '강아지' },
-  { name: '이서현', id: 'leese***', days: 72, pet: '고양이' },
-  { name: '박민수', id: 'park****', days: 68, pet: '강아지' },
-  { name: '최유진', id: 'choi****', days: 65, pet: '모두' },
-  { name: '정하늘', id: 'jung****', days: 62, pet: '강아지' },
-]
+  const normalizedName = normalizeForMatch(name)
+  const hasFreezeDried = normalizedName.includes('동결건조') || normalizedName.includes('동견건조')
+  const hasAttachmentTreat = normalizedName.includes('애착트릿')
+  if (hasFreezeDried && !hasAttachmentTreat) return '동결건조(리뉴얼전)'
 
-// Trend chart data
-const trendMonths = ['2024.09', '2024.10', '2024.11', '2024.12', '2025.01', '2025.02']
-const trendValues = [1120, 1245, 1180, 1350, 1420, 1502]
+  if (normalizedName.includes('애착트릿')) return '애착트릿'
+  if (normalizedName.includes('츄라잇')) return '츄라잇'
+  if (normalizedName.includes('케어푸')) return '케어푸'
+  if (normalizedName.includes('두부모래')) return '두부모래'
+  if (normalizedName.includes('이즈바이트')) return '이즈바이트'
+  if (normalizedName.includes('엔자이츄')) return '엔자이츄'
+  if (normalizedName.includes('트릿백')) return '미니 트릿백'
+  if (normalizedName.includes('츄르짜개')) return '츄르짜개 (고양이 간식 디스펜서)'
+  if (normalizedName.includes('도시락')) return '도시락 샘플팩'
+  if (normalizedName.includes('맛보기')) return '전제품 맛보기 샘플'
 
-onMounted(() => {
-  // Pet donut chart
-  if (petChartCanvas.value) {
-    new Chart(petChartCanvas.value, {
-      type: 'doughnut',
-      data: {
-        labels: petData.map(p => p.label),
-        datasets: [{
-          data: petData.map(p => p.value),
-          backgroundColor: petData.map(p => p.color),
-          borderWidth: 0,
-          borderRadius: 4,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '70%',
-        plugins: {
-          legend: { display: false },
-        },
-      },
+  return name
+}
+
+function sanitizePetType(value: unknown): ProductMeta['pet_type'] {
+  const type = String(value || '').toUpperCase()
+  if (type === 'DOG') return 'DOG'
+  if (type === 'CAT') return 'CAT'
+  if (type === 'BOTH' || type === 'ALL') return 'BOTH'
+  return 'BOTH'
+}
+
+function stageLabelByCode(code: number | null | undefined): string {
+  if (code === 1) return '입문'
+  if (code === 2) return '성장'
+  if (code === 3) return '핵심'
+  if (code === 4) return '프리미엄'
+  return '기타'
+}
+
+function petLabel(type: ProductMeta['pet_type']): string {
+  if (type === 'DOG') return '강아지'
+  if (type === 'CAT') return '고양이'
+  return '모두'
+}
+
+function inferPetTypeFromName(productName: string): ProductMeta['pet_type'] {
+  const normalized = normalizeForMatch(productName)
+  const hasDog = normalized.includes('강아지') || normalized.includes('강견') || normalized.includes('견')
+  const hasCat = normalized.includes('고양이') || normalized.includes('묘') || normalized.includes('냥')
+  if (hasDog && hasCat) return 'BOTH'
+  if (hasDog) return 'DOG'
+  if (hasCat) return 'CAT'
+  return 'BOTH'
+}
+
+function deriveCustomerStage(purchaseCount: number): StageDatum['name'] {
+  if (purchaseCount >= 5) return '프리미엄'
+  if (purchaseCount >= 4) return '성장'
+  return '입문'
+}
+
+function customerGroupKey(row: PurchaseRow): string {
+  return String(row.customer_key || '').trim() || `${String(row.buyer_id || '').trim()}_${String(row.buyer_name || '').trim()}`
+}
+
+function purchaseCountKey(row: Pick<PurchaseRow, 'purchase_id' | 'order_date' | 'product_id' | 'buyer_id' | 'buyer_name'>): string {
+  const purchaseId = String(row.purchase_id || '').trim()
+  if (purchaseId) return purchaseId
+  return [
+    String(row.order_date || '').trim(),
+    String(row.product_id || '').trim(),
+    String(row.buyer_id || '').trim(),
+    String(row.buyer_name || '').trim(),
+  ].join('|')
+}
+
+function derivePetType(rows: PurchaseRow[]): ProductMeta['pet_type'] {
+  let hasDog = false
+  let hasCat = false
+
+  for (const row of rows) {
+    const idKey = String(row.product_id || '').trim()
+    const metaById = idKey ? productMetaById.value[idKey] : null
+    const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
+    const metaByName = nameKey ? productMetaByName.value[nameKey] : null
+    const petType = metaById?.pet_type || metaByName?.pet_type || inferPetTypeFromName(row.product_name || '')
+
+    if (petType === 'BOTH') return 'BOTH'
+    if (petType === 'DOG') hasDog = true
+    if (petType === 'CAT') hasCat = true
+    if (hasDog && hasCat) return 'BOTH'
+  }
+
+  if (hasDog) return 'DOG'
+  if (hasCat) return 'CAT'
+  return 'BOTH'
+}
+
+function maskBuyerId(raw: string): string {
+  const value = String(raw || '').trim()
+  if (!value) return '-'
+  if (value.length <= 4) return value
+  return `${value.slice(0, 4)}****`
+}
+
+function toMonthToken(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+function shiftMonthToken(token: string, offset: number): string {
+  const [y, m] = token.split('-').map((part) => Number(part))
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return token
+  const d = new Date(y, m - 1, 1)
+  d.setMonth(d.getMonth() + offset)
+  return toMonthToken(d)
+}
+
+function formatMonthLabel(token: string): string {
+  const [y, m] = String(token || '').split('-')
+  if (!y || !m) return token
+  return `${y}.${m}`
+}
+
+function buildTrendMonths(): string[] {
+  if (selectedMonth.value !== 'all') {
+    const result: string[] = []
+    for (let i = 5; i >= 0; i -= 1) {
+      result.push(shiftMonthToken(selectedMonth.value, -i))
+    }
+    return result
+  }
+
+  const monthTokens = availableMonths.value
+    .map((item) => String(item.value || ''))
+    .filter((token) => /^\d{4}-\d{2}$/.test(token))
+    .sort((a, b) => b.localeCompare(a))
+
+  if (monthTokens.length > 0) {
+    return monthTokens.slice(0, 6).reverse()
+  }
+
+  const current = toMonthToken(new Date())
+  const fallback: string[] = []
+  for (let i = 5; i >= 0; i -= 1) {
+    fallback.push(shiftMonthToken(current, -i))
+  }
+  return fallback
+}
+
+async function loadProductMeta() {
+  const { data, error } = await supabase
+    .from('products')
+    .select('product_id, product_name, pet_type, stage')
+    .is('deleted_at', null)
+
+  if (error) {
+    throw error
+  }
+
+  const byId: Record<string, ProductMeta> = {}
+  const byName: Record<string, ProductMeta> = {}
+  for (const row of (data || []) as any[]) {
+    const petType = sanitizePetType(row.pet_type)
+    const stage = Number.isFinite(Number(row.stage)) ? Number(row.stage) : null
+    const meta = { pet_type: petType, stage }
+
+    const productId = String(row.product_id || '').trim()
+    if (productId) byId[productId] = meta
+
+    const rawName = String(row.product_name || '').trim()
+    const canonicalName = normalizeMissionProductName(rawName)
+    const normalizedRaw = normalizeForMatch(rawName)
+    const normalizedCanonical = normalizeForMatch(canonicalName)
+    if (normalizedRaw) byName[normalizedRaw] = meta
+    if (normalizedCanonical) byName[normalizedCanonical] = meta
+  }
+
+  productMetaById.value = byId
+  productMetaByName.value = byName
+}
+
+async function fetchPurchases(month: string): Promise<PurchaseRow[]> {
+  const rows: PurchaseRow[] = []
+  const PAGE_SIZE = 1000
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    let query = supabase
+      .from('purchases')
+      .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, order_date, target_month, is_fake, needs_review')
+      .order('order_date', { ascending: false })
+      .order('purchase_id', { ascending: false })
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (month !== 'all') query = query.eq('target_month', month)
+
+    const { data, error } = await query
+    if (error) throw error
+    const chunk = (data || []) as any[]
+    rows.push(...chunk.map((row) => ({
+      purchase_id: String(row.purchase_id || ''),
+      customer_key: String(row.customer_key || ''),
+      buyer_name: String(row.buyer_name || ''),
+      buyer_id: String(row.buyer_id || ''),
+      product_id: String(row.product_id || ''),
+      product_name: String(row.product_name || ''),
+      option_info: String(row.option_info || ''),
+      order_date: String(row.order_date || ''),
+      target_month: String(row.target_month || ''),
+      is_fake: Boolean(row.is_fake),
+      needs_review: Boolean(row.needs_review),
+    })))
+    if (chunk.length < PAGE_SIZE) break
+  }
+
+  return rows
+}
+
+async function fetchTrendCounts(monthTokens: string[]): Promise<Map<string, number>> {
+  const countMap = new Map<string, number>()
+  for (const month of monthTokens) countMap.set(month, 0)
+  if (monthTokens.length === 0) return countMap
+
+  const PAGE_SIZE = 1000
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('purchases')
+      .select('target_month, is_fake, needs_review')
+      .in('target_month', monthTokens)
+      .order('target_month', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (error) throw error
+    const chunk = (data || []) as any[]
+    for (const row of chunk) {
+      if (Boolean(row.is_fake) || Boolean(row.needs_review)) continue
+      const month = String(row.target_month || '')
+      countMap.set(month, (countMap.get(month) || 0) + 1)
+    }
+    if (chunk.length < PAGE_SIZE) break
+  }
+
+  return countMap
+}
+
+function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
+  const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review)
+
+  const grouped = new Map<string, PurchaseRow[]>()
+  for (const row of realRows) {
+    const key = customerGroupKey(row)
+    if (!grouped.has(key)) grouped.set(key, [])
+    grouped.get(key)!.push(row)
+  }
+
+  const customerAggs: CustomerAgg[] = []
+  for (const customerRows of grouped.values()) {
+    const sorted = [...customerRows].sort((a, b) => parseOrderDate(b.order_date).getTime() - parseOrderDate(a.order_date).getTime())
+    const latest = sorted[0]
+    if (!latest) continue
+    const purchaseCount = new Set(customerRows.map((row) => purchaseCountKey(row))).size
+    if (purchaseCount <= 0) continue
+    const lastOrder = String(latest.order_date || '').slice(0, 10)
+    customerAggs.push({
+      name: latest.buyer_name || '-',
+      id: latest.buyer_id || '-',
+      petType: derivePetType(customerRows),
+      purchaseCount,
+      lastOrder,
+      daysSinceLastOrder: daysFromNow(lastOrder),
     })
   }
 
-  // Trend line chart
-  if (trendChartCanvas.value) {
-    new Chart(trendChartCanvas.value, {
-      type: 'line',
-      data: {
-        labels: trendMonths,
-        datasets: [{
-          data: trendValues,
-          borderColor: '#2563EB',
-          backgroundColor: 'rgba(37, 99, 235, 0.08)',
-          borderWidth: 2.5,
-          pointBackgroundColor: '#2563EB',
-          pointBorderColor: '#fff',
-          pointBorderWidth: 2,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          tension: 0.3,
-          fill: true,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: '#1E293B',
-            titleFont: { size: 12 },
-            bodyFont: { size: 13, weight: 'bold' as const },
-            padding: 10,
-            cornerRadius: 6,
-            callbacks: {
-              label: (ctx) => `${(ctx.parsed.y ?? 0).toLocaleString()}건`,
-            },
-          },
-        },
-        scales: {
-          x: {
-            grid: { display: false },
-            ticks: {
-              font: { size: 11 },
-              color: '#9CA3AF',
-            },
-          },
-          y: {
-            grid: {
-              color: '#F3F4F6',
-            },
-            ticks: {
-              font: { size: 11 },
-              color: '#9CA3AF',
-              callback: (value) => value.toLocaleString(),
-            },
-            beginAtZero: false,
-            suggestedMin: 900,
-          },
-        },
-      },
-    })
+  const repeatCustomers = customerAggs.filter((row) => row.purchaseCount >= 3).length
+  const churnCustomers = customerAggs.filter((row) => row.daysSinceLastOrder > 90)
+
+  currentMetrics.value = {
+    realCustomers: customerAggs.length,
+    realPurchase: realRows.length,
+    repeatCustomers,
+    churnCount: churnCustomers.length,
   }
+
+  const dogCount = customerAggs.filter((row) => row.petType === 'DOG').length
+  const catCount = customerAggs.filter((row) => row.petType === 'CAT').length
+  const bothCount = customerAggs.filter((row) => row.petType === 'BOTH').length
+  const petTotal = Math.max(customerAggs.length, 1)
+  petData.value = [
+    { label: '강아지', count: dogCount, value: Math.round((dogCount / petTotal) * 100), color: '#2563EB' },
+    { label: '고양이', count: catCount, value: Math.round((catCount / petTotal) * 100), color: '#F59E0B' },
+    { label: '모두', count: bothCount, value: Math.round((bothCount / petTotal) * 100), color: '#94A3B8' },
+  ]
+
+  const stageCountMap = {
+    입문: 0,
+    성장: 0,
+    프리미엄: 0,
+  }
+  for (const customer of customerAggs) {
+    stageCountMap[deriveCustomerStage(customer.purchaseCount)] += 1
+  }
+  const stageMax = Math.max(stageCountMap.입문, stageCountMap.성장, stageCountMap.프리미엄, 1)
+  stageData.value = [
+    { name: '입문', count: stageCountMap.입문, percent: Math.round((stageCountMap.입문 / stageMax) * 100) },
+    { name: '성장', count: stageCountMap.성장, percent: Math.round((stageCountMap.성장 / stageMax) * 100) },
+    { name: '프리미엄', count: stageCountMap.프리미엄, percent: Math.round((stageCountMap.프리미엄 / stageMax) * 100) },
+  ]
+
+  const productMap = new Map<string, {
+    name: string
+    optionInfo: string
+    count: number
+    petType: ProductMeta['pet_type']
+    stage: number | null
+  }>()
+  for (const row of realRows) {
+    const baseKey = String(row.product_id || '').trim() || normalizeForMatch(row.product_name || '')
+    if (!baseKey) continue
+    const optionInfo = normalizeOptionInfo(row.option_info)
+    const optionKey = normalizeForMatch(optionInfo)
+    const key = `${baseKey}::${optionKey}`
+
+    const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
+    const meta = productMetaById.value[String(row.product_id || '').trim()] || productMetaByName.value[nameKey]
+    const nextPetType = meta?.pet_type || inferPetTypeFromName(row.product_name || '')
+    const nextStage = meta?.stage ?? null
+
+    if (!productMap.has(key)) {
+      productMap.set(key, {
+        name: row.product_name || '-',
+        optionInfo,
+        count: 0,
+        petType: nextPetType,
+        stage: nextStage,
+      })
+    }
+    productMap.get(key)!.count += 1
+  }
+
+  const top = Array.from(productMap.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+  const topMax = Math.max(top[0]?.count || 1, 1)
+  topProducts.value = top.map((item) => ({
+    name: item.name,
+    optionInfo: item.optionInfo,
+    pet: petLabel(item.petType),
+    stage: stageLabelByCode(item.stage),
+    count: item.count,
+    percent: Math.round((item.count / topMax) * 100),
+  }))
+
+  churnData.value = churnCustomers
+    .sort((a, b) => b.daysSinceLastOrder - a.daysSinceLastOrder)
+    .slice(0, 5)
+    .map((item) => ({
+      name: item.name,
+      id: maskBuyerId(item.id),
+      days: item.daysSinceLastOrder,
+      pet: petLabel(item.petType),
+    }))
+}
+
+async function fetchDashboardData() {
+  if (!profileLoaded.value) return
+  dashboardLoading.value = true
+  try {
+    await loadProductMeta()
+
+    const scopeRows = await fetchPurchases(selectedMonth.value)
+    applyDashboardMetrics(scopeRows)
+
+    const trendMonths = buildTrendMonths()
+    const trendMap = await fetchTrendCounts(trendMonths)
+    trendMonthTokens.value = trendMonths
+    trendValues.value = trendMonths.map((month) => trendMap.get(month) || 0)
+  } catch (error: any) {
+    console.error('Failed to fetch dashboard data:', error)
+    toast.error(`대시보드 데이터를 불러오지 못했습니다: ${error?.message || '알 수 없는 오류'}`)
+  } finally {
+    dashboardLoading.value = false
+  }
+}
+
+function renderPetChart() {
+  if (!petChartCanvas.value) return
+  if (petChartInstance.value) {
+    petChartInstance.value.destroy()
+    petChartInstance.value = null
+  }
+
+  const values = petData.value.map((p) => p.count)
+  const hasData = values.some((value) => value > 0)
+
+  petChartInstance.value = new Chart(petChartCanvas.value, {
+    type: 'doughnut',
+    data: {
+      labels: hasData ? petData.value.map((p) => p.label) : ['데이터 없음'],
+      datasets: [{
+        data: hasData ? values : [1],
+        backgroundColor: hasData ? petData.value.map((p) => p.color) : ['#E5E7EB'],
+        borderWidth: 0,
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '70%',
+      plugins: {
+        legend: { display: false },
+      },
+    },
+  })
+}
+
+function renderTrendChart() {
+  if (!trendChartCanvas.value) return
+  if (trendChartInstance.value) {
+    trendChartInstance.value.destroy()
+    trendChartInstance.value = null
+  }
+
+  trendChartInstance.value = new Chart(trendChartCanvas.value, {
+    type: 'line',
+    data: {
+      labels: trendMonthTokens.value.map((month) => formatMonthLabel(month)),
+      datasets: [{
+        data: trendValues.value,
+        borderColor: '#2563EB',
+        backgroundColor: 'rgba(37, 99, 235, 0.08)',
+        borderWidth: 2.5,
+        pointBackgroundColor: '#2563EB',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        tension: 0.3,
+        fill: true,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1E293B',
+          titleFont: { size: 12 },
+          bodyFont: { size: 13, weight: 'bold' as const },
+          padding: 10,
+          cornerRadius: 6,
+          callbacks: {
+            label: (ctx) => `${Number(ctx.parsed.y || 0).toLocaleString()}건`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            font: { size: 11 },
+            color: '#9CA3AF',
+          },
+        },
+        y: {
+          grid: {
+            color: '#F3F4F6',
+          },
+          ticks: {
+            font: { size: 11 },
+            color: '#9CA3AF',
+            callback: (value) => Number(value).toLocaleString(),
+          },
+          beginAtZero: true,
+        },
+      },
+    },
+  })
+}
+
+watch(
+  () => [selectedMonth.value, profileLoaded.value, profileRevision.value],
+  async ([month, loaded]) => {
+    if (!month || !loaded) return
+    await fetchDashboardData()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [petData.value, trendMonthTokens.value, trendValues.value],
+  async () => {
+    await nextTick()
+    renderPetChart()
+    renderTrendChart()
+  },
+  { deep: true },
+)
+
+onBeforeUnmount(() => {
+  if (petChartInstance.value) petChartInstance.value.destroy()
+  if (trendChartInstance.value) trendChartInstance.value.destroy()
 })
 </script>
 
@@ -349,7 +821,12 @@ onMounted(() => {
   gap: var(--space-xl);
 }
 
-/* KPI */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -378,7 +855,12 @@ onMounted(() => {
   gap: var(--space-lg);
 }
 
-/* Trend Chart */
+.empty-inline {
+  padding: var(--space-md) 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
 .trend-chart {
   padding-top: var(--space-sm);
 }
@@ -387,7 +869,6 @@ onMounted(() => {
   height: 200px;
 }
 
-/* Pet Chart */
 .pet-chart {
   display: flex;
   align-items: center;
@@ -431,7 +912,6 @@ onMounted(() => {
   color: var(--color-text);
 }
 
-/* Top Products */
 .top-products {
   display: flex;
   flex-direction: column;
@@ -495,6 +975,11 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.top-product-option {
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+}
+
 .top-product-meta {
   font-size: 0.6875rem;
   color: var(--color-text-muted);
@@ -529,7 +1014,6 @@ onMounted(() => {
   border-radius: 3px;
 }
 
-/* Stage Bars */
 .stage-bars {
   display: flex;
   align-items: flex-end;
@@ -573,7 +1057,19 @@ onMounted(() => {
   color: var(--color-text-muted);
 }
 
-/* Churn */
+.stage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.stage-action-btn {
+  flex: 1;
+  min-width: 120px;
+  justify-content: center;
+}
+
 .churn-list {
   display: flex;
   flex-direction: column;
