@@ -1,0 +1,159 @@
+import { describe, expect, it } from 'vitest'
+import { computePurchaseQuantity, formatQuantityCount } from '../../app/composables/usePurchaseQuantity'
+
+describe('usePurchaseQuantity', () => {
+  it('splits 츄라잇 3박스 by option flavors', () => {
+    const result = computePurchaseQuantity({
+      productName: '[2+1] 굿포펫 츄라잇 14포입 3박스',
+      optionInfo: '맛 선택: 데일리핏 1개 / 맛 선택2: 브라이트 1개 / 맛 선택3: 클린펫 1개',
+      quantity: 1,
+    })
+
+    expect(result.totalCount).toBe(3)
+    expect(result.dashboardBreakdown).toEqual([
+      { optionLabel: '데일리핏', count: 1 },
+      { optionLabel: '브라이트', count: 1 },
+      { optionLabel: '클린펫', count: 1 },
+    ])
+  })
+
+  it('keeps repeated 츄라잇 flavor counts', () => {
+    const result = computePurchaseQuantity({
+      productName: '[2+1] 굿포펫 츄라잇 14포입 3박스',
+      optionInfo: '데일리핏 + 데일리핏 + 데일리핏',
+      quantity: 1,
+    })
+
+    expect(result.totalCount).toBe(3)
+    expect(result.dashboardBreakdown).toEqual([
+      { optionLabel: '데일리핏', count: 3 },
+    ])
+  })
+
+  it('keeps 츄라잇 non-box as raw quantity', () => {
+    const result = computePurchaseQuantity({
+      productName: '굿포펫 츄라잇 14포입',
+      optionInfo: '브라이트',
+      quantity: 2,
+    })
+    expect(result.totalCount).toBe(2)
+    expect(result.dashboardBreakdown[0]?.count).toBe(2)
+  })
+
+  it('splits 애착트릿 3종세트 into 북어/연어/치킨', () => {
+    const result = computePurchaseQuantity({
+      productName: '애착트릿 3종세트',
+      optionInfo: '-',
+      quantity: 2,
+    })
+
+    expect(result.totalCount).toBe(6)
+    expect(result.dashboardBreakdown).toEqual([
+      { optionLabel: '북어', count: 2 },
+      { optionLabel: '연어', count: 2 },
+      { optionLabel: '치킨', count: 2 },
+    ])
+  })
+
+  it('applies 애착트릿 n개 rule when 3종세트 is absent', () => {
+    const result = computePurchaseQuantity({
+      productName: '애착트릿 연어 2개',
+      optionInfo: '',
+      quantity: 3,
+    })
+
+    expect(result.totalCount).toBe(6)
+    expect(result.dashboardBreakdown[0]).toEqual({
+      optionLabel: '연어',
+      count: 6,
+    })
+  })
+
+  it('applies 엔자이츄 priority: no n개 => quantity', () => {
+    const result = computePurchaseQuantity({
+      productName: '엔자이츄 100g',
+      optionInfo: '',
+      quantity: 2,
+    })
+
+    expect(result.totalCount).toBe(2)
+  })
+
+  it('applies 엔자이츄 g rule when n개 exists and g is not 10', () => {
+    const result = computePurchaseQuantity({
+      productName: '엔자이츄 100g, 20개',
+      optionInfo: '',
+      quantity: 2,
+    })
+
+    expect(result.totalCount).toBe(2)
+  })
+
+  it('applies 엔자이츄 10g exception and fallback divisor rule', () => {
+    const result = computePurchaseQuantity({
+      productName: '엔자이츄 10g, 20개',
+      optionInfo: '',
+      quantity: 2,
+    })
+
+    expect(result.totalCount).toBe(4)
+  })
+
+  it('applies 이즈바이트 13g exception and divisor-7 rule', () => {
+    const result = computePurchaseQuantity({
+      productName: '이즈바이트 13g, 14개',
+      optionInfo: '',
+      quantity: 2,
+    })
+
+    expect(result.totalCount).toBe(4)
+  })
+
+  it('applies 케어푸/두부모래 n개 * quantity rule', () => {
+    const carefu = computePurchaseQuantity({
+      productName: '케어푸 90포, 3개',
+      optionInfo: '',
+      quantity: 2,
+    })
+    const tofu = computePurchaseQuantity({
+      productName: '두부모래 8L, 6개',
+      optionInfo: '',
+      quantity: 2,
+    })
+
+    expect(carefu.totalCount).toBe(6)
+    expect(tofu.totalCount).toBe(12)
+  })
+
+  it('uses raw quantity for dispenser/treatbag/sample/fallback', () => {
+    expect(computePurchaseQuantity({
+      productName: '츄르짜개 (고양이 간식 디스펜서)',
+      optionInfo: '블루',
+      quantity: 3,
+    }).totalCount).toBe(3)
+
+    expect(computePurchaseQuantity({
+      productName: '미니 트릿백',
+      optionInfo: '민트',
+      quantity: 2,
+    }).totalCount).toBe(2)
+
+    expect(computePurchaseQuantity({
+      productName: '전제품 맛보기 샘플',
+      optionInfo: '-',
+      quantity: 4,
+    }).totalCount).toBe(4)
+
+    expect(computePurchaseQuantity({
+      productName: '기타 상품',
+      optionInfo: '-',
+      quantity: 5,
+    }).totalCount).toBe(5)
+  })
+
+  it('formats count for UI display', () => {
+    expect(formatQuantityCount(12)).toBe('12')
+    expect(formatQuantityCount(1.5)).toBe('1.5')
+    expect(formatQuantityCount(Number.NaN)).toBe('0')
+  })
+})

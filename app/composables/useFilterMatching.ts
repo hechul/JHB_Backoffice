@@ -146,7 +146,7 @@ interface OptionKeywordRule {
 
 const OPTION_KEYWORD_RULES: OptionKeywordRule[] = [
   { product: '애착트릿', source: 'product_name', keywords: ['북어', '연어', '치킨', '3종세트'] },
-  { product: '츄라잇', source: 'option_info', keywords: ['데일리핏', '클린펫', '브라이트'] },
+  { product: '츄라잇', source: 'option_info', keywords: ['데일리핏', '데일리펫', '클린펫', '브라이트'] },
 ]
 
 function normalizeOptionAlias(productKeyword: string, normalizedSource: string): string | null {
@@ -268,6 +268,14 @@ function optionsMatch(purchase: FilterPurchaseRow, exp: FilterExperienceRow): bo
   const productKw = extractProductKeyword(purchase.product_name)
   // 디스펜서(츄르짜개)는 색상/옵션 편차가 커서 옵션 비교에서 제외한다.
   if (productKw === '츄르짜개') return true
+  // 츄라잇은 단일/혼합 축약 없이 원문 옵션정보 기준으로 비교한다.
+  if (productKw === '츄라잇') {
+    const pRaw = normalizeText(purchase.option_info || '')
+    const eRaw = normalizeText(exp.option_info || '')
+    if (!pRaw && !eRaw) return true
+    if (!pRaw || !eRaw) return false
+    return pRaw === eRaw
+  }
 
   if (!productKw) {
     // 키워드 규칙 없음 → 정규화 문자열 비교 폴백

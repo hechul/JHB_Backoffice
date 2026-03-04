@@ -93,7 +93,7 @@
               <span class="top-product-meta">{{ item.pet }} · {{ item.stage }}</span>
             </div>
             <div class="top-product-stats">
-              <span class="top-product-count">{{ item.count }}건</span>
+              <span class="top-product-count">{{ formatQuantityCount(item.count) }}개</span>
               <div class="top-product-bar-wrap">
                 <div class="top-product-bar" :style="{ width: item.percent + '%' }"></div>
               </div>
@@ -164,6 +164,7 @@ import {
   MoveRight,
 } from 'lucide-vue-next'
 import { Chart, DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler } from 'chart.js'
+import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
 
 Chart.register(DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler)
 
@@ -175,6 +176,7 @@ interface PurchaseRow {
   product_id: string
   product_name: string
   option_info: string
+  quantity: number
   order_date: string
   target_month: string
   is_fake: boolean
@@ -485,7 +487,7 @@ async function fetchPurchases(month: string): Promise<PurchaseRow[]> {
   for (let from = 0; ; from += PAGE_SIZE) {
     let query = supabase
       .from('purchases')
-      .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, order_date, target_month, is_fake, needs_review, filter_ver')
+      .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month, is_fake, needs_review, filter_ver')
       .not('filter_ver', 'is', null)
       .order('order_date', { ascending: false })
       .order('purchase_id', { ascending: false })
@@ -504,6 +506,7 @@ async function fetchPurchases(month: string): Promise<PurchaseRow[]> {
       product_id: String(row.product_id || ''),
       product_name: String(row.product_name || ''),
       option_info: String(row.option_info || ''),
+      quantity: Number(row.quantity) || 1,
       order_date: String(row.order_date || ''),
       target_month: String(row.target_month || ''),
       is_fake: Boolean(row.is_fake),
@@ -618,25 +621,33 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
   for (const row of realRows) {
     const baseKey = String(row.product_id || '').trim() || normalizeForMatch(row.product_name || '')
     if (!baseKey) continue
-    const optionInfo = normalizeOptionInfo(row.option_info)
-    const optionKey = normalizeForMatch(optionInfo)
-    const key = `${baseKey}::${optionKey}`
+    const quantityResult = computePurchaseQuantity({
+      productName: row.product_name,
+      optionInfo: row.option_info,
+      quantity: row.quantity,
+    })
 
     const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
     const meta = productMetaById.value[String(row.product_id || '').trim()] || productMetaByName.value[nameKey]
     const nextPetType = meta?.pet_type || inferPetTypeFromName(row.product_name || '')
     const nextStage = meta?.stage ?? null
 
-    if (!productMap.has(key)) {
-      productMap.set(key, {
-        name: row.product_name || '-',
-        optionInfo,
-        count: 0,
-        petType: nextPetType,
-        stage: nextStage,
-      })
+    for (const part of quantityResult.dashboardBreakdown) {
+      const optionInfo = normalizeOptionInfo(part.optionLabel)
+      const optionKey = normalizeForMatch(optionInfo)
+      const key = `${baseKey}::${optionKey}`
+
+      if (!productMap.has(key)) {
+        productMap.set(key, {
+          name: row.product_name || '-',
+          optionInfo,
+          count: 0,
+          petType: nextPetType,
+          stage: nextStage,
+        })
+      }
+      productMap.get(key)!.count += part.count
     }
-    productMap.get(key)!.count += 1
   }
 
   const top = Array.from(productMap.values())

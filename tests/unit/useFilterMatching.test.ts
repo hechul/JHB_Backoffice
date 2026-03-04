@@ -95,6 +95,43 @@ describe('useFilterMatching', () => {
     ).toBe('3종세트')
   })
 
+  it('compares churite options by raw option text (no mixed/single collapsing)', () => {
+    const sameOption = '맛 선택: 데일리펫(참치) 1개 / 맛 선택 2: 브라이트(연어) 1개 / 맛 선택 3: 클린펫(닭가슴살) 1개'
+    const differentOption = '맛 선택: 브라이트(연어) 1개 / 맛 선택 2: 브라이트(연어) 1개 / 맛 선택 3: 브라이트(연어) 1개'
+
+    const matched = buildMatchingResult(
+      [purchase({
+        purchase_id: 'P-churite-same',
+        product_name: '[2+1 설특선 감사 패키지] 굿포펫 츄라잇 고양이 영양제 스틱 유산균 14포입 3박스',
+        option_info: sameOption,
+      })],
+      [experience({
+        id: 201,
+        mission_product_name: '굿포펫 츄라잇 고양이 영양제 스틱 유산균 14포입 3박스',
+        option_info: sameOption,
+      })],
+    )
+
+    expect(matched.matches).toHaveLength(1)
+
+    const unmatched = buildMatchingResult(
+      [purchase({
+        purchase_id: 'P-churite-diff',
+        product_name: '[2+1 설특선 감사 패키지] 굿포펫 츄라잇 고양이 영양제 스틱 유산균 14포입 3박스',
+        option_info: sameOption,
+      })],
+      [experience({
+        id: 202,
+        mission_product_name: '굿포펫 츄라잇 고양이 영양제 스틱 유산균 14포입 3박스',
+        option_info: differentOption,
+      })],
+    )
+
+    expect(unmatched.matches).toHaveLength(1)
+    expect(unmatched.matches[0]?.rank).toBe(3)
+    expect(unmatched.matches[0]?.reason).toBe('옵션불일치_매칭')
+  })
+
   it('treats freeze-dried legacy product as non-campaign (excluded from matching)', () => {
     expect(extractProductKeyword('스스/굿포펫 동결건조간식 원물100% 국내생산 연어 110g')).toBe('동결건조리뉴얼전')
     expect(isNonCampaignProduct('스스/굿포펫 동결건조간식 원물100% 국내생산 연어 110g')).toBe(true)

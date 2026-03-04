@@ -786,6 +786,15 @@ function productMatches(purchase: PurchaseRow, exp: ExperienceRow): boolean {
 
 function optionsMatch(purchase: PurchaseRow, exp: ExperienceRow): boolean {
   const productKw = extractProductKeyword(purchase.product_name)
+  if (productKw === '츄르짜개') return true
+  if (productKw === '츄라잇') {
+    const pRaw = normalizeText(purchase.option_info || '')
+    const eRaw = normalizeText(exp.option_info || '')
+    if (!pRaw && !eRaw) return true
+    if (!pRaw || !eRaw) return false
+    return pRaw === eRaw
+  }
+
   if (!productKw) {
     const pOpt = normalizeText(purchase.option_info || '')
     const eOpt = normalizeText(exp.option_info || '')

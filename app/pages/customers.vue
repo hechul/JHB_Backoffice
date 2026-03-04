@@ -95,7 +95,7 @@
                 </div>
               </td>
               <td>{{ c.purchaseCount }}회</td>
-              <td>{{ c.productCount }}개</td>
+              <td>{{ formatQuantityCount(c.productCount) }}개</td>
               <td class="text-sm text-secondary">{{ c.lastOrder }}</td>
               <td>
                 <StatusBadge
@@ -166,7 +166,7 @@
             </div>
             <div class="detail-item">
               <span class="detail-label">총 구매 상품 수</span>
-              <span class="detail-value">{{ selectedCustomer.productCount }}개</span>
+              <span class="detail-value">{{ formatQuantityCount(selectedCustomer.productCount) }}개</span>
             </div>
             <div class="detail-item">
               <span class="detail-label">이탈 위험</span>
@@ -184,6 +184,7 @@
                 <th>날짜</th>
                 <th>상품</th>
                 <th>옵션</th>
+                <th>상품 개수</th>
               </tr>
             </thead>
             <tbody>
@@ -191,6 +192,7 @@
                 <td class="text-sm">{{ order.date }}</td>
                 <td class="text-sm">{{ order.product }}</td>
                 <td class="text-sm">{{ order.optionInfo }}</td>
+                <td class="text-sm">{{ formatQuantityCount(order.itemCount) }}개</td>
               </tr>
             </tbody>
           </table>
@@ -217,6 +219,7 @@ import {
 import type { LocationQuery } from 'vue-router'
 import * as XLSX from 'xlsx'
 import { matchesSearchQuery } from '~/composables/useTextSearch'
+import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
 
 type CustomerStage = 'Entry' | 'Growth' | 'Premium'
 
@@ -238,6 +241,7 @@ interface CustomerOrderRow {
   date: string
   product: string
   optionInfo: string
+  itemCount: number
 }
 
 interface PurchaseRow {
@@ -247,6 +251,8 @@ interface PurchaseRow {
   buyer_id: string
   product_id: string
   product_name: string
+  option_info: string
+  quantity: number
   order_date: string
   target_month: string
 }
@@ -374,18 +380,6 @@ function purchaseDateKey(row: Pick<PurchaseRow, 'order_date'>): string {
   return String(row.order_date || '').slice(0, 10)
 }
 
-function purchaseItemKey(row: Pick<PurchaseRow, 'purchase_id' | 'order_date' | 'product_id' | 'product_name' | 'buyer_id' | 'buyer_name'>): string {
-  const purchaseId = String(row.purchase_id || '').trim()
-  if (purchaseId) return purchaseId
-  return [
-    String(row.order_date || '').slice(0, 10),
-    String(row.product_id || '').trim(),
-    String(row.product_name || '').trim(),
-    String(row.buyer_id || '').trim(),
-    String(row.buyer_name || '').trim(),
-  ].join('|')
-}
-
 async function loadProductMeta() {
   const { data, error } = await supabase
     .from('products')
@@ -432,7 +426,7 @@ async function fetchCustomers() {
     for (let from = 0; ; from += DB_FETCH_PAGE_SIZE) {
       let query = supabase
         .from('purchases')
-        .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, order_date, target_month')
+        .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month')
         .not('filter_ver', 'is', null)
         .eq('is_fake', false)
         .eq('needs_review', false)
@@ -470,7 +464,14 @@ async function fetchCustomers() {
 
       const purchaseCount = new Set(customerRows.map((row) => purchaseDateKey(row)).filter(Boolean)).size
       if (purchaseCount <= 0) continue
-      const productCount = new Set(customerRows.map((row) => purchaseItemKey(row)).filter(Boolean)).size
+      const productCount = customerRows.reduce((sum, row) => {
+        const count = computePurchaseQuantity({
+          productName: row.product_name,
+          optionInfo: row.option_info,
+          quantity: row.quantity,
+        }).totalCount
+        return sum + count
+      }, 0)
 
       const lastOrder = String(latest.order_date || '').slice(0, 10)
       result.push({
@@ -497,7 +498,7 @@ async function fetchCustomers() {
 async function fetchCustomerOrders(customer: CustomerRow) {
   let query = supabase
     .from('purchases')
-    .select('order_date, product_name, option_info, target_month')
+    .select('order_date, product_name, option_info, quantity, target_month')
     .not('filter_ver', 'is', null)
     .eq('is_fake', false)
     .eq('needs_review', false)
@@ -527,6 +528,11 @@ async function fetchCustomerOrders(customer: CustomerRow) {
     date: String(row.order_date || '').slice(0, 10),
     product: row.product_name || '-',
     optionInfo: String(row.option_info || '').trim() || '-',
+    itemCount: computePurchaseQuantity({
+      productName: String(row.product_name || ''),
+      optionInfo: String(row.option_info || ''),
+      quantity: Number(row.quantity) || 1,
+    }).totalCount,
   }))
 }
 

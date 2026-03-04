@@ -433,7 +433,7 @@ const optionKeywordRules: { product: string; keywords: string[]; canonical: stri
   { product: '동결건조(리뉴얼전)', keywords: ['치킨'], canonical: '치킨' },
   { product: '동결건조(리뉴얼전)', keywords: ['닭가슴살'], canonical: '치킨' },
   { product: '동결건조(리뉴얼전)', keywords: ['닭고기'], canonical: '치킨' },
-  { product: '츄라잇', keywords: ['데일리핏'], canonical: '데일리핏' },
+  { product: '츄라잇', keywords: ['데일리핏', '데일리펫'], canonical: '데일리핏' },
   { product: '츄라잇', keywords: ['클린펫'], canonical: '클린펫' },
   { product: '츄라잇', keywords: ['브라이트'], canonical: '브라이트' },
   { product: '미니 트릿백', keywords: ['민트'], canonical: '민트' },
@@ -870,6 +870,10 @@ function normalizeOptionLabel(productName: string, rawOption: string, rawMission
 
   // 두부모래는 옵션(개수)을 매핑 기준에서 사용하지 않는다.
   if (productName === '두부모래') return ''
+  // 츄라잇은 옵션정보 원문 그대로 사용한다(단일/혼합 축약 금지).
+  if (productName === '츄라잇') {
+    return option.replace(/\s+/g, ' ').trim()
+  }
 
   const keywordByOption = matchOptionKeyword(productName, option)
   if (keywordByOption) return keywordByOption
