@@ -3,11 +3,21 @@
     <!-- Header -->
     <header class="home-header">
       <div class="home-header-left">
-        <div class="home-logo">
+        <NuxtLink to="/" class="home-logo">
           <img src="/jhbiofarm-logo.png" alt="JHBioFarm 로고" class="home-logo-mark" />
           <span class="home-logo-text">JHBioFarm</span>
-        </div>
+        </NuxtLink>
         <span class="home-logo-sub">백오피스</span>
+        <div v-if="showHeaderNavButtons" class="home-nav-actions">
+          <button type="button" class="home-nav-btn" aria-label="뒤로가기" @click="handleGoBack">
+            <ChevronLeft :size="16" :stroke-width="1.8" />
+            <span>뒤로</span>
+          </button>
+          <button type="button" class="home-nav-btn" aria-label="홈으로 이동" @click="handleGoHome">
+            <House :size="16" :stroke-width="1.8" />
+            <span>홈으로</span>
+          </button>
+        </div>
       </div>
       <div class="home-header-right">
         <span class="home-date">{{ today }}</span>
@@ -32,9 +42,11 @@
 </template>
 
 <script setup lang="ts">
-import { LogOut } from 'lucide-vue-next'
+import { LogOut, House, ChevronLeft } from 'lucide-vue-next'
 
 const { user, profileLoaded, logout } = useCurrentUser()
+const route = useRoute()
+const router = useRouter()
 
 const today = computed(() => {
   const d = new Date()
@@ -49,6 +61,19 @@ const roleLabel = computed(() => {
   if (r === 'modifier') return 'Modifier'
   return 'Viewer'
 })
+const showHeaderNavButtons = computed(() => route.path !== '/')
+
+function handleGoHome() {
+  navigateTo('/')
+}
+
+function handleGoBack() {
+  if (import.meta.client && window.history.length > 1) {
+    router.back()
+    return
+  }
+  navigateTo('/')
+}
 
 function handleLogout() {
   logout()
@@ -101,6 +126,31 @@ function handleLogout() {
   color: var(--color-text-muted);
   padding-left: var(--space-md);
   border-left: 1px solid var(--color-border-light);
+}
+
+.home-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.home-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: all 0.12s ease;
+}
+
+.home-nav-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: #D1D5DB;
 }
 
 .home-header-right {
@@ -180,6 +230,10 @@ function handleLogout() {
   }
 
   .home-logo-sub {
+    display: none;
+  }
+
+  .home-nav-btn span {
     display: none;
   }
 

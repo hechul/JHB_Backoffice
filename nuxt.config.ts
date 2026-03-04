@@ -30,6 +30,10 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
+  runtimeConfig: {
+    kakaoRestApiKey: process.env.KAKAO_REST_API_KEY || '',
+  },
+
   dir: {
     pages: 'pages',
     layouts: 'layouts',

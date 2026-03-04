@@ -5,10 +5,10 @@
 
     <!-- Sidebar -->
     <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
-      <div class="sidebar-logo">
+      <NuxtLink to="/" class="sidebar-logo" @click="mobileMenuOpen = false">
         <img src="/jhbiofarm-logo.png" alt="JHBioFarm 로고" class="logo-mark" />
         <span v-show="!sidebarCollapsed" class="logo-text">JHBioFarm</span>
-      </div>
+      </NuxtLink>
 
       <nav class="sidebar-nav">
         <!-- 홈으로 -->
@@ -116,6 +116,16 @@
             <ChevronRight v-if="currentGroup" :size="12" :stroke-width="2" class="breadcrumb-separator" />
             <span class="breadcrumb-current">{{ currentPageTitle }}</span>
           </div>
+          <div v-if="showHeaderNavButtons" class="header-nav-actions">
+            <button type="button" class="header-nav-btn" aria-label="뒤로가기" @click="handleGoBack">
+              <ChevronLeft :size="15" :stroke-width="1.8" />
+              <span>뒤로</span>
+            </button>
+            <button type="button" class="header-nav-btn" aria-label="홈으로 이동" @click="handleGoHome">
+              <Home :size="15" :stroke-width="1.8" />
+              <span>홈</span>
+            </button>
+          </div>
         </div>
         <div class="header-actions">
           <!-- Period Selector -->
@@ -207,6 +217,7 @@ import {
 } from 'lucide-vue-next'
 
 const route = useRoute()
+const router = useRouter()
 const { user, isViewer, isAdmin, profileLoaded, profileRevision, logout } = useCurrentUser()
 const { selectedMonth, selectedPeriodLabel, availableMonths, monthsLoading, monthsError, refreshMonths, selectMonth, prevMonth, nextMonth } = useAnalysisPeriod()
 
@@ -270,6 +281,7 @@ const roleLabel = computed(() => {
   return 'Viewer'
 })
 const showPeriodSelector = computed(() => periodEnabledPaths.some((path) => route.path.startsWith(path)))
+const showHeaderNavButtons = computed(() => route.path !== '/')
 const hasMonthData = computed(() => availableMonths.value.length > 0)
 const periodDisplayLabel = computed(() => {
   if (monthsLoading.value && !hasMonthData.value) return '기간 불러오는 중...'
@@ -289,6 +301,18 @@ function handleLogout() {
 function handlePageRefresh() {
   if (!process.client) return
   window.location.reload()
+}
+
+function handleGoHome() {
+  navigateTo('/')
+}
+
+function handleGoBack() {
+  if (import.meta.client && window.history.length > 1) {
+    router.back()
+    return
+  }
+  navigateTo('/')
 }
 
 function selectPeriodMonth(value: string) {
@@ -376,6 +400,31 @@ watch(
   font-size: 1rem;
   color: var(--color-text);
   white-space: nowrap;
+}
+
+.header-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.header-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: all 0.12s ease;
+}
+
+.header-nav-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: #D1D5DB;
 }
 
 .sidebar-nav {
@@ -882,6 +931,10 @@ watch(
 
   .header-actions {
     gap: var(--space-sm);
+  }
+
+  .header-nav-btn span {
+    display: none;
   }
 
   .header-date {
