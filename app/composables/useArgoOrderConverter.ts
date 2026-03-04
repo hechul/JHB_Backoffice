@@ -52,6 +52,8 @@ export interface UnresolvedShippingRow {
 
 export interface BuildArgoOrdersOptions {
   defaultProductKey?: string
+  forceProductKey?: string
+  forceQuantity?: number
   postcodeByAddress?: Record<string, string>
   orderPrefix?: string
   sequenceStart?: number
@@ -223,6 +225,28 @@ export function getArgoProductCodes() {
   return PRODUCT_CODES.slice()
 }
 
+export function resolveArgoProductKeyFromInput(input: string): string | null {
+  const raw = String(input || '').trim()
+  if (!raw) return null
+  const normalized = normalizeText(raw)
+  if (!normalized) return null
+
+  // 1) exact label/key match
+  for (const item of PRODUCT_CODES) {
+    const labelNormalized = normalizeText(item.label)
+    const keyNormalized = normalizeText(item.key)
+    if (normalized === labelNormalized || normalized === keyNormalized) return item.key
+  }
+
+  // 2) keyword match
+  const resolved = resolveProductKey(raw)
+  if (resolved.productKey) return resolved.productKey
+
+  // 3) includes fallback
+  const matched = PRODUCT_CODES.find((item) => normalizeText(item.label).includes(normalized) || normalized.includes(normalizeText(item.label)))
+  return matched?.key || null
+}
+
 export async function parseShippingFile(file: File): Promise<ParsedShippingFile> {
   const workbook = await readWorkbook(file)
   const firstSheetName = workbook.SheetNames[0] || 'Sheet1'
@@ -314,7 +338,9 @@ export function buildArgoOrders(
 
   for (const row of shippingRows) {
     const postcode = row.postalCode || postcodeByAddress[row.address] || ''
-    const resolved = resolveProductKey(row.productHint, options.defaultProductKey)
+    const resolved = options.forceProductKey
+      ? { productKey: options.forceProductKey, reason: null as string | null }
+      : resolveProductKey(row.productHint, options.defaultProductKey)
     if (!resolved.productKey) {
       unresolvedRows.push({
         rowIndex: row.rowIndex,
@@ -348,9 +374,12 @@ export function buildArgoOrders(
 
     const orderNo = `${prefix}${String(sequence).padStart(4, '0')}`
     sequence += 1
+    const rawForcedQty = Number(options.forceQuantity)
+    const forcedQty = Number.isFinite(rawForcedQty) && rawForcedQty > 0 ? Math.floor(rawForcedQty) : null
+    const finalQty = forcedQty || resolveQuantity(row.sourceType, product.key)
     orders.push({
       '주문번호(*)': orderNo,
-      '상품수량(*)': String(resolveQuantity(row.sourceType, product.key)),
+      '상품수량(*)': String(finalQty),
       '상품바코드(*)': product.barcode,
       '수취인명(*)': row.receiverName,
       '수취인주소(*)': row.address,

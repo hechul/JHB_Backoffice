@@ -55,7 +55,6 @@
                 <th>시트</th>
                 <th>유효 행</th>
                 <th>스킵 행</th>
-                <th>기본 품목(선택)</th>
                 <th></th>
               </tr>
             </thead>
@@ -71,14 +70,6 @@
                 <td>{{ item.parsed.sheetName }}</td>
                 <td>{{ item.parsed.rows.length }}</td>
                 <td>{{ item.parsed.skippedRows }}</td>
-                <td>
-                  <select v-model="item.manualDefaultProductKey" class="file-select">
-                    <option value="">자동 감지 우선</option>
-                    <option v-for="code in productCodes" :key="code.key" :value="code.key">
-                      {{ code.label }}
-                    </option>
-                  </select>
-                </td>
                 <td>
                   <button class="btn btn-ghost btn-sm" @click.stop="removeFile(item.key)">
                     <X :size="14" :stroke-width="2" />
@@ -115,6 +106,56 @@
           {{ converting ? '변환 중...' : '아르고 양식(통합) 다운로드' }}
         </button>
         <span v-if="convertBlockReason" class="text-sm text-danger">{{ convertBlockReason }}</span>
+      </div>
+    </div>
+
+    <div v-if="editableRows.length > 0" class="card">
+      <div class="card-header">
+        <h3 class="card-title">사람별 상품/수량 입력</h3>
+        <StatusBadge :label="`${editableRows.length}건`" variant="warning" dot />
+      </div>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>파일</th>
+              <th>원본 행</th>
+              <th>수취인</th>
+              <th>원본 품목 힌트</th>
+              <th>상품명(직접입력)</th>
+              <th>수량(직접입력)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(item, rowIndex) in editableRows" :key="item.key">
+              <td>{{ item.fileName }}</td>
+              <td>{{ item.row.rowIndex }}</td>
+              <td>{{ item.row.receiverName }}</td>
+              <td>{{ item.row.productHint || '-' }}</td>
+              <td>
+                <input
+                  v-model.trim="item.manualProductName"
+                  class="file-input"
+                  :list="`argo-row-product-list-${rowIndex}`"
+                  placeholder="예: 이즈바이트 버블 덴탈껌"
+                />
+                <datalist :id="`argo-row-product-list-${rowIndex}`">
+                  <option v-for="code in productCodes" :key="`${item.key}-${code.key}`" :value="code.label" />
+                </datalist>
+              </td>
+              <td>
+                <input
+                  v-model.number="item.manualQuantity"
+                  class="file-input quantity"
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="1"
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -219,7 +260,9 @@ import {
   downloadArgoWorkbook,
   getArgoProductCodes,
   parseShippingFile,
+  resolveArgoProductKeyFromInput,
   type ArgoOrderRow,
+  type ParsedShippingRow,
   type ParsedShippingFile,
   type ShippingSourceType,
   type UnresolvedShippingRow,
@@ -230,13 +273,28 @@ definePageMeta({ layout: 'home' })
 interface PostcodeLookupResponse {
   postcodes?: Record<string, string>
   unresolved?: string[]
+  meta?: {
+    provider?: 'kakao' | 'none'
+    keyConfigured?: boolean
+    attempted?: number
+    success?: number
+    rateLimited?: number
+  }
 }
 
 interface ParsedFileItem {
   key: string
   file: File
   parsed: ParsedShippingFile
-  manualDefaultProductKey: string
+}
+
+interface EditableShippingRow {
+  key: string
+  fileKey: string
+  fileName: string
+  row: ParsedShippingRow
+  manualProductName: string
+  manualQuantity: number
 }
 
 interface UnresolvedRowWithFile extends UnresolvedShippingRow {
@@ -251,6 +309,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const parsing = ref(false)
 const converting = ref(false)
 const parsedFileItems = ref<ParsedFileItem[]>([])
+const editableRows = ref<EditableShippingRow[]>([])
 const resultOrders = ref<ArgoOrderRow[]>([])
 const unresolvedRows = ref<UnresolvedRowWithFile[]>([])
 const lastDownloadAt = ref('')
@@ -277,19 +336,28 @@ const sourceSummaryLabel = computed(() => {
   return chunks.join(' / ')
 })
 
+function hasValidEditableRow(item: EditableShippingRow): boolean {
+  const productKey = resolveArgoProductKeyFromInput(item.manualProductName || '')
+  const qty = Number(item.manualQuantity)
+  return Boolean(productKey) && Number.isFinite(qty) && qty > 0
+}
+
 const canConvert = computed(() => {
   if (!canModify.value) return false
   if (parsedFileItems.value.length === 0) return false
+  if (editableRows.value.length === 0) return false
   if (parsing.value || converting.value) return false
-  if (totalValidRows.value === 0) return false
+  if (editableRows.value.some((item) => !hasValidEditableRow(item))) return false
   return true
 })
 
 const convertBlockReason = computed(() => {
   if (!canModify.value) return '열람자 권한에서는 변환을 실행할 수 없습니다.'
   if (parsedFileItems.value.length === 0) return '배송지 파일을 먼저 업로드해 주세요.'
+  if (editableRows.value.length === 0) return '변환 가능한 배송지 행이 없습니다.'
   if (parsing.value) return '파일을 분석 중입니다.'
-  if (totalValidRows.value === 0) return '유효한 배송지 행이 없습니다.'
+  if (editableRows.value.some((item) => !resolveArgoProductKeyFromInput(item.manualProductName || ''))) return '사람별 상품명을 입력해 주세요.'
+  if (editableRows.value.some((item) => !Number.isFinite(Number(item.manualQuantity)) || Number(item.manualQuantity) <= 0)) return '사람별 수량은 1 이상으로 입력해 주세요.'
   return ''
 })
 
@@ -332,12 +400,18 @@ function guessDefaultProductKeyFromHint(hint: string): string {
   return ''
 }
 
+function defaultQuantityBySource(sourceType: ShippingSourceType, productKey: string): number {
+  if (sourceType === 'dinner' && productKey === '두부모래') return 2
+  return 1
+}
+
 function triggerInput() {
   fileInput.value?.click()
 }
 
 function clearAllFiles() {
   parsedFileItems.value = []
+  editableRows.value = []
   resultOrders.value = []
   unresolvedRows.value = []
   lastDownloadAt.value = ''
@@ -346,6 +420,7 @@ function clearAllFiles() {
 
 function removeFile(key: string) {
   parsedFileItems.value = parsedFileItems.value.filter((item) => item.key !== key)
+  editableRows.value = editableRows.value.filter((item) => item.fileKey !== key)
   resultOrders.value = []
   unresolvedRows.value = []
   lastDownloadAt.value = ''
@@ -361,6 +436,38 @@ function formatSize(size: number): string {
     index += 1
   }
   return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`
+}
+
+function rowKey(fileKeyValue: string, row: ParsedShippingRow): string {
+  return `${fileKeyValue}::${row.rowIndex}::${normalizeText(row.receiverName)}::${normalizeText(row.address)}`
+}
+
+function buildEditableRows(nextFiles: ParsedFileItem[], previousRows: EditableShippingRow[]): EditableShippingRow[] {
+  const previousMap = new Map<string, EditableShippingRow>()
+  for (const prev of previousRows) previousMap.set(prev.key, prev)
+
+  const nextRows: EditableShippingRow[] = []
+  for (const fileItem of nextFiles) {
+    for (const row of fileItem.parsed.rows) {
+      const key = rowKey(fileItem.key, row)
+      const prev = previousMap.get(key)
+      const guessedProductName = guessDefaultProductKeyFromHint(row.productHint || fileItem.parsed.fallbackProductHint)
+      const manualProductName = prev?.manualProductName || guessedProductName
+      const resolvedProductKey = resolveArgoProductKeyFromInput(manualProductName || '') || guessedProductName
+      const fallbackQty = defaultQuantityBySource(row.sourceType, resolvedProductKey)
+      const prevQty = Number(prev?.manualQuantity)
+
+      nextRows.push({
+        key,
+        fileKey: fileItem.key,
+        fileName: fileItem.file.name,
+        row,
+        manualProductName,
+        manualQuantity: Number.isFinite(prevQty) && prevQty > 0 ? Math.floor(prevQty) : fallbackQty,
+      })
+    }
+  }
+  return nextRows
 }
 
 async function loadFiles(files: File[]) {
@@ -387,7 +494,6 @@ async function loadFiles(files: File[]) {
           key: fileKey(file),
           file,
           parsed,
-          manualDefaultProductKey: guessDefaultProductKeyFromHint(parsed.fallbackProductHint),
         })
       } catch (error) {
         failed += 1
@@ -396,8 +502,9 @@ async function loadFiles(files: File[]) {
     }
 
     parsedFileItems.value = nextItems
+    editableRows.value = buildEditableRows(nextItems, editableRows.value)
 
-    toast.success(`파일 분석 완료: ${nextItems.length}개 파일, ${totalValidRows.value}건`)
+    toast.success(`파일 분석 완료: ${nextItems.length}개 파일, ${editableRows.value.length}건`)
     if (failed > 0) {
       toast.warning(`분석 실패 파일 ${failed}개는 제외되었습니다.`)
     }
@@ -422,7 +529,7 @@ function handleDrop(event: DragEvent) {
 }
 
 async function lookupPostcodesIfNeeded() {
-  const allRows = parsedFileItems.value.flatMap((item) => item.parsed.rows)
+  const allRows = editableRows.value.map((item) => item.row)
   const missingAddresses = collectAddressesWithoutPostcode(allRows)
   if (missingAddresses.length === 0) return {}
 
@@ -434,6 +541,17 @@ async function lookupPostcodesIfNeeded() {
   })
 
   const unresolvedCount = response?.unresolved?.length || 0
+  const meta = response?.meta
+  if (meta?.keyConfigured === false) {
+    toast.error('우편번호 자동조회 키가 설정되지 않았습니다. KAKAO_REST_API_KEY를 확인해 주세요.')
+    return response?.postcodes || {}
+  }
+  if ((meta?.attempted || 0) > 0 && (meta?.success || 0) === 0) {
+    toast.warning('우편번호 조회 응답이 없습니다. 주소 형식 또는 API 키 권한을 확인해 주세요.')
+  }
+  if ((meta?.rateLimited || 0) > 0) {
+    toast.warning(`우편번호 조회 중 호출 제한이 감지되었습니다(${meta?.rateLimited}회). 잠시 후 재시도해 주세요.`)
+  }
   if (unresolvedCount > 0) {
     toast.warning(`우편번호 자동조회 실패 ${unresolvedCount}건은 미해결로 표시됩니다.`)
   }
@@ -459,7 +577,7 @@ function formatFileSuffix(date: Date): string {
 }
 
 async function convertAndDownload() {
-  if (parsedFileItems.value.length === 0) return
+  if (editableRows.value.length === 0) return
   converting.value = true
   try {
     const postcodeByAddress = await lookupPostcodesIfNeeded()
@@ -468,9 +586,22 @@ async function convertAndDownload() {
     const mergedUnresolved: UnresolvedRowWithFile[] = []
     let sequence = 1
 
-    for (const item of parsedFileItems.value) {
-      const result = buildArgoOrders(item.parsed.rows, {
-        defaultProductKey: item.manualDefaultProductKey || undefined,
+    for (const item of editableRows.value) {
+      const forcedProductKey = resolveArgoProductKeyFromInput(item.manualProductName || '')
+      if (!forcedProductKey) {
+        mergedUnresolved.push({
+          fileName: item.fileName,
+          rowIndex: item.row.rowIndex,
+          receiverName: item.row.receiverName,
+          productHint: item.row.productHint || '-',
+          reason: '직접 입력한 상품명을 제품코드로 매핑하지 못함',
+        })
+        continue
+      }
+      const forcedQuantity = Math.max(1, Math.floor(Number(item.manualQuantity) || 1))
+      const result = buildArgoOrders([item.row], {
+        forceProductKey: forcedProductKey,
+        forceQuantity: forcedQuantity,
         postcodeByAddress,
         sequenceStart: sequence,
       })
@@ -480,7 +611,7 @@ async function convertAndDownload() {
       mergedUnresolved.push(
         ...result.unresolvedRows.map((row) => ({
           ...row,
-          fileName: item.file.name,
+          fileName: item.fileName,
         })),
       )
     }
@@ -585,8 +716,8 @@ async function convertAndDownload() {
   margin-bottom: var(--space-sm);
 }
 
-.file-select {
-  width: 220px;
+.file-input {
+  width: 240px;
   max-width: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -594,6 +725,10 @@ async function convertAndDownload() {
   font-size: 0.75rem;
   background: var(--color-surface);
   color: var(--color-text);
+}
+
+.file-input.quantity {
+  width: 90px;
 }
 
 .file-cell {
@@ -669,21 +804,6 @@ async function convertAndDownload() {
 
 .summary-item strong {
   font-size: 1rem;
-  color: var(--color-text);
-}
-
-.label {
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-}
-
-.select {
-  width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 9px 11px;
-  font-size: 0.8125rem;
-  background: var(--color-surface);
   color: var(--color-text);
 }
 

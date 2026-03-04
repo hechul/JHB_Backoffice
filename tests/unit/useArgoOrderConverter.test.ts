@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildArgoOrders, type ParsedShippingRow } from '../../app/composables/useArgoOrderConverter'
+import { buildArgoOrders, resolveArgoProductKeyFromInput, type ParsedShippingRow } from '../../app/composables/useArgoOrderConverter'
 
 describe('useArgoOrderConverter', () => {
   it('applies dinner quantity rule for 두부모래', () => {
@@ -86,5 +86,34 @@ describe('useArgoOrderConverter', () => {
     expect(result.unresolvedRows).toHaveLength(0)
     expect(result.orders).toHaveLength(1)
     expect(result.orders[0]['상품바코드(*)']).toBe('8809414594219')
+  })
+
+  it('resolves product key from manual user input text', () => {
+    expect(resolveArgoProductKeyFromInput('이즈바이트')).toBe('이즈바이트 버블 덴탈껌')
+    expect(resolveArgoProductKeyFromInput('츄라잇 브라이트')).toBe('츄라잇 브라이트')
+    expect(resolveArgoProductKeyFromInput('')).toBeNull()
+  })
+
+  it('supports force product and quantity overrides', () => {
+    const rows: ParsedShippingRow[] = [
+      {
+        rowIndex: 2,
+        sourceType: 'dinner',
+        receiverName: '김아무개',
+        phone: '01012341234',
+        address: '서울 강남구 테헤란로 123',
+        postalCode: '06123',
+        productHint: '',
+      },
+    ]
+
+    const result = buildArgoOrders(rows, {
+      forceProductKey: '이즈바이트 버블 덴탈껌',
+      forceQuantity: 3,
+    })
+
+    expect(result.orders).toHaveLength(1)
+    expect(result.orders[0]['상품바코드(*)']).toBe('8800273472519')
+    expect(result.orders[0]['상품수량(*)']).toBe('3')
   })
 })
