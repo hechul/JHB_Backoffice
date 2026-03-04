@@ -4,6 +4,7 @@
     <div class="card filter-bar">
       <div class="filter-row">
         <SearchInput v-model="searchQuery" placeholder="이름, ID 검색..." width="240px" />
+        <SearchInput v-model="filterProductName" placeholder="상품명 검색..." width="240px" />
 
         <select v-model="filterPetType" class="select">
           <option value="">펫 타입 전체</option>
@@ -33,6 +34,7 @@
           <option value="5">5회 이상</option>
           <option value="10">10회 이상</option>
         </select>
+
       </div>
 
       <!-- Active filters -->
@@ -72,6 +74,7 @@
               <th>성장 단계</th>
               <th>구매 횟수</th>
               <th>구매 상품 수</th>
+              <th v-if="hasProductFilter">검색상품 구매횟수</th>
               <th>최근 주문</th>
               <th>이탈 위험</th>
             </tr>
@@ -96,6 +99,7 @@
               </td>
               <td>{{ c.purchaseCount }}회</td>
               <td>{{ formatQuantityCount(c.productCount) }}개</td>
+              <td v-if="hasProductFilter">{{ matchingProductPurchaseCount(c) }}회</td>
               <td class="text-sm text-secondary">{{ c.lastOrder }}</td>
               <td>
                 <StatusBadge
@@ -108,7 +112,7 @@
               </td>
             </tr>
             <tr v-if="filteredCustomers.length === 0">
-              <td colspan="8" class="empty-row">조건에 맞는 고객이 없습니다.</td>
+              <td :colspan="hasProductFilter ? 9 : 8" class="empty-row">조건에 맞는 고객이 없습니다.</td>
             </tr>
           </tbody>
         </table>
@@ -223,6 +227,13 @@ import { computePurchaseQuantity, formatQuantityCount } from '~/composables/useP
 
 type CustomerStage = 'Entry' | 'Growth' | 'Premium'
 
+interface CustomerProductStat {
+  key: string
+  name: string
+  purchaseCount: number
+  lastOrder: string
+}
+
 interface CustomerRow {
   customerKey: string
   name: string
@@ -235,6 +246,7 @@ interface CustomerRow {
   productCount: number
   lastOrder: string
   churnRisk: boolean
+  productStats: CustomerProductStat[]
 }
 
 interface CustomerOrderRow {
@@ -273,6 +285,7 @@ const filterPetType = ref('')
 const filterStage = ref('')
 const filterChurn = ref('')
 const filterPurchaseCount = ref('')
+const filterProductName = ref('')
 const showCustomerDetail = ref(false)
 const selectedCustomer = ref<CustomerRow | null>(null)
 const loading = ref(false)
@@ -380,6 +393,50 @@ function purchaseDateKey(row: Pick<PurchaseRow, 'order_date'>): string {
   return String(row.order_date || '').slice(0, 10)
 }
 
+function productGroupKey(row: Pick<PurchaseRow, 'product_id' | 'product_name'>): string {
+  const productId = String(row.product_id || '').trim()
+  if (productId) return `id:${productId}`
+
+  const canonicalName = normalizeMissionProductName(String(row.product_name || ''))
+  const normalized = normalizeForMatch(canonicalName || String(row.product_name || ''))
+  if (normalized) return `name:${normalized}`
+  return `raw:${String(row.product_name || '').trim()}`
+}
+
+function buildCustomerProductStats(rows: PurchaseRow[]): CustomerProductStat[] {
+  const statMap = new Map<string, { name: string; dates: Set<string>; lastOrder: string }>()
+
+  for (const row of rows) {
+    const key = productGroupKey(row)
+    const displayName = normalizeMissionProductName(String(row.product_name || '').trim()) || String(row.product_name || '').trim() || '-'
+    const date = purchaseDateKey(row)
+
+    if (!statMap.has(key)) {
+      statMap.set(key, {
+        name: displayName,
+        dates: new Set<string>(),
+        lastOrder: date,
+      })
+    }
+
+    const stat = statMap.get(key)!
+    if (date) stat.dates.add(date)
+    if (parseOrderDate(date).getTime() > parseOrderDate(stat.lastOrder).getTime()) {
+      stat.lastOrder = date
+    }
+    if (!stat.name || stat.name === '-') stat.name = displayName
+  }
+
+  return Array.from(statMap.entries())
+    .map(([key, stat]) => ({
+      key,
+      name: stat.name || '-',
+      purchaseCount: stat.dates.size,
+      lastOrder: stat.lastOrder,
+    }))
+    .sort((a, b) => parseOrderDate(b.lastOrder).getTime() - parseOrderDate(a.lastOrder).getTime())
+}
+
 async function loadProductMeta() {
   const { data, error } = await supabase
     .from('products')
@@ -472,6 +529,7 @@ async function fetchCustomers() {
         }).totalCount
         return sum + count
       }, 0)
+      const productStats = buildCustomerProductStats(customerRows)
 
       const lastOrder = String(latest.order_date || '').slice(0, 10)
       result.push({
@@ -486,6 +544,7 @@ async function fetchCustomers() {
         productCount,
         lastOrder,
         churnRisk: daysFromNow(lastOrder) > 90,
+        productStats,
       })
     }
 
@@ -536,9 +595,24 @@ async function fetchCustomerOrders(customer: CustomerRow) {
   }))
 }
 
+const hasProductFilter = computed(() => Boolean(filterProductName.value.trim()))
+
+function matchedProductStats(customer: CustomerRow): CustomerProductStat[] {
+  const query = filterProductName.value.trim()
+  if (!query) return []
+  return customer.productStats.filter((stat) => matchesSearchQuery(query, stat.name))
+}
+
+function matchingProductPurchaseCount(customer: CustomerRow): number {
+  return matchedProductStats(customer).reduce((sum, stat) => sum + stat.purchaseCount, 0)
+}
+
 const filteredCustomers = computed(() => {
   return customers.value.filter((c) => {
     if (!matchesSearchQuery(searchQuery.value, c.name, c.id, c.buyerName, c.buyerId)) return false
+    if (hasProductFilter.value) {
+      if (matchedProductStats(c).length === 0) return false
+    }
     if (filterPetType.value && c.petType !== filterPetType.value) return false
     if (filterStage.value && c.stage !== filterStage.value) return false
     if (filterChurn.value === 'true' && !c.churnRisk) return false
@@ -610,6 +684,7 @@ function goNextPage() {
 const activeFilters = computed(() => {
   const filters: { key: string; label: string }[] = []
   if (searchQuery.value) filters.push({ key: 'search', label: `검색: ${searchQuery.value}` })
+  if (filterProductName.value) filters.push({ key: 'productName', label: `상품: ${filterProductName.value}` })
   const petMap: Record<string, string> = { DOG: '강아지', CAT: '고양이', BOTH: '모두' }
   if (filterPetType.value) filters.push({ key: 'petType', label: `펫: ${petMap[filterPetType.value]}` })
   const stageMap: Record<string, string> = { Entry: '입문', Growth: '성장', Premium: '프리미엄' }
@@ -625,6 +700,7 @@ const activeFilters = computed(() => {
 function clearFilter(key: string) {
   const map: Record<string, any> = {
     search: searchQuery,
+    productName: filterProductName,
     petType: filterPetType,
     stage: filterStage,
     churn: filterChurn,
@@ -635,6 +711,7 @@ function clearFilter(key: string) {
 
 function clearAllFilters() {
   searchQuery.value = ''
+  filterProductName.value = ''
   filterPetType.value = ''
   filterStage.value = ''
   filterChurn.value = ''
@@ -653,6 +730,7 @@ function asSingleQueryValue(val: string | string[] | null | undefined): string {
 
 function applyFiltersFromQuery(query: LocationQuery) {
   searchQuery.value = asSingleQueryValue(query.q) || asSingleQueryValue(query.search)
+  filterProductName.value = asSingleQueryValue(query.product) || asSingleQueryValue(query.productName)
 
   const month = asSingleQueryValue(query.month)
   const isValidMonth = month === 'all' || availableMonths.value.some((option) => option.value === month)
@@ -687,6 +765,8 @@ function normalizedQuery(query: LocationQuery) {
 const managedKeys = new Set([
   'q',
   'search',
+  'product',
+  'productName',
   'purchaseType',
   'is_fake',
   'petType',
@@ -707,6 +787,7 @@ function syncFiltersToQuery() {
   }
 
   if (searchQuery.value.trim()) next.q = searchQuery.value.trim()
+  if (filterProductName.value.trim()) next.product = filterProductName.value.trim()
   if (filterPetType.value) next.petType = filterPetType.value
   if (filterStage.value) next.stage = filterStage.value
   if (filterChurn.value) next.churn = filterChurn.value
@@ -715,6 +796,7 @@ function syncFiltersToQuery() {
 
   const currentWithoutLegacy = { ...current }
   delete currentWithoutLegacy.search
+  delete currentWithoutLegacy.productName
   delete currentWithoutLegacy.pet
   delete currentWithoutLegacy.purchaseType
   delete currentWithoutLegacy.is_fake
@@ -739,7 +821,7 @@ watch(
 )
 
 watch(
-  [searchQuery, filterPetType, filterStage, filterChurn, filterPurchaseCount, selectedMonth],
+  [searchQuery, filterProductName, filterPetType, filterStage, filterChurn, filterPurchaseCount, selectedMonth],
   () => {
     currentPage.value = 1
     syncFiltersToQuery()
@@ -779,7 +861,9 @@ async function openCustomerDetail(customer: CustomerRow) {
 }
 
 function downloadFilteredCustomers() {
-  const header = ['이름', 'ID', '펫타입', '성장단계', '구매횟수', '구매상품수', '최근주문', '이탈위험']
+  const header = ['이름', 'ID', '펫타입', '성장단계', '구매횟수', '구매상품수']
+  if (hasProductFilter.value) header.push('검색상품 구매횟수')
+  header.push('최근주문', '이탈위험')
   const rows = filteredCustomers.value.map((c) => [
     c.name,
     c.id,
@@ -787,6 +871,7 @@ function downloadFilteredCustomers() {
     stageLabel(c.stage),
     c.purchaseCount,
     c.productCount,
+    ...(hasProductFilter.value ? [matchingProductPurchaseCount(c)] : []),
     c.lastOrder,
     c.churnRisk ? '위험' : '정상',
   ])
