@@ -10,6 +10,10 @@ export default defineNuxtConfig({
     redirect: false, // 커스텀 미들웨어로 처리
   },
 
+  nitro: {
+    preset: 'vercel',
+  },
+
   app: {
     head: {
       title: 'JHBioFarm 백오피스',
@@ -39,3 +43,4 @@ export default defineNuxtConfig({
     layouts: 'layouts',
   },
 })
+
