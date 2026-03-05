@@ -97,26 +97,31 @@ async function extractBlogMedia(rawUrl) {
 
         const page = await context.newPage()
 
-        // 불필요한 리소스 차단 (속도 향상)
-        await page.route('**/*.{woff,woff2,ttf,otf}', route => route.abort())
+        // 광고·추적·폰트 등 불필요한 리소스 차단 (속도 대폭 향상)
+        await page.route('**', (route) => {
+            const u = route.request().url()
+            if (u.includes('adservice') || u.includes('googlesyndication') ||
+                u.includes('doubleclick') || u.includes('ad.naver') ||
+                u.includes('analytics') || u.includes('beacon') ||
+                u.includes('.woff') || u.includes('.ttf') || u.includes('.otf')) {
+                return route.abort()
+            }
+            return route.continue()
+        })
 
         await page.goto(url, {
             waitUntil: 'domcontentloaded',
             timeout: PAGE_TIMEOUT_MS
         })
 
-        // 페이지 스크롤로 lazy-load 이미지 전부 트리거
-        await page.evaluate(async () => {
-            const distance = 400
-            const delay = 200
-            while (document.scrollingElement.scrollTop + window.innerHeight < document.scrollingElement.scrollHeight) {
-                document.scrollingElement.scrollTop += distance
-                await new Promise(r => setTimeout(r, delay))
-            }
-        })
+        // postfiles 이미지가 DOM에 나타날 때까지 최대 15초 대기 (SE3 렌더링 대기)
+        await page.waitForSelector(
+            'img[src*="postfiles.pstatic.net"], img[src*="blogfiles.pstatic.net"]',
+            { timeout: 15000 }
+        ).catch(() => { /* 이미지 없는 포스트 허용 */ })
 
-        // 스크롤 완료 후 이미지 로드 대기
-        await page.waitForTimeout(2000)
+        // 추가 렌더링 여유 대기
+        await page.waitForTimeout(1500)
 
         // 이미지 URL 추출 — data-src, data-lazy-src 우선 (lazy-load 원본), src는 fallback
         const rawImageUrls = await page.evaluate(() => {
