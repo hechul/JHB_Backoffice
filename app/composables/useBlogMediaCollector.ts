@@ -19,7 +19,7 @@ export interface JobStatus {
 }
 
 const POLL_INTERVAL_MS = 3000
-const MAX_POLL_DURATION_MS = 5 * 60 * 1000 // 5분
+const MAX_POLL_DURATION_MS = 10 * 60 * 1000 // 10분 (URL당 스크롤 포함 최대 2분 × 5개)
 
 export function useBlogMediaCollector() {
     const isStarting = ref(false)
@@ -111,7 +111,7 @@ export function useBlogMediaCollector() {
         if (!s) return ''
         const map: Record<string, string> = {
             pending: '서버 준비 중 (최대 90초)...',
-            running: '수집 중...',
+            running: '수집 중... (URL당 약 1~2분 소요)',
             done: '완료',
             partial: '일부 완료',
             failed: '실패'
