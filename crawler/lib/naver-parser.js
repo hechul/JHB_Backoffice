@@ -4,7 +4,7 @@
 const { chromium } = require('playwright')
 
 const MAX_IMAGES_PER_POST = 30
-const PAGE_TIMEOUT_MS = 45000
+const PAGE_TIMEOUT_MS = 90000  // Render 무료 플랜 느린 환경 대응 (90초)
 
 /**
  * 네이버 블로그 URL을 정규화 (PostView 직접 URL로 변환)
@@ -103,12 +103,12 @@ async function extractBlogMedia(rawUrl) {
         await page.route('**/*.{woff,woff2,ttf,otf}', route => route.abort())
 
         await page.goto(url, {
-            waitUntil: 'networkidle',
+            waitUntil: 'domcontentloaded',  // networkidle 대신 빠른 옵션 사용
             timeout: PAGE_TIMEOUT_MS
         })
 
         // 이미지가 로드될 때까지 잠시 대기
-        await page.waitForTimeout(2000)
+        await page.waitForTimeout(3000)
 
         // 이미지 URL 추출
         const rawImageUrls = await page.evaluate(() => {

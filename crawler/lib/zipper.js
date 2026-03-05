@@ -6,7 +6,7 @@ const https = require('https')
 const http = require('http')
 const { Readable } = require('stream')
 
-const MAX_IMAGES_PER_POST = 30
+const MAX_IMAGES_PER_POST = 10  // Supabase Storage 50MB 무료 제한 대응
 const DOWNLOAD_TIMEOUT_MS = 30000
 
 /**
