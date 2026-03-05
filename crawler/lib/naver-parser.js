@@ -30,19 +30,20 @@ function normalizeNaverBlogUrl(url) {
 }
 
 /**
- * 이미지 URL 정규화 — 네이버 CDN 썸네일 파라미터 제거해 원본 획득
+ * 이미지 URL 정규화 — type=w2000으로 교체해 최대 화질 획득
+ * (네이버 CDN: type 없음 → 5KB 최소, type=w2000 → 71KB 최대)
  */
 function normalizeImageUrl(src) {
     if (!src) return null
     try {
-        // 원본 이미지 CDN만 수집 (mblogthumb은 모바일 썸네일 → 저화질이라 제외)
+        // 원본 이미지 CDN만 수집
         if (!src.includes('blogfiles.pstatic.net') &&
             !src.includes('postfiles.pstatic.net')) {
             return null
         }
-        // type= 파라미터 제거해 원본 이미지 URL 획득
+        // type=w2000으로 교체 (최대 화질)
         const url = new URL(src)
-        url.searchParams.delete('type')
+        url.searchParams.set('type', 'w2000')
         return url.toString()
     } catch {
         return null
@@ -56,10 +57,14 @@ function extractVideoUrls(page) {
     return page.evaluate(() => {
         const videoUrls = []
 
-        // video 태그의 src 또는 data-src
+        // video 태그의 src 또는 data-src (mblogvideo CDN 포함)
         document.querySelectorAll('video source, video').forEach(el => {
             const src = el.getAttribute('src') || el.getAttribute('data-src')
-            if (src && (src.endsWith('.mp4') || src.includes('video'))) {
+            if (src && (
+                src.includes('mblogvideo-phinf.pstatic.net') ||
+                src.endsWith('.mp4') ||
+                src.includes('/video/')
+            )) {
                 videoUrls.push(src)
             }
         })
