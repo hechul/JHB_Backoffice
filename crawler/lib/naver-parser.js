@@ -35,11 +35,9 @@ function normalizeNaverBlogUrl(url) {
 function normalizeImageUrl(src) {
     if (!src) return null
     try {
-        // 네이버 blogfiles / postfiles CDN URL만 처리
+        // 원본 이미지 CDN만 수집 (mblogthumb은 모바일 썸네일 → 저화질이라 제외)
         if (!src.includes('blogfiles.pstatic.net') &&
-            !src.includes('postfiles.pstatic.net') &&
-            !src.includes('mblogthumb-phinf.pstatic.net') &&
-            !src.includes('dthumb-phinf.pstatic.net')) {
+            !src.includes('postfiles.pstatic.net')) {
             return null
         }
         // type= 파라미터 제거해 원본 이미지 URL 획득
