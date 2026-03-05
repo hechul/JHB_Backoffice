@@ -82,6 +82,13 @@ const ARGO_HEADERS = [
 const DINNER_SOURCE_KEYS = ['수령인', '가상번호', '수령주소']
 const REVIEWNOTE_SOURCE_KEYS = ['이름', '연락처', '주소']
 
+// 어떤 양식이든 대응: 공통 컬럼 동의어 목록
+const RECEIVER_KEYS = ['수령인', '이름', '수취인명', '수취인', '받는분', '받는사람', '성명', '고객명', '구매자명', '주문자', '신청자', '수신인', '신청인']
+const PHONE_KEYS = ['가상번호', '연락처', '휴대폰', '전화번호', '핸드폰', '휴대전화', '전화', '연락처1', '핸드폰번호', '휴대폰번호', '연락처(휴대폰)', '연락처(가상번호)']
+const ADDRESS_KEYS = ['수령주소', '주소', '배송지', '배송주소', '배송지주소', '수취인주소', '주소지', '배송 주소', '受취인주소', '도로명주소', '지번주소']
+const POSTCODE_KEYS = ['우편번호', '우편 번호', 'postcode', '우편', 'zip', '우편코드', '우편번 호']
+const PRODUCT_KEYS = ['품목명', '품명', '상품명', '미션상품명', '캠페인명', '캠페인', '제품명', '신청메시지', '비고', '품목', '상품', '상품 명', '제품', '물품명', '상품(품목)']
+
 const PRODUCT_CODES: ArgoProductCode[] = [
   { key: '애착트릿 북어', label: '애착트릿 북어', barcode: '8809616429555' },
   { key: '애착트릿 연어', label: '애착트릿 연어', barcode: '8809616429562' },
@@ -141,7 +148,7 @@ function splitAddressWithPostcode(rawAddress: string): { address: string; postal
   if (!input) return { address: '', postalCode: '' }
   const matched = input.match(/^(\d{5})\s+(.+)$/)
   if (!matched) return { address: input, postalCode: '' }
-  return { postalCode: matched[1], address: matched[2].trim() }
+  return { postalCode: matched[1]!, address: matched[2]!.trim() }
 }
 
 function inferProductHintFromFileName(name: string): string {
@@ -250,57 +257,37 @@ export function resolveArgoProductKeyFromInput(input: string): string | null {
 export async function parseShippingFile(file: File): Promise<ParsedShippingFile> {
   const workbook = await readWorkbook(file)
   const firstSheetName = workbook.SheetNames[0] || 'Sheet1'
-  const firstSheet = workbook.Sheets[firstSheetName]
+  const firstSheet = workbook.Sheets[firstSheetName] || {}
   const rows = XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet, { raw: false, defval: '' })
-  const headers = rows.length > 0 ? Object.keys(rows[0]).map((header) => String(header || '').trim()) : []
+  const headers = rows.length > 0 ? Object.keys(rows[0] || {}).map((header) => String(header || '').trim()) : []
   const sourceType = detectSourceType(headers)
   const fallbackProductHint = inferProductHintFromFileName(file.name)
-  const sourceLabel = sourceType === 'dinner' ? '디너의여왕' : sourceType === 'reviewnote' ? '리뷰노트' : '미확인'
+  const sourceLabel = sourceType === 'dinner' ? '디너의여왕' : sourceType === 'reviewnote' ? '리뷰노트' : '일반양식'
 
   let skippedRows = 0
   const parsedRows: ParsedShippingRow[] = rows.map((row, index) => {
-    if (sourceType === 'dinner') {
-      const receiverName = valueFromRow(row, ['수령인'])
-      const phone = valueFromRow(row, ['가상번호', '연락처'])
-      const rawAddress = valueFromRow(row, ['수령주소', '주소'])
-      const productHint = valueFromRow(row, ['품목명', '품명', '상품명', '캠페인명', '캠페인', '제품명']) || fallbackProductHint
-      const split = splitAddressWithPostcode(rawAddress)
-      if (!receiverName || !rawAddress) skippedRows += 1
-      return {
-        rowIndex: index + 2,
-        sourceType,
-        receiverName,
-        phone: sanitizePhone(phone),
-        address: split.address,
-        postalCode: split.postalCode,
-        productHint,
-      }
-    }
+    // 소스 종류와 무관하게 이름/주소/연락처를 최대한 추출
+    // 디너의여왕 전용 컬럼을 우선 시도하고, 없으면 공통 동의어로 폴백
+    const receiverName = valueFromRow(row, RECEIVER_KEYS)
+    const phone = valueFromRow(row, PHONE_KEYS)
+    const rawAddress = valueFromRow(row, ADDRESS_KEYS)
+    const postalCode = valueFromRow(row, POSTCODE_KEYS)
+    // 품목은 보조 정보(파일명 힌트가 메인)
+    const productHint = valueFromRow(row, PRODUCT_KEYS) || fallbackProductHint
 
-    const receiverName = valueFromRow(row, ['이름', '수령인', '수취인명'])
-    const phone = valueFromRow(row, ['연락처', '가상번호', '휴대폰', '전화번호'])
-    const rawAddress = valueFromRow(row, ['주소', '수령주소', '배송지'])
-    const postalCode = valueFromRow(row, ['우편번호', '우편 번호', 'postcode'])
-    const productHint = valueFromRow(row, [
-      '품목명',
-      '품명',
-      '상품명',
-      '미션상품명',
-      '캠페인명',
-      '캠페인',
-      '제품명',
-      '신청메시지',
-      '비고',
-    ]) || fallbackProductHint
+    // 주소에 우편번호가 앞에 붙어있는 경우 분리 (예: "12345 서울시 강남구")
+    const split = splitAddressWithPostcode(rawAddress)
+    const finalAddress = split.address || String(rawAddress || '').trim()
+    const finalPostcode = postalCode || split.postalCode
 
-    if (!receiverName || !rawAddress) skippedRows += 1
+    if (!receiverName || !finalAddress) skippedRows += 1
     return {
       rowIndex: index + 2,
-      sourceType,
+      sourceType: sourceType === 'unknown' ? 'reviewnote' : sourceType,
       receiverName,
       phone: sanitizePhone(phone),
-      address: String(rawAddress || '').trim(),
-      postalCode: String(postalCode || '').trim(),
+      address: finalAddress,
+      postalCode: String(finalPostcode || '').trim(),
       productHint,
     }
   }).filter((row) => row.receiverName && row.address)

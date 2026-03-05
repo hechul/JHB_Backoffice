@@ -121,9 +121,8 @@
               <th>파일</th>
               <th>원본 행</th>
               <th>수취인</th>
-              <th>원본 품목 힌트</th>
-              <th>상품명(직접입력)</th>
-              <th>수량(직접입력)</th>
+              <th>상품명</th>
+              <th>수량</th>
             </tr>
           </thead>
           <tbody>
@@ -131,7 +130,6 @@
               <td>{{ item.fileName }}</td>
               <td>{{ item.row.rowIndex }}</td>
               <td>{{ item.row.receiverName }}</td>
-              <td>{{ item.row.productHint || '-' }}</td>
               <td>
                 <input
                   v-model.trim="item.manualProductName"
@@ -323,16 +321,16 @@ const totalSkippedRows = computed(() => parsedFileItems.value.reduce((sum, item)
 
 const sourceSummaryLabel = computed(() => {
   if (parsedFileItems.value.length === 0) return '-'
-  const counts = { dinner: 0, reviewnote: 0, unknown: 0 }
+  const counts = { dinner: 0, reviewnote: 0, general: 0 }
   for (const item of parsedFileItems.value) {
     if (item.parsed.sourceType === 'dinner') counts.dinner += 1
     else if (item.parsed.sourceType === 'reviewnote') counts.reviewnote += 1
-    else counts.unknown += 1
+    else counts.general += 1
   }
   const chunks: string[] = []
   if (counts.dinner > 0) chunks.push(`디너의여왕 ${counts.dinner}`)
   if (counts.reviewnote > 0) chunks.push(`리뷰노트 ${counts.reviewnote}`)
-  if (counts.unknown > 0) chunks.push(`미확인 ${counts.unknown}`)
+  if (counts.general > 0) chunks.push(`일반양식 ${counts.general}`)
   return chunks.join(' / ')
 })
 
@@ -375,7 +373,7 @@ function normalizeText(value: unknown): string {
 function sourceTypeLabel(sourceType: ShippingSourceType): string {
   if (sourceType === 'dinner') return '디너의여왕'
   if (sourceType === 'reviewnote') return '리뷰노트'
-  return '미확인'
+  return '일반양식'
 }
 
 function fileKey(file: File): string {
