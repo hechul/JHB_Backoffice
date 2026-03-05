@@ -84,16 +84,18 @@ function handleLogout() {
 .home-layout {
   min-height: 100vh;
   background:
-    radial-gradient(960px 540px at 100% -8%, rgba(37, 99, 235, 0.06), transparent 70%),
+    radial-gradient(900px 500px at 100% -12%, rgba(37, 99, 235, 0.08), transparent 72%),
+    radial-gradient(860px 500px at 0% -20%, rgba(99, 102, 241, 0.06), transparent 76%),
     var(--color-bg);
 }
 
 /* Header */
 .home-header {
   height: 64px;
-  background: rgba(255, 255, 255, 0.92);
-  border-bottom: 1px solid var(--color-border);
-  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.78);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(12px) saturate(135%);
+  -webkit-backdrop-filter: blur(12px) saturate(135%);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -151,7 +153,7 @@ function handleLogout() {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--liquid-border);
   border-radius: var(--radius-md);
   color: var(--color-text-secondary);
   font-size: 0.75rem;
@@ -160,9 +162,9 @@ function handleLogout() {
 }
 
 .home-nav-btn:hover {
-  background: var(--color-bg);
+  background: var(--liquid-bg);
   color: var(--color-text);
-  border-color: #D1D5DB;
+  border-color: rgba(255, 255, 255, 0.78);
   transform: translateY(-1px);
 }
 
@@ -186,7 +188,7 @@ function handleLogout() {
 .home-user-avatar {
   width: 32px;
   height: 32px;
-  background: #F3F4F6;
+  background: var(--liquid-bg);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -232,7 +234,7 @@ function handleLogout() {
 }
 
 .home-logout-btn:hover {
-  background: #F3F4F6;
+  background: var(--liquid-bg);
   color: var(--color-text);
   transform: rotate(-10deg);
 }

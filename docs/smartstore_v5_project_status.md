@@ -179,6 +179,7 @@
 - **계정 승인 운영 화면 보강(2026-03-05)**: `/settings/users`에 승인 대기 배지 및 `승인/반려` 액션을 추가해 관리자 승인 워크플로우를 화면에서 처리 가능하도록 반영
 - **회원가입 승인 후 이메일 인증 자동확정 패치 추가(2026-03-05)**: `docs/sql/2026-03-05_auth_confirm_on_approval.sql` 파일 추가. `profiles.status=active` 변경 시 `auth.users.email_confirmed_at`을 자동 설정하고, 기존 active 계정 backfill로 `Email not confirmed` 로그인 실패를 방지
 - **UI 모션/인터랙션 정돈(2026-03-05)**: 전역 디자인 토큰(`main.css`)과 레이아웃(`default/home`)에 페이지 전환/콘텐츠 등장/드롭다운/네비게이션 hover 모션을 통합 적용. 기존 기능 로직은 유지하고 체감되는 반응성/시각 일관성만 개선
+- **리퀴드(Glass) 톤 2차 적용(2026-03-05)**: iOS 스타일에 맞춰 전역 `liquid` 토큰을 추가하고 카드/사이드바/헤더/드롭다운/버튼에 blur+saturation 기반 유리 질감을 반영. 근태 관리는 사이드바에서 제거하고 홈 진입 전용으로 정리
 - **근태관리 모듈 시작점 추가(2026-03-05)**: 홈/사이드바에 `근태 관리` 진입점을 추가하고 `/attendance`, `/attendance/records` 기본 화면 골격을 신설
 - **회원가입 승인 SQL 패치 추가(2026-03-05)**: `docs/sql/2026-03-05_profiles_signup_approval_patch.sql` 파일 추가 (`handle_new_user()`의 `role='viewer'`, `status='pending'` 기본 생성 규칙 포함)
 - **계정관리 홈 독립 진입 전환(2026-03-05)**: 계정 관리를 기본 사이드바 설정 메뉴에서 분리하고, 홈 카드에서 `admin`에게만 노출되는 독립 화면 흐름으로 조정

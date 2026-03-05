@@ -46,20 +46,6 @@
           </template>
         </div>
 
-        <!-- 근태 관리 -->
-        <div class="nav-group">
-          <div v-show="!sidebarCollapsed" class="nav-group-label">근태 관리</div>
-          <NuxtLink
-            to="/attendance"
-            class="nav-item"
-            :class="{ active: isActive('/attendance') }"
-            @click="mobileMenuOpen = false"
-          >
-            <Clock3 :size="18" :stroke-width="1.8" />
-            <span v-show="!sidebarCollapsed">근태 관리</span>
-          </NuxtLink>
-        </div>
-
         <!-- 상품 관리 -->
         <div v-if="!isViewer" class="nav-group">
           <div v-show="!sidebarCollapsed" class="nav-group-label">상품 관리</div>
@@ -197,7 +183,6 @@ import {
   FileText,
   Home,
   BarChart3,
-  Clock3,
   Package,
   CalendarDays,
   ChevronLeft,
@@ -353,16 +338,17 @@ watch(
   display: flex;
   min-height: 100vh;
   background:
-    radial-gradient(900px 500px at 80% -10%, rgba(37, 99, 235, 0.06), transparent 70%),
+    radial-gradient(900px 500px at 80% -10%, rgba(37, 99, 235, 0.1), transparent 70%),
+    radial-gradient(900px 500px at 0% -20%, rgba(99, 102, 241, 0.08), transparent 72%),
     transparent;
 }
 
 /* Sidebar */
 .sidebar {
   width: var(--sidebar-width);
-  background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
-  box-shadow: 8px 0 26px rgba(15, 23, 42, 0.04);
+  background: var(--liquid-bg-strong);
+  border-right: 1px solid var(--liquid-border);
+  box-shadow: 12px 0 28px rgba(15, 23, 42, 0.08);
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -371,6 +357,8 @@ watch(
   bottom: 0;
   z-index: 100;
   transition: width var(--transition-normal), box-shadow var(--transition-normal);
+  backdrop-filter: blur(calc(var(--liquid-blur) + 4px)) saturate(150%);
+  -webkit-backdrop-filter: blur(calc(var(--liquid-blur) + 4px)) saturate(150%);
 }
 
 .sidebar.collapsed {
@@ -389,7 +377,7 @@ watch(
 }
 
 .sidebar-logo:hover {
-  background: rgba(248, 250, 252, 0.8);
+  background: rgba(255, 255, 255, 0.62);
 }
 
 .logo-mark {
@@ -460,7 +448,7 @@ watch(
   align-items: center;
   gap: var(--space-md);
   padding: 9px var(--space-md);
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   font-size: 0.8125rem;
   font-weight: 450;
   color: var(--color-sidebar-text);
@@ -489,13 +477,14 @@ watch(
 }
 
 .nav-item:hover {
-  background: var(--color-sidebar-hover);
+  background: rgba(255, 255, 255, 0.64);
   color: var(--color-sidebar-text-active);
   transform: translateX(2px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
 }
 
 .nav-item.active {
-  background: var(--color-sidebar-active);
+  background: linear-gradient(140deg, rgba(234, 242, 255, 0.92) 0%, rgba(219, 234, 254, 0.84) 100%);
   color: var(--color-sidebar-text-active);
   font-weight: 550;
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
@@ -630,17 +619,20 @@ watch(
   flex-direction: column;
   min-height: 100vh;
   transition: margin-left var(--transition-normal);
+  width: calc(100% - var(--sidebar-width));
 }
 
 .sidebar-collapsed .main-wrapper {
   margin-left: var(--sidebar-collapsed-width);
+  width: calc(100% - var(--sidebar-collapsed-width));
 }
 
 .header {
   height: var(--header-height);
-  background: rgba(255, 255, 255, 0.92);
-  border-bottom: 1px solid var(--color-border);
-  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.74);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(calc(var(--liquid-blur) + 6px)) saturate(145%);
+  -webkit-backdrop-filter: blur(calc(var(--liquid-blur) + 6px)) saturate(145%);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -728,9 +720,9 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--liquid-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  background: var(--liquid-bg);
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
@@ -754,9 +746,9 @@ watch(
   align-items: center;
   gap: var(--space-sm);
   padding: 5px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  border: 1px solid var(--liquid-border);
+  border-radius: 999px;
+  background: var(--liquid-bg);
   font-size: 0.8125rem;
   font-weight: 500;
   color: var(--color-text);
@@ -766,7 +758,7 @@ watch(
 }
 
 .period-current:hover {
-  background: var(--color-bg);
+  background: var(--liquid-bg-strong);
   border-color: var(--color-primary);
   box-shadow: 0 4px 10px rgba(37, 99, 235, 0.1);
   transform: translateY(-1px);
@@ -785,14 +777,16 @@ watch(
   top: calc(100% + 6px);
   right: 0;
   width: 240px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--liquid-bg-strong);
+  border: 1px solid var(--liquid-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   z-index: 200;
   padding: var(--space-sm);
   animation: dropdownIn 0.18s var(--ease-emphasized);
   transform-origin: top right;
+  backdrop-filter: blur(calc(var(--liquid-blur) + 2px)) saturate(140%);
+  -webkit-backdrop-filter: blur(calc(var(--liquid-blur) + 2px)) saturate(140%);
 }
 
 .period-dropdown-header {
@@ -853,7 +847,7 @@ watch(
 }
 
 .period-option:hover {
-  background: var(--color-sidebar-hover);
+  background: rgba(255, 255, 255, 0.72);
   transform: translateX(2px);
 }
 
@@ -906,14 +900,14 @@ watch(
   width: 34px;
   height: 34px;
   border-radius: 8px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border: 1px solid var(--liquid-border);
+  background: var(--liquid-bg);
   color: var(--color-text-secondary);
   transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .header-refresh-btn:hover {
-  background: var(--color-bg);
+  background: var(--liquid-bg-strong);
   color: var(--color-text);
   transform: rotate(-10deg);
 }
@@ -922,6 +916,8 @@ watch(
   flex: 1;
   padding: var(--space-2xl);
   max-width: 1480px;
+  width: 100%;
+  margin: 0 auto;
 }
 
 .content > * {
@@ -983,6 +979,7 @@ watch(
 
   .main-wrapper {
     margin-left: 0 !important;
+    width: 100% !important;
   }
 
   .mobile-menu-btn {
