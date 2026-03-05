@@ -119,7 +119,7 @@
 <script setup lang="ts">
 import { UserPlus, Shield } from 'lucide-vue-next'
 
-definePageMeta({ layout: 'default' })
+definePageMeta({ layout: 'home' })
 
 type UserRole = 'admin' | 'modifier' | 'viewer'
 type UserStatus = 'pending' | 'active' | 'rejected' | 'inactive'

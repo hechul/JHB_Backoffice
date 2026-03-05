@@ -177,8 +177,13 @@
 - **아르고 변환 최근 변경분 안정성 재검증(2026-03-05)**: 일반양식 동의어 파싱/행단위 입력 UI 변경 반영 상태에서 `npm run build`, `npm run test:unit`, `tests/unit/useArgoOrderConverter.test.ts` 재실행 결과 모두 통과(기능 이상 징후 없음)
 - **회원가입 승인 게이트 1차 적용(2026-03-05)**: `/login`에 회원가입 탭 추가, `profiles.status` 기반 접근 제어(`pending/rejected/inactive`는 `/pending-approval` 고정) 반영
 - **계정 승인 운영 화면 보강(2026-03-05)**: `/settings/users`에 승인 대기 배지 및 `승인/반려` 액션을 추가해 관리자 승인 워크플로우를 화면에서 처리 가능하도록 반영
+- **회원가입 승인 후 이메일 인증 자동확정 패치 추가(2026-03-05)**: `docs/sql/2026-03-05_auth_confirm_on_approval.sql` 파일 추가. `profiles.status=active` 변경 시 `auth.users.email_confirmed_at`을 자동 설정하고, 기존 active 계정 backfill로 `Email not confirmed` 로그인 실패를 방지
+- **UI 모션/인터랙션 정돈(2026-03-05)**: 전역 디자인 토큰(`main.css`)과 레이아웃(`default/home`)에 페이지 전환/콘텐츠 등장/드롭다운/네비게이션 hover 모션을 통합 적용. 기존 기능 로직은 유지하고 체감되는 반응성/시각 일관성만 개선
 - **근태관리 모듈 시작점 추가(2026-03-05)**: 홈/사이드바에 `근태 관리` 진입점을 추가하고 `/attendance`, `/attendance/records` 기본 화면 골격을 신설
 - **회원가입 승인 SQL 패치 추가(2026-03-05)**: `docs/sql/2026-03-05_profiles_signup_approval_patch.sql` 파일 추가 (`handle_new_user()`의 `role='viewer'`, `status='pending'` 기본 생성 규칙 포함)
+- **계정관리 홈 독립 진입 전환(2026-03-05)**: 계정 관리를 기본 사이드바 설정 메뉴에서 분리하고, 홈 카드에서 `admin`에게만 노출되는 독립 화면 흐름으로 조정
+- **근태관리 Phase 1 구현 완료(2026-03-05)**: 사용자 출근/퇴근 기록(`/attendance/records`)과 관리자 전체관리(`/attendance/admin`)를 실데이터 연동으로 구현. 월별 조회, 상태/근무시간 표시, 관리자 수정/삭제 기능 포함
+- **근태관리 SQL 추가(2026-03-05)**: `docs/sql/2026-03-05_attendance_phase1.sql` 파일 추가 (`attendance_records` 테이블, 인덱스, 업데이트 트리거, RLS 정책)
 
 ---
 
@@ -221,6 +226,7 @@
 - SC091 아르고 발주 변환: `/automation/argo-order`
 - SC100 근태 관리: `/attendance`
 - SC101 출퇴근 기록: `/attendance/records`
+- SC102 근태 전체 관리(관리자): `/attendance/admin`
 
 ### 4.2 모듈 구조(트리)
 ```text
@@ -237,8 +243,9 @@
 │  └─ 아르고 발주 변환(/automation/argo-order) [admin/modifier]
 ├─ 근태 관리
 │  └─ 출퇴근 기록(/attendance/records) [active 계정]
-└─ 설정
-   └─ 계정 관리(/settings/users) [admin, 역할/상태 변경 가능]
+│  └─ 근태 전체 관리(/attendance/admin) [admin]
+└─ 계정 관리
+   └─ 사용자 계정(/settings/users) [admin, 역할/상태 변경 가능]
 ```
 
 ---

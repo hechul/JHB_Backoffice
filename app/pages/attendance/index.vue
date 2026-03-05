@@ -16,13 +16,23 @@
         </div>
       </NuxtLink>
 
-      <div class="card action-card disabled">
+      <NuxtLink v-if="isAdmin" to="/attendance/admin" class="card action-card">
+        <div class="action-icon">
+          <ClipboardCheck :size="20" :stroke-width="1.8" />
+        </div>
+        <div class="action-body">
+          <h3>근태 전체 관리</h3>
+          <p>전체 근태 조회/검색/수정/삭제 (관리자 전용)</p>
+        </div>
+      </NuxtLink>
+
+      <div v-else class="card action-card disabled">
         <div class="action-icon disabled">
           <ClipboardCheck :size="20" :stroke-width="1.8" />
         </div>
         <div class="action-body">
-          <h3>근태 승인/정정</h3>
-          <p>정정 요청 처리 및 승인 워크플로우 (준비중)</p>
+          <h3>근태 전체 관리</h3>
+          <p>관리자 전용 기능입니다.</p>
         </div>
       </div>
     </div>
@@ -33,6 +43,8 @@
 import { Clock3, ClipboardCheck } from 'lucide-vue-next'
 
 definePageMeta({ layout: 'home' })
+
+const { isAdmin } = useCurrentUser()
 </script>
 
 <style scoped>

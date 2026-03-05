@@ -73,26 +73,6 @@
             <span v-show="!sidebarCollapsed">상품 목록</span>
           </NuxtLink>
         </div>
-
-        <!-- 설정 -->
-        <div v-if="!isViewer" class="nav-group">
-          <div v-show="!sidebarCollapsed" class="nav-group-label">설정</div>
-          <NuxtLink
-            v-if="isAdmin"
-            to="/settings/users"
-            class="nav-item"
-            :class="{ active: isActive('/settings/users') }"
-            @click="mobileMenuOpen = false"
-          >
-            <UserCog :size="18" :stroke-width="1.8" />
-            <span v-show="!sidebarCollapsed">계정 관리</span>
-          </NuxtLink>
-          <div v-else class="nav-item nav-item-disabled">
-            <UserCog :size="18" :stroke-width="1.8" />
-            <span v-show="!sidebarCollapsed">계정 관리</span>
-            <span v-show="!sidebarCollapsed" class="nav-badge-soon">관리자 전용</span>
-          </div>
-        </div>
       </nav>
 
       <!-- Collapse Toggle -->
@@ -219,7 +199,6 @@ import {
   BarChart3,
   Clock3,
   Package,
-  UserCog,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -273,7 +252,6 @@ const allMenuItems = computed(() => {
     { path: '/attendance', label: '근태 관리', group: '근태 관리' },
     { path: '/products', label: '상품 목록', group: '상품 관리' },
   ]
-  if (isAdmin.value) result.push({ path: '/settings/users', label: '계정 관리', group: '설정' })
   return result
 })
 
@@ -374,6 +352,9 @@ watch(
 .layout {
   display: flex;
   min-height: 100vh;
+  background:
+    radial-gradient(900px 500px at 80% -10%, rgba(37, 99, 235, 0.06), transparent 70%),
+    transparent;
 }
 
 /* Sidebar */
@@ -381,6 +362,7 @@ watch(
   width: var(--sidebar-width);
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
+  box-shadow: 8px 0 26px rgba(15, 23, 42, 0.04);
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -388,7 +370,7 @@ watch(
   left: 0;
   bottom: 0;
   z-index: 100;
-  transition: width 0.2s ease;
+  transition: width var(--transition-normal), box-shadow var(--transition-normal);
 }
 
 .sidebar.collapsed {
@@ -403,6 +385,11 @@ watch(
   border-bottom: 1px solid var(--color-border-light);
   min-height: 65px;
   overflow: hidden;
+  transition: background var(--transition-fast);
+}
+
+.sidebar-logo:hover {
+  background: rgba(248, 250, 252, 0.8);
 }
 
 .logo-mark {
@@ -435,13 +422,14 @@ watch(
   color: var(--color-text-secondary);
   font-size: 0.75rem;
   font-weight: 500;
-  transition: all 0.12s ease;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .header-nav-btn:hover {
   background: var(--color-bg);
   color: var(--color-text);
   border-color: #D1D5DB;
+  transform: translateY(-1px);
 }
 
 .sidebar-nav {
@@ -476,10 +464,23 @@ watch(
   font-size: 0.8125rem;
   font-weight: 450;
   color: var(--color-sidebar-text);
-  transition: all 0.12s ease;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
+  position: relative;
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  width: 3px;
+  height: 60%;
+  border-radius: 99px;
+  background: transparent;
+  transition: background var(--transition-fast);
 }
 
 .sidebar.collapsed .nav-item {
@@ -490,12 +491,18 @@ watch(
 .nav-item:hover {
   background: var(--color-sidebar-hover);
   color: var(--color-sidebar-text-active);
+  transform: translateX(2px);
 }
 
 .nav-item.active {
   background: var(--color-sidebar-active);
   color: var(--color-sidebar-text-active);
   font-weight: 550;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
+}
+
+.nav-item.active::before {
+  background: var(--color-primary);
 }
 
 .nav-item.nav-home {
@@ -507,6 +514,7 @@ watch(
 .nav-item.nav-home:hover {
   color: var(--color-primary);
   background: var(--color-sidebar-hover);
+  transform: translateX(2px);
 }
 
 .nav-item.disabled {
@@ -537,11 +545,12 @@ watch(
   padding: var(--space-sm);
   border-radius: var(--radius-md);
   color: var(--color-text-muted);
-  transition: all 0.12s ease;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast);
 }
 .sidebar-collapse-btn:hover {
   background: var(--color-sidebar-hover);
   color: var(--color-text);
+  transform: translateY(-1px);
 }
 
 .sidebar-footer {
@@ -600,12 +609,13 @@ watch(
   padding: 8px var(--space-sm);
   border-radius: var(--radius-md);
   color: var(--color-text-muted);
-  transition: all 0.12s ease;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast);
 }
 
 .sidebar-logout-btn:hover {
   background: var(--color-sidebar-hover);
   color: var(--color-text);
+  transform: translateY(-1px);
 }
 
 .sidebar.collapsed .sidebar-logout-btn {
@@ -619,7 +629,7 @@ watch(
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  transition: margin-left 0.2s ease;
+  transition: margin-left var(--transition-normal);
 }
 
 .sidebar-collapsed .main-wrapper {
@@ -628,8 +638,9 @@ watch(
 
 .header {
   height: var(--header-height);
-  background: var(--color-surface);
+  background: rgba(255, 255, 255, 0.92);
   border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -722,12 +733,13 @@ watch(
   background: var(--color-surface);
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .period-nav:hover {
   background: var(--color-bg);
   color: var(--color-text);
+  transform: translateY(-1px);
 }
 
 .period-nav:disabled {
@@ -749,13 +761,15 @@ watch(
   font-weight: 500;
   color: var(--color-text);
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
   font-family: var(--font-sans);
 }
 
 .period-current:hover {
   background: var(--color-bg);
   border-color: var(--color-primary);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.1);
+  transform: translateY(-1px);
 }
 
 .period-current:disabled {
@@ -777,6 +791,8 @@ watch(
   box-shadow: var(--shadow-lg);
   z-index: 200;
   padding: var(--space-sm);
+  animation: dropdownIn 0.18s var(--ease-emphasized);
+  transform-origin: top right;
 }
 
 .period-dropdown-header {
@@ -833,11 +849,12 @@ watch(
   color: var(--color-text);
   cursor: pointer;
   font-family: var(--font-sans);
-  transition: background 0.1s ease;
+  transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
 }
 
 .period-option:hover {
   background: var(--color-sidebar-hover);
+  transform: translateX(2px);
 }
 
 .period-option.active {
@@ -875,8 +892,8 @@ watch(
   margin-left: auto;
   font-size: 0.6rem;
   font-weight: 600;
-  color: var(--text-muted);
-  background: var(--bg-secondary);
+  color: var(--color-text-muted);
+  background: #F3F4F6;
   padding: 1px 6px;
   border-radius: 8px;
   letter-spacing: 0.02em;
@@ -892,18 +909,29 @@ watch(
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-secondary);
-  transition: all 0.12s ease;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .header-refresh-btn:hover {
   background: var(--color-bg);
   color: var(--color-text);
+  transform: rotate(-10deg);
 }
 
 .content {
   flex: 1;
   padding: var(--space-2xl);
+  max-width: 1480px;
 }
+
+.content > * {
+  animation: contentIn 0.28s var(--ease-emphasized) both;
+}
+
+.content > *:nth-child(2) { animation-delay: 0.03s; }
+.content > *:nth-child(3) { animation-delay: 0.06s; }
+.content > *:nth-child(4) { animation-delay: 0.09s; }
+.content > *:nth-child(5) { animation-delay: 0.12s; }
 
 /* Mobile Overlay */
 .mobile-overlay {
@@ -912,6 +940,29 @@ watch(
   inset: 0;
   background: rgba(0, 0, 0, 0.4);
   z-index: 99;
+  animation: fadeIn 0.2s var(--ease-standard);
+}
+
+@keyframes dropdownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes contentIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Responsive */

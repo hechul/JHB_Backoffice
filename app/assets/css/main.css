@@ -32,6 +32,7 @@
   --color-sidebar-hover: #F9FAFB;
   --color-sidebar-text: #374151;
   --color-sidebar-text-active: #111827;
+  --color-page-glow: rgba(37, 99, 235, 0.08);
 
   /* Spacing */
   --space-xs: 4px;
@@ -49,10 +50,10 @@
   --radius-xl: 16px;
 
   /* Shadows */
-  --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.08);
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 6px 14px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 12px 28px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 22px 48px rgba(15, 23, 42, 0.12);
 
   /* Fonts */
   --font-sans: 'Pretendard Variable', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
@@ -65,9 +66,11 @@
   --slide-panel-width: 480px;
 
   /* Transitions */
-  --transition-fast: 0.15s ease;
-  --transition-normal: 0.2s ease;
-  --transition-slow: 0.3s ease;
+  --ease-standard: cubic-bezier(0.2, 0.0, 0.0, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --transition-fast: 0.16s var(--ease-standard);
+  --transition-normal: 0.24s var(--ease-standard);
+  --transition-slow: 0.34s var(--ease-emphasized);
 }
 
 /* --- Reset & Base --- */
@@ -88,8 +91,17 @@ html {
 body {
   font-family: var(--font-sans);
   color: var(--color-text);
-  background: var(--color-bg);
+  background:
+    radial-gradient(1200px 700px at -10% -20%, var(--color-page-glow), transparent 68%),
+    radial-gradient(1200px 700px at 110% 0%, rgba(16, 185, 129, 0.05), transparent 72%),
+    var(--color-bg);
   line-height: 1.6;
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(37, 99, 235, 0.18);
+  color: #0f172a;
 }
 
 a {
@@ -137,7 +149,7 @@ input, select, textarea {
   border-radius: var(--radius-md);
   font-size: 0.8125rem;
   font-weight: 500;
-  transition: all var(--transition-fast);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   white-space: nowrap;
   user-select: none;
 }
@@ -150,19 +162,24 @@ input, select, textarea {
 .btn-primary {
   background: var(--color-primary);
   color: #fff;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.24);
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(29, 78, 216, 0.26);
 }
 
 .btn-secondary {
   background: var(--color-surface);
   color: var(--color-text);
   border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-xs);
 }
 .btn-secondary:hover:not(:disabled) {
-  background: var(--color-bg);
+  background: #F8FAFC;
   border-color: #D1D5DB;
+  transform: translateY(-1px);
 }
 
 .btn-danger {
@@ -178,8 +195,12 @@ input, select, textarea {
   color: var(--color-text-secondary);
 }
 .btn-ghost:hover:not(:disabled) {
-  background: var(--color-bg);
+  background: #F3F4F6;
   color: var(--color-text);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
 }
 
 .btn-lg {
@@ -229,6 +250,8 @@ input, select, textarea {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-xl);
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--transition-normal), box-shadow var(--transition-normal), transform var(--transition-normal);
 }
 
 .card-clickable {
@@ -236,9 +259,9 @@ input, select, textarea {
   transition: all var(--transition-fast);
 }
 .card-clickable:hover {
-  border-color: #D1D5DB;
-  box-shadow: var(--shadow-sm);
-  transform: translateY(-1px);
+  border-color: #d8dee8;
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .card-header {
@@ -297,7 +320,7 @@ input, select, textarea {
 }
 
 .data-table tbody tr {
-  transition: background 0.1s;
+  transition: background var(--transition-fast);
 }
 .data-table tbody tr:hover {
   background: var(--color-bg);
@@ -345,12 +368,13 @@ input, select, textarea {
   font-size: 0.8125rem;
   color: var(--color-text);
   background: var(--color-surface);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
   outline: none;
 }
 .input:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+  background: #fff;
 }
 
 .input::placeholder {
@@ -411,11 +435,12 @@ input, select, textarea {
   background-repeat: no-repeat;
   background-position: right 10px center;
   padding-right: 32px;
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
 }
 .select:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+  background-color: #fff;
 }
 
 /* --- Tabs --- */
@@ -506,14 +531,14 @@ input, select, textarea {
   justify-content: center;
   z-index: 200;
   backdrop-filter: blur(4px);
-  animation: fadeIn 0.15s ease;
+  animation: fadeIn 0.2s var(--ease-standard);
 }
 
 .modal-content {
   width: 90vw;
   max-width: 480px;
   padding: var(--space-2xl);
-  animation: scaleIn 0.15s ease;
+  animation: scaleIn 0.2s var(--ease-emphasized);
 }
 
 .modal-actions {
@@ -539,7 +564,7 @@ input, select, textarea {
   inset: 0;
   background: rgba(0, 0, 0, 0.3);
   z-index: 150;
-  animation: fadeIn 0.2s ease;
+  animation: fadeIn 0.22s var(--ease-standard);
 }
 
 .slide-panel {
@@ -555,7 +580,7 @@ input, select, textarea {
   z-index: 160;
   display: flex;
   flex-direction: column;
-  animation: slideInRight 0.25s ease;
+  animation: slideInRight 0.28s var(--ease-emphasized);
 }
 
 .slide-panel-header {
@@ -613,13 +638,13 @@ input, select, textarea {
   box-shadow: var(--shadow-lg);
   font-size: 0.8125rem;
   pointer-events: auto;
-  animation: toastIn 0.3s ease;
+  animation: toastIn 0.3s var(--ease-emphasized);
   min-width: 280px;
   max-width: 400px;
 }
 
 .toast-leaving {
-  animation: toastOut 0.2s ease forwards;
+  animation: toastOut 0.2s var(--ease-standard) forwards;
 }
 
 .toast-icon {
@@ -849,12 +874,14 @@ input, select, textarea {
 /* --- Page Transition --- */
 .page-enter-active,
 .page-leave-active {
-  transition: opacity 0.15s ease;
+  transition: opacity 0.2s var(--ease-standard), transform 0.2s var(--ease-emphasized), filter 0.2s var(--ease-standard);
 }
 
 .page-enter-from,
 .page-leave-to {
   opacity: 0;
+  transform: translateY(8px) scale(0.995);
+  filter: blur(2px);
 }
 
 /* --- Pagination --- */
@@ -927,12 +954,14 @@ input, select, textarea {
   background: var(--color-bg);
   transition: all var(--transition-normal);
   cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0);
 }
 
 .drop-zone:hover,
 .drop-zone.drag-over {
   border-color: var(--color-primary);
   background: var(--color-primary-light);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
 }
 
 .drop-zone-icon {
@@ -1032,6 +1061,17 @@ input, select, textarea {
 .status-banner .btn {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* --- Breadcrumb --- */

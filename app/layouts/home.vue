@@ -83,18 +83,24 @@ function handleLogout() {
 <style scoped>
 .home-layout {
   min-height: 100vh;
-  background: var(--color-bg);
+  background:
+    radial-gradient(960px 540px at 100% -8%, rgba(37, 99, 235, 0.06), transparent 70%),
+    var(--color-bg);
 }
 
 /* Header */
 .home-header {
   height: 64px;
-  background: var(--color-surface);
+  background: rgba(255, 255, 255, 0.92);
   border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-3xl);
+  position: sticky;
+  top: 0;
+  z-index: 40;
 }
 
 .home-header-left {
@@ -107,6 +113,12 @@ function handleLogout() {
   display: flex;
   align-items: center;
   gap: var(--space-md);
+  transition: transform var(--transition-fast), opacity var(--transition-fast);
+}
+
+.home-logo:hover {
+  transform: translateY(-1px);
+  opacity: 0.92;
 }
 
 .home-logo-mark {
@@ -144,13 +156,14 @@ function handleLogout() {
   color: var(--color-text-secondary);
   font-size: 0.75rem;
   font-weight: 500;
-  transition: all 0.12s ease;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .home-nav-btn:hover {
   background: var(--color-bg);
   color: var(--color-text);
   border-color: #D1D5DB;
+  transform: translateY(-1px);
 }
 
 .home-header-right {
@@ -181,6 +194,12 @@ function handleLogout() {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-text-secondary);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.home-user-avatar:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .home-user-info {
@@ -209,12 +228,13 @@ function handleLogout() {
   height: 32px;
   border-radius: var(--radius-md);
   color: var(--color-text-muted);
-  transition: all 0.12s ease;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast);
 }
 
 .home-logout-btn:hover {
   background: #F3F4F6;
   color: var(--color-text);
+  transform: rotate(-10deg);
 }
 
 /* Content */
@@ -222,6 +242,24 @@ function handleLogout() {
   max-width: 1120px;
   margin: 0 auto;
   padding: var(--space-3xl);
+}
+
+.home-content > * {
+  animation: homeContentIn 0.3s var(--ease-emphasized) both;
+}
+
+.home-content > *:nth-child(2) { animation-delay: 0.04s; }
+.home-content > *:nth-child(3) { animation-delay: 0.08s; }
+
+@keyframes homeContentIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 768px) {

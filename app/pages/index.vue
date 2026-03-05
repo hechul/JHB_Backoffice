@@ -27,13 +27,12 @@
         <span class="feature-name">업무 자동화</span>
       </NuxtLink>
 
-      <div v-if="!isViewer" class="feature-card disabled">
+      <NuxtLink v-if="isAdmin" to="/settings/users" class="feature-card active">
         <div class="feature-icon">
-          <Settings :size="22" :stroke-width="1.8" />
+          <UserCog :size="22" :stroke-width="1.8" />
         </div>
-        <span class="feature-name">설정</span>
-        <span class="feature-badge">준비중</span>
-      </div>
+        <span class="feature-name">계정 관리</span>
+      </NuxtLink>
     </div>
   </div>
 </template>
@@ -43,12 +42,12 @@ import {
   BarChart3,
   Bot,
   Clock3,
-  Settings,
+  UserCog,
 } from 'lucide-vue-next'
 
 definePageMeta({ layout: 'home' })
 
-const { isViewer } = useCurrentUser()
+const { isViewer, isAdmin } = useCurrentUser()
 </script>
 
 <style scoped>
@@ -138,24 +137,4 @@ const { isViewer } = useCurrentUser()
   }
 }
 
-.feature-card.disabled {
-  opacity: 0.38;
-  pointer-events: none;
-  cursor: not-allowed;
-  position: relative;
-}
-
-.feature-card.disabled .feature-icon {
-  background: var(--color-bg-secondary, #f3f4f6);
-  color: var(--color-text-muted, #9ca3af);
-}
-
-.feature-badge {
-  font-size: 0.6rem;
-  font-weight: 600;
-  color: var(--color-text-muted, #9ca3af);
-  background: var(--color-bg-secondary, #f3f4f6);
-  padding: 1px 6px;
-  border-radius: 8px;
-}
 </style>

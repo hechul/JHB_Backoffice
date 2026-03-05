@@ -49,15 +49,15 @@
         </div>
 
         <div class="field">
-          <label class="label" for="email">이메일</label>
+          <label class="label" for="email">아이디</label>
           <div class="input-with-icon">
             <Mail :size="16" :stroke-width="1.8" class="input-icon" />
             <input
               id="email"
               v-model="email"
-              type="email"
+              type="text"
               class="input"
-              placeholder="admin@jhbiofarm.co.kr"
+              placeholder="admin01 또는 admin@jhbiofarm.co.kr"
               required
               autocomplete="email"
             />
@@ -146,6 +146,13 @@ const infoMsg = ref('')
 const isLoading = ref(false)
 const mode = ref<'login' | 'signup'>('login')
 
+function normalizeLoginId(raw: string) {
+  const v = String(raw || '').trim().toLowerCase()
+  if (!v) return ''
+  if (v.includes('@')) return v
+  return `${v}@jhbiofarm.local`
+}
+
 function switchMode(next: 'login' | 'signup') {
   mode.value = next
   errorMsg.value = ''
@@ -158,18 +165,21 @@ async function handleLogin() {
   isLoading.value = true
 
   try {
+    const normalizedEmail = normalizeLoginId(email.value)
     const { data: signInData, error } = await supabase.auth.signInWithPassword({
-      email: email.value,
+      email: normalizedEmail,
       password: password.value,
     })
 
     if (error) {
-      if (error.message.includes('Invalid login')) {
-        errorMsg.value = '이메일 또는 비밀번호가 올바르지 않습니다.'
-      } else if (error.message.includes('Email not confirmed')) {
-        errorMsg.value = '이메일 인증이 완료되지 않았습니다.'
+      const msg = String(error.message || '')
+      const lowerMsg = msg.toLowerCase()
+      if (lowerMsg.includes('invalid login')) {
+        errorMsg.value = '아이디 또는 비밀번호가 올바르지 않습니다.'
+      } else if (lowerMsg.includes('email not confirmed')) {
+        errorMsg.value = '로그인 실패: 계정 이메일 인증이 완료되지 않았습니다. 관리자 승인 후에도 동일하면 인증 패치 SQL을 먼저 실행해주세요.'
       } else {
-        errorMsg.value = '로그인에 실패했습니다. 다시 시도해주세요.'
+        errorMsg.value = `로그인 실패: ${msg || '알 수 없는 오류'}`
       }
     } else {
       await fetchProfile(signInData.user?.id)
@@ -203,8 +213,9 @@ async function handleSignup() {
       return
     }
 
+    const normalizedEmail = normalizeLoginId(email.value)
     const { data, error } = await supabase.auth.signUp({
-      email: email.value.trim(),
+      email: normalizedEmail,
       password: password.value,
       options: {
         data: {
@@ -230,7 +241,7 @@ async function handleSignup() {
       await fetchProfile(data.session.user.id)
       await navigateTo('/pending-approval')
     } else {
-      infoMsg.value = '회원가입 요청이 접수되었습니다. 로그인 후 관리자 승인을 기다려주세요.'
+      infoMsg.value = '회원가입 요청이 접수되었습니다. 관리자 승인 후 로그인해주세요.'
       mode.value = 'login'
     }
   } catch {

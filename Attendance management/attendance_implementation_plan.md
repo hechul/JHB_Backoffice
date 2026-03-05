@@ -46,6 +46,8 @@
 3. 글로벌 미들웨어에서 계정 상태 기반 라우팅 차단
 4. 계정관리(`/settings/users`)에 승인대기 사용자 승인/반려 액션 추가
 5. 근태관리 라우트 골격(`/attendance`) 추가
+6. 사용자 출근/퇴근 기록 기능 (`/attendance/records`)
+7. 관리자 전체 근태 기록 관리 (`/attendance/admin`)
 
 ### Out of Scope (후속)
 
@@ -97,6 +99,20 @@
 2. 홈/사이드바 진입점 추가
 3. 승인 완료 계정만 접근 가능 확인
 
+## Phase D — 출퇴근 기록 MVP
+
+1. `attendance_records` 테이블 생성 + RLS 정책
+2. 사용자 본인 출근/퇴근 버튼 동작
+3. 오늘 기록 요약(출근/퇴근/근무시간) 표시
+4. 월별 내 기록 목록 조회
+
+## Phase E — 관리자 관리 화면 MVP
+
+1. `/attendance/admin` 페이지 추가 (admin 전용)
+2. 월별 전체 기록 조회 + 이름/아이디 검색
+3. 관리자 수동 수정(출근/퇴근 시간 보정)
+4. 관리자 삭제(오입력 기록 정리)
+
 ---
 
 ## 6) 검증 계획
@@ -138,3 +154,17 @@
   - 홈/사이드바에 `근태 관리` 진입점 추가
   - `/attendance`, `/attendance/records` 기본 화면 추가
   - SQL 패치 파일 초안 추가: `docs/sql/2026-03-05_profiles_signup_approval_patch.sql`
+- 2026-03-05 16:15: 운영 정책 변경 반영
+  - 이메일 인증 흐름 제거(아이디 기반 사용)
+  - 계정 활성화는 `profiles.status` 기준으로 단순화
+- 2026-03-05 16:25: Phase D/E 시작 (이번 작업)
+  - 출퇴근 실기록/관리자 전체관리 화면 구현 착수
+  - 신규 SQL 예정: `docs/sql/2026-03-05_attendance_phase1.sql`
+- 2026-03-05 16:40: Phase D 완료
+  - `/attendance/records`에 출근/퇴근 실동작 반영
+  - 오늘 기록(출근/퇴근/근무시간) + 월별 개인 기록 목록 조회 구현
+  - 공통 유틸 추가: `app/composables/useAttendance.ts`
+  - SQL 파일 추가: `docs/sql/2026-03-05_attendance_phase1.sql`
+- 2026-03-05 16:55: Phase E 완료
+  - `/attendance/admin` 관리자 전체관리 화면 구현(월 조회/검색/수정/삭제)
+  - `/attendance` 허브에서 관리자 전용 카드 분기 처리
