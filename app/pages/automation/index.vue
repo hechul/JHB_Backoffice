@@ -16,15 +16,15 @@
         </div>
       </NuxtLink>
 
-      <div class="card action-card disabled">
-        <div class="action-icon disabled">
+      <NuxtLink to="/automation/blog-media" class="card action-card">
+        <div class="action-icon">
           <ImageDown :size="20" :stroke-width="1.8" />
         </div>
         <div class="action-body">
           <h3>블로그 미디어 수집</h3>
-          <p>네이버 블로그 이미지/동영상 일괄 저장 (준비중)</p>
+          <p>네이버 블로그 이미지/동영상 일괄 저장</p>
         </div>
-      </div>
+      </NuxtLink>
     </div>
   </div>
 </template>

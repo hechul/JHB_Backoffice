@@ -1,9 +1,109 @@
 # Work Automation 진행상황
 
 - 프로젝트: JHBioFarm 백오피스 > 업무 자동화
-- 대상 기능: 블로그 체험단 배송지 파일 → 아르고 발주 양식 자동 변환
+- 대상 기능: 기능1(배송지→아르고 변환), 기능2(블로그 이미지/동영상 수집 자동화)
 - 문서 목적: 작업 진행상황을 누적 기록하고, 다음 작업자가 바로 이어서 개발 가능하도록 상태를 고정
-- 기준일: 2026-03-04 (Asia/Seoul)
+
+---
+
+## 1) 현재 상태 요약
+
+### 기능1 (아르고 발주 변환) — `완료`
+- 어떤 양식이든 자동 처리 (컬럼 동의어 기반 유연 파싱)
+- 다중 파일 합본 변환
+- 사람별 상품명/수량 직접 입력 방식
+- 우편번호 자동조회 (파일 내 추출 → 카카오 API)
+- 아르고 양식 엑셀 다운로드
+
+### 기능2 (블로그 미디어 수집) — `Phase D+E 구현 완료 / Render 배포 대기`
+- Playwright + **Render.com** + Supabase DB Pull 패턴 아키텍처 확정
+- `automation_jobs` DB 테이블 생성 완료
+- Render 크롤러 서버 코드 완성 (`crawler/` 폴더, `render.yaml` 포함)
+- Vercel API 라우트 완성 (`/api/blog/start`, `/api/blog/status/[jobId]`)
+- `blog-media.vue` UI 페이지 + `useBlogMediaCollector.ts` composable 완성
+- 자동화 허브 블로그 미디어 카드 활성화
+- **남은 작업: Render에 `crawler/` 폴더를 배포하고 `CRAWLER_SERVER_URL` 환경변수 설정**
+
+---
+
+## 2) 최근 변경 로그
+
+| 일시 | 구분 | 내용 | 상태 |
+|---|---|---|---|
+| 2026-03-04 | UI | 홈/사이드바에 `업무 자동화` 메뉴 추가 | 완료 |
+| 2026-03-04 | 기능 | 아르고 발주 변환 MVP 구현 | 완료 |
+| 2026-03-04 | API | 우편번호 자동조회 API 추가 (`KAKAO_REST_API_KEY` 연동) | 완료 |
+| 2026-03-04 | 테스트 | `useArgoOrderConverter` 유닛 테스트 추가 | 완료 |
+| 2026-03-05 | 기능 | 어떤 양식이든 자동 처리 (컬럼 동의어 기반 파싱으로 확장) | 완료 |
+| 2026-03-05 | 계획 | 기능2 구현 계획 확정 (Playwright+**Render.com**, DB Pull 패턴) | 완료 |
+| 2026-03-05 | DB | `automation_jobs` Supabase 테이블 생성 (RLS, index, service_role policy) | 완료 |
+| 2026-03-05 | 기능2 | `crawler/` **Render** 크롤러 서버 코드 작성 (`render.yaml` 포함) | 완료 |
+| 2026-03-05 | 기능2 | Vercel API: `/api/blog/start`, `/api/blog/status/[jobId]` 추가 | 완료 |
+| 2026-03-05 | 기능2 | `blog-media.vue` + `useBlogMediaCollector.ts` 작성 | 완료 |
+| 2026-03-05 | 기능2 | 자동화 허브 블로그 미디어 카드 활성화 | 완료 |
+
+---
+
+## 3) 파일 반영 위치
+
+### 기능1
+- `app/pages/automation/index.vue` (블로그 미디어 카드 활성화)
+- `app/pages/automation/argo-order.vue`
+- `app/composables/useArgoOrderConverter.ts`
+- `server/api/postcode/lookup.post.ts`
+
+### 기능2 (신규)
+- `crawler/index.js` — **Render** Express 서버 진입점
+- `crawler/lib/job-worker.js` — DB polling 워커 (5초 간격)
+- `crawler/lib/naver-parser.js` — Playwright 기반 이미지/동영상 URL 추출
+- `crawler/lib/zipper.js` — 이미지 다운로드 + ZIP 생성
+- `crawler/lib/supabase-uploader.js` — Supabase Storage 업로드
+- `crawler/routes/ping.js` — 헬스체크 엔드포인트
+- `crawler/package.json`, `crawler/Dockerfile`
+- `server/api/blog/start.post.ts` — job 등록 + Render ping
+- `server/api/blog/status/[jobId].get.ts` — 상태 조회 (폴링용)
+- `app/pages/automation/blog-media.vue` — UI 페이지
+- `app/composables/useBlogMediaCollector.ts` — 폴링 흐름 제어
+
+---
+
+## 4) 남은 작업 (기능2)
+
+### ⚠️ Render 배포 필수 (수동)
+1. [render.com](https://render.com) 가입 후 새 Web Service 생성
+2. `crawler/` 폴더를 GitHub 레포로 push → Render에 연결 (Dockerfile 자동 감지)
+3. Render 환경변수 설정:
+   - `SUPABASE_URL` = `https://qvqblzvypwwlmjxetola.supabase.co`
+   - `SUPABASE_SERVICE_KEY` = Supabase > Settings > API > **service_role** 키
+4. Render 배포 후 URL 확인 (예: `https://jhb-blog-crawler.onrender.com`)
+5. Vercel 환경변수 설정:
+   - `CRAWLER_SERVER_URL` = Render URL
+6. Vercel 재배포
+
+### Phase F (선택적 후속)
+- 실패 URL 재시도 버튼 (이미 UI에 구현됨)
+- Job 이력 목록 UI
+- Storage 만료 파일 자동 삭제
+
+---
+
+## 5) 운영 환경변수
+
+| 키 | 위치 | 비고 |
+|----|------|------|
+| `KAKAO_REST_API_KEY` | Vercel | 우편번호 자동조회 |
+| `CRAWLER_SERVER_URL` | Vercel | **Render** 크롤러 URL |
+| `SUPABASE_URL` | **Render** | Supabase 프로젝트 URL |
+| `SUPABASE_SERVICE_KEY` | **Render** | service_role 키 (RLS 우회) |
+
+---
+
+## 6) 기록 규칙
+
+- 이 문서는 작업 단위 종료 시 반드시 업데이트
+- 변경 로그는 `일시/구분/내용/상태` 4컬럼으로 추가
+- 상태값 표준: `완료`, `진행중`, `보류`, `취소`
+
 
 ---
 
@@ -45,6 +145,7 @@
 | 2026-03-04 | API | 우편번호 조회 API 추가(`KAKAO_REST_API_KEY` 연동) | 완료 |
 | 2026-03-04 | 테스트 | `useArgoOrderConverter` 유닛 테스트 추가 | 완료 |
 | 2026-03-05 | 검증 | 아르고 변환 최근 변경분 재점검(`build`, 전체 `test:unit`, `useArgoOrderConverter` 단위 테스트) 이상 없음 확인 | 완료 |
+| 2026-03-05 | 계획 | 기능2(네이버 블로그 이미지/동영상 수집) 구현 계획을 `work_automation_implementation_plan.md`에 신규 반영 | 완료 |
 
 ---
 

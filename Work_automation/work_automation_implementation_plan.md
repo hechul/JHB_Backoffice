@@ -1,140 +1,154 @@
 # Work Automation 구현계획
 
 - 프로젝트: JHBioFarm 백오피스 > 업무 자동화
-- 기능: 배송지 파일(디너의여왕/리뷰노트) → 아르고 발주 양식 자동 변환
-- 작성일: 2026-03-04 (Asia/Seoul)
+- 기능 1: 배송지 파일(어떤 양식이든) → 아르고 발주 양식 자동 변환 **[✅ 완료]**
+- 기능 2: 네이버 블로그 링크 기반 이미지/동영상 수집 자동화 **[🔧 코드 완료 / Render 배포 대기]**
+- 최종 수정: 2026-03-05
 
 ---
 
-## 1) 목표
+## 기능 1 — 아르고 발주 변환 ✅ 완료
 
-- 서로 다른 배송지 양식 파일을 업로드하면 품목명 기반으로 제품코드/수량을 자동 매핑해
-  아르고 발주 양식을 즉시 다운로드할 수 있게 한다.
-- 반복 수작업(복붙/수동 코드 입력/우편번호 확인)을 최소화한다.
+### 완료된 구현
 
----
+| 항목 | 상세 |
+|------|------|
+| 파일 파싱 | `.xlsx / .xls / .csv` 다중 파일 동시 업로드 |
+| 소스 자동 감지 | 디너의여왕 / 리뷰노트 / **어떤 양식이든** (컬럼 동의어 기반) |
+| 이름·주소·연락처 추출 | 광범위한 컬럼명 동의어 매핑으로 유연한 파싱 |
+| 우편번호 보완 | 파일 내 추출 → 카카오 API 조회 순서 |
+| 사람별 입력 | 수취인 단위 상품명·수량 직접 입력 |
+| 제품코드 매핑 | 15개 품목 코드 하드코딩 |
+| 수량 규칙 | 디너의여왕(두부모래 2개, 나머지 1개) / 리뷰노트(전 품목 1개) |
+| 다운로드 | 아르고 양식(`국내배송 주문`) 엑셀 생성 |
 
-## 2) 범위
+### 파일 위치
 
-### In Scope
+- `app/pages/automation/argo-order.vue`
+- `app/composables/useArgoOrderConverter.ts`
+- `server/api/postcode/lookup.post.ts`
 
-- 업로드 파일 파싱 (`.xlsx/.xls/.csv`)
-- 소스 자동 인식 (디너의여왕 / 리뷰노트)
-- 제품코드 자동 매핑 + 수량 규칙 적용
-- 우편번호 자동 보완 (주소 내 추출 + 카카오 API)
-- 아르고 양식(`국내배송 주문`) 엑셀 생성/다운로드
-- 미해결 행 표출
+### 환경변수
 
-### Out of Scope (후속)
-
-- 블로그 이미지/동영상 수집 자동화
-- 아르고 API 직접 발주 전송
-- 우편번호 외 주소 정규화 고도화(지번/도로명 통합 정합성 튜닝)
-
----
-
-## 3) 제품코드/수량 규칙
-
-### 제품코드
-
-- 애착트릿 북어: `8809616429555`
-- 애착트릿 연어: `8809616429562`
-- 애착트릿 치킨: `8809616429579`
-- 케어푸 포스트바이오틱스: `8809414594202`
-- 츄라잇 클린펫: `8809560553115`
-- 츄라잇 데일리핏: `8809560553108`
-- 츄라잇 브라이트: `8809560553122`
-- 엔자이츄 츄잉 덴탈껌: `8809414594219`
-- 이즈바이트 버블 덴탈껌: `8800273472519`
-- 두부모래: `A607366560520`
-- 츄르짜개 블루: `A817173254651`
-- 츄르짜개 옐로: `A618028701048`
-- 츄르짜개 퍼플: `A841542052631`
-- 미니 트릿백 민트: `A602382403678`
-- 미니 트릿백 퍼플: `A386066475217`
-
-### 수량
-
-- 디너의여왕: 엔자이츄/이즈바이트 1, 두부모래 2
-- 리뷰노트: 전 품목 1
+| 키 | 위치 | 비고 |
+|----|------|------|
+| `KAKAO_REST_API_KEY` | Vercel | 우편번호 API (선택, 없으면 파일 내 추출만 사용) |
 
 ---
 
-## 4) 구현 구조
+## 기능 2 — 블로그 미디어 수집 🔧 코드 완료 / Render 배포 대기
 
-### 프론트
+### 아키텍처 — DB Pull 패턴 (Playwright + Render + Supabase)
 
-- `/automation` : 자동화 허브
-- `/automation/argo-order` : 변환 실행 화면
-- `useArgoOrderConverter.ts` :
-  - 파일 파싱
-  - 소스 감지
-  - 품목 힌트 매핑
-  - 주문 행 생성
-  - 엑셀 생성/다운로드
+```
+[사용자] URL 입력 (최대 10개) → "수집 시작" 클릭
+    ↓
+[Vercel 함수 /api/blog/start]
+  ① DB에 job 등록 (status: 'pending', urls 배열 저장)
+  ② Render /ping에 wake-up 신호 전송 (timeout 2초, 응답 무관)
+  ③ job_id 즉시 반환 (< 3초) → Vercel 10초 제약 완전 회피
+    ↓
+[Render 크롤러 — 5초마다 DB 폴링]
+  ① pending job 발견 → status: 'running' 업데이트
+  ② Playwright로 블로그 렌더링 → 이미지/동영상 URL 추출
+  ③ 이미지 다운로드 → ZIP 생성
+  ④ Supabase Storage에 ZIP 업로드 (24시간 서명 URL 발급)
+  ⑤ status: 'done' / 'partial' / 'failed' 업데이트
+    ↓
+[프론트 — 3초마다 폴링]
+  pending → running → done 상태 감지
+    ↓
+[사용자] ZIP 다운로드 버튼 클릭
+```
 
-### 서버
+> **왜 DB Pull 패턴인가?**  
+> Vercel 서버리스는 Response 반환 즉시 프로세스가 종료되므로 fire-and-forget이 불가능합니다.  
+> Render 크롤러가 DB를 직접 폴링하면 이 제약을 완전히 우회할 수 있습니다.
 
-- `/api/postcode/lookup` :
-  - 주소 배열 입력
-  - 우편번호 맵 반환
-  - `KAKAO_REST_API_KEY` 존재 시 카카오 API 조회
+### 무료 플랜 제약
 
----
+| 서비스 | 플랜 | 제약 |
+|--------|------|------|
+| Vercel | 무료 | 함수 실행 최대 **10초** |
+| Supabase | 무료 | Storage **1GB** (24시간 후 자동 삭제 정책) |
+| **Render** | **무료** | RAM 512MB, 15분 비활성 시 슬립, **월 750시간 무료** |
 
-## 5) 단계별 계획
+### 처리 한계 정책
 
-## Phase A (완료)
+| 항목 | 한계값 |
+|------|--------|
+| 1회 최대 URL | **10개** |
+| URL당 최대 이미지 | **30개** |
+| Render 처리 타임아웃 | **120초** |
+| ZIP 보관 기간 | **24시간** |
+| 동영상 수집 | best-effort (네이버 플레이어 특성상 추출 불가 케이스 다수) |
 
-1. 자동화 라우팅/네비 반영
-2. 기본 변환 파이프라인 구현
-3. 미해결 행 표출 및 다운로드 처리
-4. 우편번호 API 연결
+### Cold Start 대응
 
-## Phase B (다음)
+Render 무료 플랜은 15분 비활성 시 슬립됩니다.
 
-1. 옵션 미확정 품목 UI 개선
-2. 미해결 행 일괄 처리 UX
-3. 변환 이력 저장(선택)
+- Vercel 함수가 job 등록 후 `/ping`으로 Render를 깨움
+- 슬립 → 완전 실행까지 **40~60초** 소요
+- 프론트에서 `pending` 상태 동안 "서버 준비 중 (최대 90초)..." 안내 표시
 
-## Phase C (확장)
+### 구현 완료된 파일
 
-1. 외부 도구 연동(아르고 직접 업로드/API)
-2. 자동 주소 정규화 개선
-3. 템플릿 버전 관리
+#### Vercel 프로젝트
+| 파일 | 역할 |
+|------|------|
+| `server/api/blog/start.post.ts` | URL 검증 → job DB 등록 → Render ping → job_id 즉시 반환 |
+| `server/api/blog/status/[jobId].get.ts` | 프론트 폴링용 job 상태 조회 |
+| `app/pages/automation/blog-media.vue` | URL 입력 / 진행 상태 / ZIP 다운로드 / 실패 재시도 UI |
+| `app/composables/useBlogMediaCollector.ts` | job 등록 → 3초 폴링 → 완료 감지 흐름 제어 |
 
----
+#### Render 크롤러 (`crawler/` 폴더)
+| 파일 | 역할 |
+|------|------|
+| `index.js` | Express 서버 + DB 폴링 워커 시작 |
+| `lib/job-worker.js` | 5초 간격 pending job 감지 → 크롤링 실행 |
+| `lib/naver-parser.js` | Playwright Chromium으로 블로그 렌더링 → 이미지/동영상 URL 추출 |
+| `lib/zipper.js` | 이미지 다운로드 → ZIP Buffer 생성 (파일명: `블로그ID_포스트번호_001.jpg`) |
+| `lib/supabase-uploader.js` | Supabase Storage 업로드 → 24시간 서명 URL 반환 |
+| `routes/ping.js` | GET /ping 헬스체크 (Render 슬립 해제용) |
+| `Dockerfile` | `mcr.microsoft.com/playwright:v1.40.0-jammy` 베이스 |
+| `render.yaml` | Render 배포 설정 |
 
-## 6) 테스트 계획
+#### Supabase DB
+```sql
+automation_jobs
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
+  job_type      text DEFAULT 'blog_media'
+  created_by    uuid REFERENCES profiles(id)
+  status        text  -- 'pending' | 'running' | 'done' | 'partial' | 'failed'
+  total_urls    int
+  success_count int
+  fail_count    int
+  storage_path  text        -- ZIP 파일 경로
+  download_url  text        -- 서명된 다운로드 URL (24시간)
+  expires_at    timestamptz
+  summary_json  jsonb       -- urls 배열 + failures 배열
+  completed_at  timestamptz
+  created_at    timestamptz DEFAULT now()
+```
 
-- 단위 테스트:
-  - 품목 매핑 정확성
-  - 수량 규칙 정확성
-  - 우편번호 fallback 동작
-- 시나리오 테스트:
-  - 디너의여왕 샘플 파일 1개 변환
-  - 리뷰노트 샘플 파일 1개 변환
-  - 우편번호 없는 주소 다건 처리
-  - 미해결 행이 포함된 파일 처리
-- 회귀 테스트:
-  - `npm run build`
-  - `npm run test:unit`
+### 환경변수
 
----
+| 키 | 위치 | 비고 |
+|----|------|------|
+| `CRAWLER_SERVER_URL` | Vercel | Render 서버 URL |
+| `SUPABASE_URL` | Render | `https://qvqblzvypwwlmjxetola.supabase.co` |
+| `SUPABASE_SERVICE_KEY` | Render | service_role 키 (RLS 우회) |
 
-## 7) 배포/운영 체크
+### ⚠️ 남은 작업 — Render 배포 (수동)
 
-1. 환경변수 설정
-   - `KAKAO_REST_API_KEY` (권장)
-2. Vercel 재배포
-3. 운영 샘플 파일로 실검증
-4. 미해결 행 기준 운영 가이드 배포
+1. `crawler/` 폴더를 GitHub 레포로 push
+2. [render.com](https://render.com) > New Web Service > GitHub 연결 > Dockerfile 자동 감지
+3. Render 환경변수 설정 (`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`)
+4. Render 배포 완료 후 URL 확인 (예: `https://jhb-blog-crawler.onrender.com`)
+5. Vercel 환경변수에 `CRAWLER_SERVER_URL` 추가 → 재배포
 
----
+### Phase F — 운영 기능 (선택적 후속)
 
-## 8) 수용 기준(Definition of Done)
-
-- 사용자가 배송지 파일 업로드 후 1회 클릭으로 아르고 양식 파일을 다운로드할 수 있다.
-- 디너의여왕/리뷰노트 형식 모두 처리 가능하다.
-- 매핑 실패/우편번호 누락 행이 명확히 표시된다.
-- 빌드/유닛테스트가 통과한다.
+- Job 이력 목록 UI (`/automation/blog-media` 하단 섹션)
+- Storage 만료 파일 자동 삭제 (Render cron 또는 Supabase Edge Function)
+- URL 20개 초과 대량 처리 방안 (분할 처리)

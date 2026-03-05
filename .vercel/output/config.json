@@ -1,0 +1,124 @@
+{
+  "version": 3,
+  "overrides": {},
+  "routes": [
+    {
+      "headers": {
+        "cache-control": "public, max-age=31536000, immutable"
+      },
+      "src": "/_nuxt/builds/meta/(.*)"
+    },
+    {
+      "headers": {
+        "cache-control": "public, max-age=1, immutable"
+      },
+      "src": "/_nuxt/builds/(.*)"
+    },
+    {
+      "headers": {
+        "cache-control": "public, max-age=31536000, immutable"
+      },
+      "src": "/_nuxt/(.*)"
+    },
+    {
+      "src": "/_nuxt/builds/meta(.*)",
+      "headers": {
+        "cache-control": "public,max-age=31536000,immutable"
+      },
+      "continue": true
+    },
+    {
+      "src": "/_nuxt/builds(.*)",
+      "headers": {
+        "cache-control": "public,max-age=31536000,immutable"
+      },
+      "continue": true
+    },
+    {
+      "src": "/_nuxt(.*)",
+      "headers": {
+        "cache-control": "public,max-age=31536000,immutable"
+      },
+      "continue": true
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "(?<__isr_route>/__nuxt_error)",
+      "dest": "/__fallback"
+    },
+    {
+      "src": "/upload",
+      "dest": "/upload"
+    },
+    {
+      "src": "/settings/users",
+      "dest": "/settings/users"
+    },
+    {
+      "src": "/products",
+      "dest": "/products"
+    },
+    {
+      "src": "/logs",
+      "dest": "/logs"
+    },
+    {
+      "src": "/login",
+      "dest": "/login"
+    },
+    {
+      "src": "/filter",
+      "dest": "/filter"
+    },
+    {
+      "src": "/dashboard",
+      "dest": "/dashboard"
+    },
+    {
+      "src": "/customers",
+      "dest": "/customers"
+    },
+    {
+      "src": "/automation/blog-media",
+      "dest": "/automation/blog-media"
+    },
+    {
+      "src": "/automation/argo-order",
+      "dest": "/automation/argo-order"
+    },
+    {
+      "src": "/automation",
+      "dest": "/automation"
+    },
+    {
+      "src": "/api/postcode/lookup",
+      "dest": "/api/postcode/lookup"
+    },
+    {
+      "src": "/api/blog/start",
+      "dest": "/api/blog/start"
+    },
+    {
+      "src": "/__nuxt_error",
+      "dest": "/__nuxt_error"
+    },
+    {
+      "src": "/",
+      "dest": "/index"
+    },
+    {
+      "src": "/api/blog/status/(?<jobId>[^/]+)",
+      "dest": "/api/blog/status/[jobId]"
+    },
+    {
+      "src": "/__nuxt_island/(?:.*)",
+      "dest": "/__nuxt_island/[...]"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/__fallback"
+    }
+  ]
+}
