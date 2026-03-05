@@ -101,22 +101,36 @@ async function extractBlogMedia(rawUrl) {
         await page.route('**/*.{woff,woff2,ttf,otf}', route => route.abort())
 
         await page.goto(url, {
-            waitUntil: 'domcontentloaded',  // networkidle 대신 빠른 옵션 사용
+            waitUntil: 'domcontentloaded',
             timeout: PAGE_TIMEOUT_MS
         })
 
-        // 이미지가 로드될 때까지 잠시 대기
-        await page.waitForTimeout(3000)
+        // 페이지 스크롤로 lazy-load 이미지 전부 트리거
+        await page.evaluate(async () => {
+            const distance = 400
+            const delay = 200
+            while (document.scrollingElement.scrollTop + window.innerHeight < document.scrollingElement.scrollHeight) {
+                document.scrollingElement.scrollTop += distance
+                await new Promise(r => setTimeout(r, delay))
+            }
+        })
 
-        // 이미지 URL 추출
+        // 스크롤 완료 후 이미지 로드 대기
+        await page.waitForTimeout(2000)
+
+        // 이미지 URL 추출 — data-src, data-lazy-src 우선 (lazy-load 원본), src는 fallback
         const rawImageUrls = await page.evaluate(() => {
             const urls = []
             document.querySelectorAll('img').forEach(img => {
-                const src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-lazy-src')
+                // data-src, data-lazy-src에 원본 URL이 있는 경우가 많음
+                const src = img.getAttribute('data-lazy-src') ||
+                    img.getAttribute('data-src') ||
+                    img.getAttribute('src')
                 if (src) urls.push(src)
             })
             return urls
         })
+
 
         // 동영상 URL 추출
         const videoUrls = await extractVideoUrls(page)
