@@ -80,11 +80,14 @@ async function extractBlogMedia(rawUrl) {
     try {
         browser = await chromium.launch({
             headless: true,
+            executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
+                '--single-process',
+                '--no-zygote',
             ]
         })
 

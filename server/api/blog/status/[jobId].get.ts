@@ -1,4 +1,5 @@
 import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { createClient } from '@supabase/supabase-js'
 
 export default defineEventHandler(async (event) => {
     const jobId = getRouterParam(event, 'jobId')
@@ -6,18 +7,22 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode: 400, message: 'jobId가 필요합니다.' })
     }
 
-    const supabase = await serverSupabaseClient(event)
-    const user = await serverSupabaseUser(event)
+    // service_role 키로 조회 (SPA ssr:false 환경에서 세션 쿠키 없음)
+    const supabaseUrl = process.env.NUXT_PUBLIC_SUPABASE_URL!
+    const serviceKey = process.env.SUPABASE_SERVICE_KEY!
 
-    if (!user) {
-        throw createError({ statusCode: 401, message: '로그인이 필요합니다.' })
+    if (!serviceKey) {
+        throw createError({ statusCode: 500, message: 'SUPABASE_SERVICE_KEY 환경변수가 설정되지 않았습니다.' })
     }
 
-    const { data: job, error } = await supabase
+    const adminClient = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false }
+    })
+
+    const { data: job, error } = await adminClient
         .from('automation_jobs')
         .select('id, status, total_urls, success_count, fail_count, download_url, expires_at, summary_json, completed_at, created_at')
         .eq('id', jobId)
-        .eq('created_by', user.id)
         .single()
 
     if (error || !job) {
@@ -25,7 +30,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // 다운로드 URL 만료 확인
-    const isExpired = job.expires_at ? new Date(job.expires_at) < new Date() : false
+    const isExpired = job.expires_at ? new Date(job.expires_at as string) < new Date() : false
 
     return {
         jobId: job.id,

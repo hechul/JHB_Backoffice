@@ -10,7 +10,7 @@ RUN npm install --omit=dev
 # 소스 복사
 COPY . .
 
-# Railway에서 PORT 환경변수 자동 주입
+# Render는 PORT 환경변수를 자동으로 설정함
 ENV PORT=3001
 EXPOSE 3001
 
