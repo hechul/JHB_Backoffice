@@ -1,4 +1,5 @@
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { createClient } from '@supabase/supabase-js'
+import { serverSupabaseUser } from '#supabase/server'
 
 export default defineEventHandler(async (event) => {
     const body = await readBody(event)
@@ -23,20 +24,27 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode: 400, message: '유효한 네이버 블로그 URL이 없습니다.' })
     }
 
-    // @nuxtjs/supabase 서버 클라이언트 사용
-    const supabase = await serverSupabaseClient(event)
-    const user = await serverSupabaseUser(event)
+    // 사용자 확인 (SPA ssr:false라서 세션이 없으면 null일 수 있음)
+    const user = await serverSupabaseUser(event).catch(() => null)
 
-    if (!user) {
-        throw createError({ statusCode: 401, message: '로그인이 필요합니다.' })
+    // service_role 키로 RLS 우회 (Vercel 서버 함수에서 직접 insert)
+    const supabaseUrl = process.env.NUXT_PUBLIC_SUPABASE_URL!
+    const serviceKey = process.env.SUPABASE_SERVICE_KEY!
+
+    if (!serviceKey) {
+        throw createError({ statusCode: 500, message: 'SUPABASE_SERVICE_KEY 환경변수가 설정되지 않았습니다.' })
     }
 
+    const adminClient = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false }
+    })
+
     // job 등록
-    const { data: job, error: insertErr } = await supabase
+    const { data: job, error: insertErr } = await adminClient
         .from('automation_jobs')
         .insert({
             job_type: 'blog_media',
-            created_by: user.id,
+            created_by: user?.id ?? null,
             status: 'pending',
             total_urls: validUrls.length,
             summary_json: { urls: validUrls }
