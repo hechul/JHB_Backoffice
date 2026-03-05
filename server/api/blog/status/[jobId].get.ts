@@ -1,22 +1,15 @@
-import { createClient } from '@supabase/supabase-js'
+import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
 
 export default defineEventHandler(async (event) => {
-    const jobId = getRouterParam(event, 'jobId') as string | undefined
+    const jobId = getRouterParam(event, 'jobId')
     if (!jobId) {
         throw createError({ statusCode: 400, message: 'jobId가 필요합니다.' })
     }
 
-    const config = useRuntimeConfig()
-    const supabase = createClient(
-        config.public.supabaseUrl as string,
-        config.public.supabaseKey as string
-    )
+    const supabase = await serverSupabaseClient(event)
+    const user = await serverSupabaseUser(event)
 
-    // 사용자 인증
-    const authHeader = getHeader(event, 'authorization') || ''
-    const accessToken = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(accessToken)
-    if (authErr || !user) {
+    if (!user) {
         throw createError({ statusCode: 401, message: '로그인이 필요합니다.' })
     }
 

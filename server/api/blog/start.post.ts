@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
 
 export default defineEventHandler(async (event) => {
     const body = await readBody(event)
@@ -23,18 +23,11 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode: 400, message: '유효한 네이버 블로그 URL이 없습니다.' })
     }
 
-    // Supabase 서버 클라이언트 (anon key — RLS 통해 본인만 insert 가능)
-    const config = useRuntimeConfig()
-    const supabaseUrl = config.public.supabaseUrl as string
-    const supabaseKey = config.public.supabaseKey as string
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    // @nuxtjs/supabase 서버 클라이언트 사용
+    const supabase = await serverSupabaseClient(event)
+    const user = await serverSupabaseUser(event)
 
-    // 세션 쿠키로 사용자 확인
-    const authHeader = getHeader(event, 'authorization') || ''
-    const accessToken = authHeader.replace('Bearer ', '')
-
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(accessToken)
-    if (authErr || !user) {
+    if (!user) {
         throw createError({ statusCode: 401, message: '로그인이 필요합니다.' })
     }
 
@@ -53,10 +46,10 @@ export default defineEventHandler(async (event) => {
 
     if (insertErr || !job) {
         console.error('[blog/start] job 등록 실패:', insertErr?.message)
-        throw createError({ statusCode: 500, message: 'job 등록 실패' })
+        throw createError({ statusCode: 500, message: `job 등록 실패: ${insertErr?.message}` })
     }
 
-    // Railway ping (슬립 해제용, 응답 타임아웃 2초, 실패 무시)
+    // Render ping (슬립 해제용, 응답 타임아웃 2초, 실패 무시)
     const crawlerUrl = process.env.CRAWLER_SERVER_URL
     if (crawlerUrl) {
         try {
@@ -65,7 +58,7 @@ export default defineEventHandler(async (event) => {
                 signal: AbortSignal.timeout(2000)
             })
         } catch {
-            // 슬립 중이어도 무시 — Railway가 일어나면 DB 폴링으로 자동 처리
+            // 슬립 중이어도 무시 — Render가 일어나면 DB 폴링으로 자동 처리
         }
     }
 

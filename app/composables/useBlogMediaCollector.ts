@@ -1,6 +1,7 @@
 /**
  * 블로그 미디어 수집 흐름 제어 composable
  * job 등록 → 폴링 → 완료 감지 → 다운로드 URL 반환
+ * @nuxtjs/supabase 쿠키 기반 인증 사용 (별도 Authorization 헤더 불필요)
  */
 
 export interface JobStatus {
@@ -21,8 +22,6 @@ const POLL_INTERVAL_MS = 3000
 const MAX_POLL_DURATION_MS = 5 * 60 * 1000 // 5분
 
 export function useBlogMediaCollector() {
-    const supabase = useSupabaseClient()
-
     const isStarting = ref(false)
     const isPolling = ref(false)
     const currentJob = ref<JobStatus | null>(null)
@@ -45,11 +44,6 @@ export function useBlogMediaCollector() {
         errorMessage.value = ''
     }
 
-    async function getAuthHeader(): Promise<string> {
-        const { data: { session } } = await supabase.auth.getSession()
-        return session?.access_token ? `Bearer ${session.access_token}` : ''
-    }
-
     async function pollStatus(jobId: string) {
         if (Date.now() - pollStartTime > MAX_POLL_DURATION_MS) {
             clearPoll()
@@ -59,10 +53,7 @@ export function useBlogMediaCollector() {
         }
 
         try {
-            const authHeader = await getAuthHeader()
-            const data = await $fetch<JobStatus>(`/api/blog/status/${jobId}`, {
-                headers: { Authorization: authHeader }
-            })
+            const data = await $fetch<JobStatus>(`/api/blog/status/${jobId}`)
             currentJob.value = data
 
             const done = ['done', 'partial', 'failed'].includes(data.status)
@@ -81,13 +72,11 @@ export function useBlogMediaCollector() {
         errorMessage.value = ''
 
         try {
-            const authHeader = await getAuthHeader()
             const result = await $fetch<{ jobId: string; totalUrls: number; status: string }>(
                 '/api/blog/start',
                 {
                     method: 'POST',
-                    body: { urls },
-                    headers: { Authorization: authHeader }
+                    body: { urls }
                 }
             )
 
