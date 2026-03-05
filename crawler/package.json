@@ -1,7 +1,7 @@
 {
     "name": "jhb-blog-crawler",
     "version": "1.0.0",
-    "description": "Railway crawler server for Naver blog media collection",
+    "description": "Render crawler server for Naver blog media collection",
     "main": "index.js",
     "scripts": {
         "start": "node index.js",
@@ -11,6 +11,6 @@
         "@supabase/supabase-js": "^2.49.1",
         "archiver": "^7.0.1",
         "express": "^4.18.2",
-        "playwright": "^1.40.0"
+        "playwright": "1.40.0"
     }
 }
