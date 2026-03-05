@@ -6,6 +6,9 @@
 .cache
 dist
 
+# Vercel build output (로컬 빌드 결과물이 git에 포함되면 Vercel이 prebuilt로 사용해 SSR 에러 발생)
+.vercel
+
 # Node dependencies
 node_modules
 
