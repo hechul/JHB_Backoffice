@@ -15,6 +15,7 @@
         <div class="page-header-left">
           <h1 class="page-title">계정 관리</h1>
           <span class="page-count badge badge-neutral">{{ users.length }}명</span>
+          <span v-if="approvalPendingCount > 0" class="page-count badge badge-warning">승인 대기 {{ approvalPendingCount }}명</span>
         </div>
         <button class="btn btn-primary" @click="showInviteGuide">
           <UserPlus :size="16" :stroke-width="2" />
@@ -24,7 +25,7 @@
 
       <div class="card page-note">
         <div class="text-sm text-secondary">
-          role 변경/비활성화는 실시간으로 DB(`profiles`)에 반영됩니다. 자기 계정 및 마지막 활성 관리자 보호 정책이 적용됩니다.
+          role/상태 변경은 실시간으로 DB(`profiles`)에 반영됩니다. 자기 계정 및 마지막 활성 관리자 보호 정책이 적용됩니다.
         </div>
       </div>
 
@@ -51,8 +52,8 @@
               <Shield :size="10" :stroke-width="2" />
               {{ roleLabel(u.role) }}
             </span>
-            <span class="badge" :class="u.status === 'active' ? 'badge-success' : 'badge-danger'">
-              {{ u.status === 'active' ? '활성' : '비활성' }}
+            <span class="badge" :class="statusBadgeClass(u.status)">
+              {{ statusLabel(u.status) }}
             </span>
             <span v-if="u.id === user.id" class="badge badge-neutral">내 계정</span>
           </div>
@@ -60,24 +61,53 @@
           <div class="user-card-footer">
             <span class="user-joined text-muted">가입일: {{ u.createdAt }}</span>
             <div class="user-actions">
-              <select
-                class="select role-select"
-                :value="u.role"
-                :disabled="!canManageUser(u) || pendingUserId === u.id"
-                @change="onRoleSelect(u, $event)"
-              >
-                <option value="admin">관리자</option>
-                <option value="modifier">수정자</option>
-                <option value="viewer">열람자</option>
-              </select>
+              <template v-if="u.status === 'pending'">
+                <button
+                  class="btn btn-primary btn-sm"
+                  :disabled="!canManageUser(u) || pendingUserId === u.id"
+                  @click="approveUser(u)"
+                >
+                  승인
+                </button>
+                <button
+                  class="btn btn-ghost btn-sm btn-danger"
+                  :disabled="!canManageUser(u) || pendingUserId === u.id"
+                  @click="rejectUser(u)"
+                >
+                  반려
+                </button>
+              </template>
 
-              <button
-                class="btn btn-ghost btn-sm"
-                :disabled="!canManageUser(u) || pendingUserId === u.id"
-                @click="toggleStatus(u)"
-              >
-                {{ u.status === 'active' ? '비활성화' : '활성화' }}
-              </button>
+              <template v-else-if="u.status === 'rejected'">
+                <button
+                  class="btn btn-primary btn-sm"
+                  :disabled="!canManageUser(u) || pendingUserId === u.id"
+                  @click="approveUser(u)"
+                >
+                  승인
+                </button>
+              </template>
+
+              <template v-else>
+                <select
+                  class="select role-select"
+                  :value="u.role"
+                  :disabled="!canManageUser(u) || pendingUserId === u.id"
+                  @change="onRoleSelect(u, $event)"
+                >
+                  <option value="admin">관리자</option>
+                  <option value="modifier">수정자</option>
+                  <option value="viewer">열람자</option>
+                </select>
+
+                <button
+                  class="btn btn-ghost btn-sm"
+                  :disabled="!canManageUser(u) || pendingUserId === u.id"
+                  @click="toggleStatus(u)"
+                >
+                  {{ u.status === 'active' ? '비활성화' : '활성화' }}
+                </button>
+              </template>
             </div>
           </div>
         </div>
@@ -92,7 +122,7 @@ import { UserPlus, Shield } from 'lucide-vue-next'
 definePageMeta({ layout: 'default' })
 
 type UserRole = 'admin' | 'modifier' | 'viewer'
-type UserStatus = 'active' | 'inactive'
+type UserStatus = 'pending' | 'active' | 'rejected' | 'inactive'
 
 interface UserRow {
   id: string
@@ -120,7 +150,11 @@ function normalizeRole(value: unknown): UserRole {
 }
 
 function normalizeStatus(value: unknown): UserStatus {
-  return String(value || '').toLowerCase() === 'inactive' ? 'inactive' : 'active'
+  const status = String(value || '').toLowerCase()
+  if (status === 'pending') return 'pending'
+  if (status === 'rejected') return 'rejected'
+  if (status === 'inactive') return 'inactive'
+  return 'active'
 }
 
 function formatDate(value: unknown): string {
@@ -145,8 +179,26 @@ function roleBadgeClass(role: UserRole): string {
   return 'badge-neutral'
 }
 
+function statusLabel(status: UserStatus): string {
+  if (status === 'pending') return '승인 대기'
+  if (status === 'rejected') return '승인 반려'
+  if (status === 'inactive') return '비활성'
+  return '활성'
+}
+
+function statusBadgeClass(status: UserStatus): string {
+  if (status === 'pending') return 'badge-warning'
+  if (status === 'rejected') return 'badge-danger'
+  if (status === 'inactive') return 'badge-danger'
+  return 'badge-success'
+}
+
 const activeAdminCount = computed(() => {
   return users.value.filter((u) => u.role === 'admin' && u.status === 'active').length
+})
+
+const approvalPendingCount = computed(() => {
+  return users.value.filter((u) => u.status === 'pending').length
 })
 
 function canManageUser(target: UserRow): boolean {
@@ -251,14 +303,29 @@ async function updateRole(target: UserRow, nextRole: UserRole) {
 }
 
 async function toggleStatus(target: UserRow) {
+  if (target.status === 'pending' || target.status === 'rejected') {
+    toast.info('승인 대기/반려 계정은 승인 후 상태 변경이 가능합니다.')
+    return
+  }
+
+  const nextStatus: UserStatus = target.status === 'active' ? 'inactive' : 'active'
+  await setStatus(target, nextStatus)
+}
+
+async function setStatus(target: UserRow, nextStatus: UserStatus) {
+  if (nextStatus === target.status) return
   if (!canManageUser(target)) {
     toast.error('변경 권한이 없습니다.')
     return
   }
 
-  const nextStatus: UserStatus = target.status === 'active' ? 'inactive' : 'active'
   if (target.role === 'admin' && target.status === 'active' && nextStatus === 'inactive' && activeAdminCount.value <= 1) {
     toast.error('마지막 활성 관리자는 비활성화할 수 없습니다.')
+    return
+  }
+
+  if (target.role === 'admin' && target.status === 'active' && nextStatus === 'rejected' && activeAdminCount.value <= 1) {
+    toast.error('마지막 활성 관리자 계정은 반려할 수 없습니다.')
     return
   }
 
@@ -272,11 +339,11 @@ async function toggleStatus(target: UserRow) {
     if (error) throw error
 
     target.status = nextStatus
-    toast.success(nextStatus === 'active' ? '계정이 활성화되었습니다.' : '계정이 비활성화되었습니다.')
+    toast.success(`계정 상태가 ${statusLabel(nextStatus)}(으)로 변경되었습니다.`)
     await createNotification({
-      type: nextStatus === 'active' ? 'success' : 'warning',
+      type: nextStatus === 'active' ? 'success' : nextStatus === 'pending' ? 'info' : 'warning',
       title: '계정 상태 변경',
-      message: `${target.name} 계정을 ${nextStatus === 'active' ? '활성화' : '비활성화'}했습니다.`,
+      message: `${target.name} 계정 상태를 ${statusLabel(nextStatus)}(으)로 변경했습니다.`,
       link: '/settings/users',
       payload: {
         targetUserId: target.id,
@@ -289,6 +356,14 @@ async function toggleStatus(target: UserRow) {
   } finally {
     pendingUserId.value = ''
   }
+}
+
+async function approveUser(target: UserRow) {
+  await setStatus(target, 'active')
+}
+
+async function rejectUser(target: UserRow) {
+  await setStatus(target, 'rejected')
 }
 
 function onRoleSelect(target: UserRow, event: Event) {
@@ -435,6 +510,10 @@ watch(
 .role-select {
   min-width: 96px;
   width: auto;
+}
+
+.btn-danger {
+  color: #dc2626;
 }
 
 @media (max-width: 768px) {

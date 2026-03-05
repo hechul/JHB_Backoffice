@@ -46,6 +46,20 @@
           </template>
         </div>
 
+        <!-- 근태 관리 -->
+        <div class="nav-group">
+          <div v-show="!sidebarCollapsed" class="nav-group-label">근태 관리</div>
+          <NuxtLink
+            to="/attendance"
+            class="nav-item"
+            :class="{ active: isActive('/attendance') }"
+            @click="mobileMenuOpen = false"
+          >
+            <Clock3 :size="18" :stroke-width="1.8" />
+            <span v-show="!sidebarCollapsed">근태 관리</span>
+          </NuxtLink>
+        </div>
+
         <!-- 상품 관리 -->
         <div v-if="!isViewer" class="nav-group">
           <div v-show="!sidebarCollapsed" class="nav-group-label">상품 관리</div>
@@ -203,6 +217,7 @@ import {
   FileText,
   Home,
   BarChart3,
+  Clock3,
   Package,
   UserCog,
   CalendarDays,
@@ -246,6 +261,7 @@ const allMenuItems = computed(() => {
     { path: '/dashboard', label: '대시보드', group: '매출 분석' },
     { path: '/customers', label: '고객 분석', group: '매출 분석' },
     { path: '/logs', label: '실행 이력', group: '매출 분석' },
+    { path: '/attendance', label: '근태 관리', group: '근태 관리' },
   ]
   if (isViewer.value) return items
   const result = [
@@ -254,13 +270,14 @@ const allMenuItems = computed(() => {
     { path: '/filter', label: '필터링', group: '매출 분석' },
     { path: '/customers', label: '고객 분석', group: '매출 분석' },
     { path: '/logs', label: '실행 이력', group: '매출 분석' },
+    { path: '/attendance', label: '근태 관리', group: '근태 관리' },
     { path: '/products', label: '상품 목록', group: '상품 관리' },
   ]
   if (isAdmin.value) result.push({ path: '/settings/users', label: '계정 관리', group: '설정' })
   return result
 })
 
-const isActive = (path: string) => route.path === path
+const isActive = (path: string) => route.path === path || route.path.startsWith(`${path}/`)
 
 const currentPageTitle = computed(() => {
   const item = allMenuItems.value.find((m) => m.path === route.path)

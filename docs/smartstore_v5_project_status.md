@@ -1,6 +1,6 @@
 # SmartStore 백오피스 v5 — 프로젝트 현황 총괄 (Single MD)
 
-- 기준일: 2026-03-04 13:30 (Asia/Seoul)
+- 기준일: 2026-03-05 16:20 (Asia/Seoul)
 - 목적: 현재 프로젝트의 **기획/스토리보드 작업 현황**을 1개 문서로 통합(인수인계·공유용)
 - 범위: MVP 우선순위, IA(정보구조), 사용자 플로우, 화면별 핵심 구조/상태, Figma 스토리보드(P03)용 번호 라벨 설명(확정본)
 - 비범위: DB/API 상세(OpenAPI), 마이그레이션 SQL, 비주얼 리디자인
@@ -175,6 +175,10 @@
 - **아르고 발주 자동 변환 기능 구현**: 배송지 파일(`.xlsx/.xls/.csv`) 업로드 시 소스(디너의여왕/리뷰노트) 자동 감지, 품목명 기반 제품코드 매핑, 발주 수량 규칙(디너: 두부모래 2, 나머지 1 / 리뷰노트: 전품목 1), 아르고 양식(`국내배송 주문`) 엑셀 다운로드를 지원
 - **리뷰노트 우편번호 자동 보완 API 추가**: `server/api/postcode/lookup.post.ts` 신규 추가. 주소 배열을 받아 우편번호를 보완(주소 내 5자리 우편번호 우선, 미존재 시 Kakao 주소 API 조회). `KAKAO_REST_API_KEY` 런타임 설정 미입력 시 조회 가능한 주소만 반영하고 미해결 행으로 표시
 - **아르고 변환 최근 변경분 안정성 재검증(2026-03-05)**: 일반양식 동의어 파싱/행단위 입력 UI 변경 반영 상태에서 `npm run build`, `npm run test:unit`, `tests/unit/useArgoOrderConverter.test.ts` 재실행 결과 모두 통과(기능 이상 징후 없음)
+- **회원가입 승인 게이트 1차 적용(2026-03-05)**: `/login`에 회원가입 탭 추가, `profiles.status` 기반 접근 제어(`pending/rejected/inactive`는 `/pending-approval` 고정) 반영
+- **계정 승인 운영 화면 보강(2026-03-05)**: `/settings/users`에 승인 대기 배지 및 `승인/반려` 액션을 추가해 관리자 승인 워크플로우를 화면에서 처리 가능하도록 반영
+- **근태관리 모듈 시작점 추가(2026-03-05)**: 홈/사이드바에 `근태 관리` 진입점을 추가하고 `/attendance`, `/attendance/records` 기본 화면 골격을 신설
+- **회원가입 승인 SQL 패치 추가(2026-03-05)**: `docs/sql/2026-03-05_profiles_signup_approval_patch.sql` 파일 추가 (`handle_new_user()`의 `role='viewer'`, `status='pending'` 기본 생성 규칙 포함)
 
 ---
 
@@ -215,6 +219,8 @@
 - SC080 계정 관리: `/settings/users`
 - SC090 업무 자동화: `/automation`
 - SC091 아르고 발주 변환: `/automation/argo-order`
+- SC100 근태 관리: `/attendance`
+- SC101 출퇴근 기록: `/attendance/records`
 
 ### 4.2 모듈 구조(트리)
 ```text
@@ -229,6 +235,8 @@
 │  └─ 상품 목록(/products) [admin]
 ├─ 업무 자동화
 │  └─ 아르고 발주 변환(/automation/argo-order) [admin/modifier]
+├─ 근태 관리
+│  └─ 출퇴근 기록(/attendance/records) [active 계정]
 └─ 설정
    └─ 계정 관리(/settings/users) [admin, 역할/상태 변경 가능]
 ```

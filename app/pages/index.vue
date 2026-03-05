@@ -13,6 +13,13 @@
         <span class="feature-name">매출 분석</span>
       </NuxtLink>
 
+      <NuxtLink to="/attendance" class="feature-card active">
+        <div class="feature-icon">
+          <Clock3 :size="22" :stroke-width="1.8" />
+        </div>
+        <span class="feature-name">근태 관리</span>
+      </NuxtLink>
+
       <NuxtLink v-if="!isViewer" to="/automation" class="feature-card active">
         <div class="feature-icon">
           <Bot :size="22" :stroke-width="1.8" />
@@ -35,6 +42,7 @@
 import {
   BarChart3,
   Bot,
+  Clock3,
   Settings,
 } from 'lucide-vue-next'
 

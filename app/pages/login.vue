@@ -11,8 +11,43 @@
         </div>
       </div>
 
+      <div class="auth-tab">
+        <button
+          type="button"
+          class="auth-tab-btn"
+          :class="{ active: mode === 'login' }"
+          @click="switchMode('login')"
+        >
+          로그인
+        </button>
+        <button
+          type="button"
+          class="auth-tab-btn"
+          :class="{ active: mode === 'signup' }"
+          @click="switchMode('signup')"
+        >
+          회원가입
+        </button>
+      </div>
+
       <!-- Form -->
-      <form class="login-form" @submit.prevent="handleLogin">
+      <form class="login-form" @submit.prevent="mode === 'login' ? handleLogin() : handleSignup()">
+        <div v-if="mode === 'signup'" class="field">
+          <label class="label" for="fullName">이름</label>
+          <div class="input-with-icon">
+            <User :size="16" :stroke-width="1.8" class="input-icon" />
+            <input
+              id="fullName"
+              v-model="fullName"
+              type="text"
+              class="input"
+              placeholder="홍길동"
+              required
+              autocomplete="name"
+            />
+          </div>
+        </div>
+
         <div class="field">
           <label class="label" for="email">이메일</label>
           <div class="input-with-icon">
@@ -40,7 +75,7 @@
               class="input"
               placeholder="비밀번호 입력"
               required
-              autocomplete="current-password"
+              :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
             />
             <button
               type="button"
@@ -54,18 +89,39 @@
           </div>
         </div>
 
+        <div v-if="mode === 'signup'" class="field">
+          <label class="label" for="passwordConfirm">비밀번호 확인</label>
+          <div class="input-with-icon">
+            <Lock :size="16" :stroke-width="1.8" class="input-icon" />
+            <input
+              id="passwordConfirm"
+              v-model="passwordConfirm"
+              :type="showPassword ? 'text' : 'password'"
+              class="input"
+              placeholder="비밀번호 다시 입력"
+              required
+              autocomplete="new-password"
+            />
+          </div>
+        </div>
+
+        <div v-if="infoMsg" class="login-info">
+          <Info :size="14" :stroke-width="2" />
+          {{ infoMsg }}
+        </div>
+
         <div v-if="errorMsg" class="login-error">
           <AlertCircle :size="14" :stroke-width="2" />
           {{ errorMsg }}
         </div>
 
         <button type="submit" class="btn btn-primary btn-lg login-btn" :class="{ 'btn-loading': isLoading }">
-          로그인
+          {{ mode === 'login' ? '로그인' : '회원가입 요청' }}
         </button>
 
         <p class="login-note">
           <Info :size="12" :stroke-width="2" />
-          계정이 없으시면 관리자에게 초대를 요청하세요.
+          {{ mode === 'login' ? '계정이 없으면 회원가입 후 관리자 승인을 기다려주세요.' : '가입 후 관리자 승인 전까지 서비스 접근이 제한됩니다.' }}
         </p>
       </form>
     </div>
@@ -73,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { Mail, Lock, Eye, EyeOff, AlertCircle, Info } from 'lucide-vue-next'
+import { Mail, Lock, Eye, EyeOff, AlertCircle, Info, User } from 'lucide-vue-next'
 
 definePageMeta({ layout: false })
 
@@ -82,12 +138,23 @@ const { fetchProfile } = useCurrentUser()
 
 const email = ref('')
 const password = ref('')
+const fullName = ref('')
+const passwordConfirm = ref('')
 const showPassword = ref(false)
 const errorMsg = ref('')
+const infoMsg = ref('')
 const isLoading = ref(false)
+const mode = ref<'login' | 'signup'>('login')
+
+function switchMode(next: 'login' | 'signup') {
+  mode.value = next
+  errorMsg.value = ''
+  infoMsg.value = ''
+}
 
 async function handleLogin() {
   errorMsg.value = ''
+  infoMsg.value = ''
   isLoading.value = true
 
   try {
@@ -107,6 +174,64 @@ async function handleLogin() {
     } else {
       await fetchProfile(signInData.user?.id)
       navigateTo('/')
+    }
+  } catch {
+    errorMsg.value = '네트워크 오류가 발생했습니다.'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function handleSignup() {
+  errorMsg.value = ''
+  infoMsg.value = ''
+  isLoading.value = true
+
+  try {
+    if (!fullName.value.trim()) {
+      errorMsg.value = '이름을 입력해주세요.'
+      return
+    }
+
+    if (password.value.length < 8) {
+      errorMsg.value = '비밀번호는 8자 이상으로 입력해주세요.'
+      return
+    }
+
+    if (password.value !== passwordConfirm.value) {
+      errorMsg.value = '비밀번호 확인이 일치하지 않습니다.'
+      return
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email: email.value.trim(),
+      password: password.value,
+      options: {
+        data: {
+          full_name: fullName.value.trim(),
+        },
+      },
+    })
+
+    if (error) {
+      if (error.message.includes('already registered')) {
+        errorMsg.value = '이미 가입된 이메일입니다.'
+      } else {
+        errorMsg.value = `회원가입 실패: ${error.message}`
+      }
+      return
+    }
+
+    infoMsg.value = '회원가입이 완료되었습니다. 관리자 승인 후 이용 가능합니다.'
+    password.value = ''
+    passwordConfirm.value = ''
+
+    if (data.session?.user?.id) {
+      await fetchProfile(data.session.user.id)
+      await navigateTo('/pending-approval')
+    } else {
+      infoMsg.value = '회원가입 요청이 접수되었습니다. 로그인 후 관리자 승인을 기다려주세요.'
+      mode.value = 'login'
     }
   } catch {
     errorMsg.value = '네트워크 오류가 발생했습니다.'
@@ -187,6 +312,31 @@ async function handleLogin() {
   gap: 20px;
 }
 
+.auth-tab {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 20px;
+  padding: 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+}
+
+.auth-tab-btn {
+  height: 34px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.auth-tab-btn.active {
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -226,6 +376,18 @@ async function handleLogin() {
   border-radius: 8px;
   font-size: 0.8125rem;
   color: #991B1B;
+}
+
+.login-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: #1e40af;
 }
 
 .login-btn {

@@ -20,18 +20,35 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const sessionUser = await resolveSessionUser()
   const pendingPath = '/pending-approval'
 
+  function normalizeStatus(value: unknown) {
+    const raw = String(value || '').trim().toLowerCase()
+    if (raw === 'pending') return 'pending'
+    if (raw === 'rejected') return 'rejected'
+    if (raw === 'inactive') return 'inactive'
+    return 'active'
+  }
+
+  function normalizeRole(value: unknown) {
+    const raw = String(value || '').trim().toLowerCase()
+    if (raw === 'admin') return 'admin'
+    if (raw === 'modifier') return 'modifier'
+    return 'viewer'
+  }
+
   async function resolveProfileStatus(userId: string) {
     try {
       const primary = await supabase
         .from('profiles')
-        .select('status')
+        .select('status, role')
         .eq('id', userId)
         .maybeSingle()
 
       if (!primary.error) {
-        if (!primary.data) return 'pending'
-        const status = String((primary.data as any)?.status || '').trim().toLowerCase()
-        return status || 'active'
+        if (!primary.data) return 'active'
+        const status = normalizeStatus((primary.data as any)?.status)
+        const role = normalizeRole((primary.data as any)?.role)
+        if (role === 'admin' && status === 'pending') return 'active'
+        return status
       }
 
       const code = String((primary.error as any)?.code || '').toUpperCase()
@@ -40,10 +57,10 @@ export default defineNuxtRouteMiddleware(async (to) => {
       if (statusMissing) return 'active'
 
       console.error('auth middleware profile status query error:', primary.error)
-      return 'pending'
+      return 'active'
     } catch (error) {
       console.error('auth middleware profile status exception:', error)
-      return 'pending'
+      return 'active'
     }
   }
 

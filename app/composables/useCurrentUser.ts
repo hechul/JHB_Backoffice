@@ -1,10 +1,12 @@
 type UserRole = 'admin' | 'modifier' | 'viewer'
+type UserStatus = 'pending' | 'active' | 'rejected' | 'inactive'
 
 interface CurrentUser {
   id: string
   name: string
   email: string
   role: UserRole
+  status: UserStatus
 }
 
 export function useCurrentUser() {
@@ -17,6 +19,7 @@ export function useCurrentUser() {
     name: '',
     email: '',
     role: 'viewer',
+    status: 'active',
   }))
   const profileLoaded = useState<boolean>('profile_loaded', () => false)
   const profileRevision = useState<number>('profile_revision', () => 0)
@@ -26,7 +29,11 @@ export function useCurrentUser() {
 
   const isViewer = computed(() => profileLoaded.value && profile.value.role === 'viewer')
   const isAdmin = computed(() => profileLoaded.value && profile.value.role === 'admin')
-  const canModify = computed(() => !profileLoaded.value || profile.value.role === 'admin' || profile.value.role === 'modifier')
+  const isApproved = computed(() => profileLoaded.value && profile.value.status === 'active')
+  const canModify = computed(() => !profileLoaded.value || (
+    profile.value.status === 'active' &&
+    (profile.value.role === 'admin' || profile.value.role === 'modifier')
+  ))
 
   const user = computed(() => profile.value)
 
@@ -35,6 +42,14 @@ export function useCurrentUser() {
     if (raw === 'admin') return 'admin'
     if (raw === 'modifier') return 'modifier'
     return 'viewer'
+  }
+
+  function normalizeStatus(value: unknown): UserStatus {
+    const raw = String(value || '').trim().toLowerCase()
+    if (raw === 'pending') return 'pending'
+    if (raw === 'rejected') return 'rejected'
+    if (raw === 'inactive') return 'inactive'
+    return 'active'
   }
 
   function persistProfileCache(next: CurrentUser) {
@@ -64,6 +79,7 @@ export function useCurrentUser() {
         name: String(parsed.name || ''),
         email: String(parsed.email || ''),
         role: normalizeRole(parsed.role),
+        status: normalizeStatus(parsed.status),
       }
     } catch {
       return null
@@ -90,6 +106,7 @@ export function useCurrentUser() {
       name: splitEmail(authEmail),
       email: authEmail,
       role: 'viewer',
+      status: 'active',
     }, false)
   }
 
@@ -103,7 +120,7 @@ export function useCurrentUser() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, full_name, role')
+        .select('id, email, full_name, role, status')
         .eq('id', uid)
         .maybeSingle()
 
@@ -114,6 +131,7 @@ export function useCurrentUser() {
           name: (data as any).full_name || splitEmail(email),
           email,
           role: normalizeRole((data as any).role),
+          status: normalizeStatus((data as any).status),
         })
       } else {
         console.error('Failed to fetch profile row:', error)
@@ -139,7 +157,7 @@ export function useCurrentUser() {
   }
 
   function resetProfile() {
-    profile.value = { id: '', name: '', email: '', role: 'viewer' }
+    profile.value = { id: '', name: '', email: '', role: 'viewer', status: 'active' }
     profileLoaded.value = false
     profileRevision.value += 1
   }
@@ -186,6 +204,7 @@ export function useCurrentUser() {
     user,
     isViewer,
     isAdmin,
+    isApproved,
     canModify,
     profileLoaded,
     profileRevision,
