@@ -1,5 +1,6 @@
 /**
  * Supabase Storage에 ZIP 파일 업로드
+ * 버킷 'blog-media-zips'는 Supabase 대시보드에서 미리 생성되어 있어야 함
  */
 
 const BUCKET_NAME = 'blog-media-zips'
@@ -10,27 +11,22 @@ const BUCKET_NAME = 'blog-media-zips'
 async function uploadZipToStorage(supabase, jobId, zipBuffer) {
     const filename = `${jobId}/blog_media_${jobId.slice(0, 8)}.zip`
 
-    // 버킷 존재 확인 (없으면 생성)
-    const { data: buckets } = await supabase.storage.listBuckets()
-    const bucketExists = buckets?.some(b => b.name === BUCKET_NAME)
-    if (!bucketExists) {
-        const { error: createErr } = await supabase.storage.createBucket(BUCKET_NAME, {
-            public: false,
-            fileSizeLimit: 524288000 // 500MB
-        })
-        if (createErr) throw new Error(`버킷 생성 실패: ${createErr.message}`)
-        console.log(`[uploader] 버킷 생성: ${BUCKET_NAME}`)
-    }
+    console.log(`[uploader] 업로드 시작: ${filename} (${(zipBuffer.length / 1024 / 1024).toFixed(2)}MB)`)
 
-    // 업로드
+    // ZIP Buffer를 Uint8Array로 변환 (Supabase SDK 호환)
+    const uint8 = new Uint8Array(zipBuffer)
+
     const { error: uploadErr } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(filename, zipBuffer, {
+        .upload(filename, uint8, {
             contentType: 'application/zip',
             upsert: true
         })
 
-    if (uploadErr) throw new Error(`Storage 업로드 실패: ${uploadErr.message}`)
+    if (uploadErr) {
+        console.error(`[uploader] 업로드 실패:`, uploadErr.message)
+        throw new Error(`Storage 업로드 실패: ${uploadErr.message}`)
+    }
 
     // 서명된 URL 생성 (24시간 유효)
     const { data: signedData, error: signErr } = await supabase.storage
