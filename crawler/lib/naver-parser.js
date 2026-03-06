@@ -3,8 +3,16 @@
  */
 const { chromium } = require('playwright')
 
-const MAX_IMAGES_PER_POST = 30
 const PAGE_TIMEOUT_MS = 90000  // Render 무료 플랜 느린 환경 대응 (90초)
+
+function toAbsoluteUrl(src) {
+    if (!src) return null
+    const value = String(src).trim()
+    if (!value) return null
+    if (value.startsWith('//')) return `https:${value}`
+    if (value.startsWith('http://') || value.startsWith('https://')) return value
+    return null
+}
 
 /**
  * 네이버 블로그 URL을 정규화 (PostView 직접 URL로 변환)
@@ -34,15 +42,16 @@ function normalizeNaverBlogUrl(url) {
  * (네이버 CDN: type 없음 → 5KB 최소, type=w2000 → 71KB 최대)
  */
 function normalizeImageUrl(src) {
-    if (!src) return null
+    const absolute = toAbsoluteUrl(src)
+    if (!absolute) return null
     try {
         // 원본 이미지 CDN만 수집
-        if (!src.includes('blogfiles.pstatic.net') &&
-            !src.includes('postfiles.pstatic.net')) {
+        if (!absolute.includes('blogfiles.pstatic.net') &&
+            !absolute.includes('postfiles.pstatic.net')) {
             return null
         }
         // type=w2000으로 교체 (최대 화질)
-        const url = new URL(src)
+        const url = new URL(absolute)
         url.searchParams.set('type', 'w2000')
         return url.toString()
     } catch {
@@ -50,26 +59,112 @@ function normalizeImageUrl(src) {
     }
 }
 
+function normalizeVideoUrl(src) {
+    const absolute = toAbsoluteUrl(src)
+    if (!absolute) return null
+    const lower = absolute.toLowerCase()
+    const isLikelyVideo =
+        lower.includes('mblogvideo-phinf.pstatic.net') ||
+        lower.includes('/video/') ||
+        lower.includes('/movie/') ||
+        lower.includes('/vod/') ||
+        lower.endsWith('.mp4') ||
+        lower.includes('.mp4?') ||
+        lower.endsWith('.mov') ||
+        lower.includes('.mov?') ||
+        lower.endsWith('.m3u8') ||
+        lower.includes('.m3u8?')
+    if (!isLikelyVideo) return null
+    return absolute
+}
+
+async function autoScroll(page) {
+    await page.evaluate(async () => {
+        await new Promise((resolve) => {
+            let loops = 0
+            const maxLoops = 30
+            const timer = setInterval(() => {
+                loops += 1
+                window.scrollBy(0, Math.max(window.innerHeight * 0.9, 480))
+                const bottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 8
+                if (bottom || loops >= maxLoops) {
+                    clearInterval(timer)
+                    window.scrollTo(0, 0)
+                    setTimeout(resolve, 120)
+                }
+            }, 120)
+        })
+    })
+}
+
 /**
  * 동영상 URL 추출 — 네이버 스마트에디터 video 태그 및 스크립트 분석
  */
 function extractVideoUrls(page) {
     return page.evaluate(() => {
-        const videoUrls = []
+        const urls = new Set()
 
-        // video 태그의 src 또는 data-src (mblogvideo CDN 포함)
-        document.querySelectorAll('video source, video').forEach(el => {
-            const src = el.getAttribute('src') || el.getAttribute('data-src')
-            if (src && (
-                src.includes('mblogvideo-phinf.pstatic.net') ||
-                src.endsWith('.mp4') ||
-                src.includes('/video/')
-            )) {
-                videoUrls.push(src)
+        const push = (value) => {
+            if (!value) return
+            const v = String(value).trim()
+            if (!v) return
+            if (v.startsWith('//')) {
+                urls.add(`https:${v}`)
+                return
+            }
+            if (v.startsWith('http://') || v.startsWith('https://')) {
+                urls.add(v)
+            }
+        }
+
+        const isLikelyVideo = (value) => {
+            const v = String(value || '').toLowerCase()
+            return (
+                v.includes('mblogvideo-phinf.pstatic.net') ||
+                v.includes('/video/') ||
+                v.includes('/movie/') ||
+                v.includes('/vod/') ||
+                v.endsWith('.mp4') || v.includes('.mp4?') ||
+                v.endsWith('.mov') || v.includes('.mov?') ||
+                v.endsWith('.m3u8') || v.includes('.m3u8?')
+            )
+        }
+
+        // 1) video/source 직접 src
+        document.querySelectorAll('video source, video').forEach((el) => {
+            const attrs = ['src', 'data-src', 'data-lazy-src', 'data-video-src']
+            attrs.forEach((attr) => {
+                const value = el.getAttribute(attr)
+                if (value && isLikelyVideo(value)) push(value)
+            })
+        })
+
+        // 2) iframe embed src
+        document.querySelectorAll('iframe').forEach((el) => {
+            const src = el.getAttribute('src')
+            if (src && isLikelyVideo(src)) push(src)
+        })
+
+        // 3) data-* 속성 전수 조사
+        document.querySelectorAll('[data-src], [data-video-src], [data-lazy-src], [data-play-url], [data-url]').forEach((el) => {
+            const attrs = ['data-src', 'data-video-src', 'data-lazy-src', 'data-play-url', 'data-url']
+            attrs.forEach((attr) => {
+                const value = el.getAttribute(attr)
+                if (value && isLikelyVideo(value)) push(value)
+            })
+        })
+
+        // 4) 스크립트 텍스트 내 직접 URL 추출
+        const scriptRegex = /(https?:\/\/[^\s"'\\]+(?:mblogvideo-phinf\.pstatic\.net[^\s"'\\]*|[^\s"'\\]*\.(?:mp4|mov|m3u8)(?:\?[^\s"'\\]*)?))/ig
+        document.querySelectorAll('script').forEach((el) => {
+            const text = el.textContent || ''
+            let m
+            while ((m = scriptRegex.exec(text)) !== null) {
+                if (m[1]) push(m[1])
             }
         })
 
-        return [...new Set(videoUrls)]
+        return Array.from(urls)
     })
 }
 
@@ -127,6 +222,8 @@ async function extractBlogMedia(rawUrl) {
 
         // 추가 렌더링 여유 대기
         await page.waitForTimeout(1500)
+        await autoScroll(page)
+        await page.waitForTimeout(800)
 
         // 이미지 URL 추출 — data-src, data-lazy-src 우선 (lazy-load 원본), src는 fallback
         const rawImageUrls = await page.evaluate(() => {
@@ -153,9 +250,10 @@ async function extractBlogMedia(rawUrl) {
             .map(normalizeImageUrl)
             .filter(Boolean)
 
-        const allUrls = [
-            ...new Set([...imageUrls.slice(0, MAX_IMAGES_PER_POST), ...videoUrls])
-        ]
+        const allUrls = Array.from(new Set([
+            ...imageUrls,
+            ...videoUrls.map(normalizeVideoUrl).filter(Boolean),
+        ]))
 
         console.log(`[parser] ${rawUrl} → 이미지 ${imageUrls.length}개, 동영상 ${videoUrls.length}개`)
         return allUrls
