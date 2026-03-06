@@ -13,10 +13,10 @@
             <ChevronLeft :size="16" :stroke-width="1.8" />
             <span>뒤로</span>
           </button>
-          <button type="button" class="home-nav-btn" aria-label="홈으로 이동" @click="handleGoHome">
+          <NuxtLink to="/" class="home-nav-btn" aria-label="홈으로 이동">
             <House :size="16" :stroke-width="1.8" />
             <span>홈으로</span>
-          </button>
+          </NuxtLink>
         </div>
       </div>
       <div class="home-header-right">
@@ -46,7 +46,6 @@ import { LogOut, House, ChevronLeft } from 'lucide-vue-next'
 
 const { user, profileLoaded, logout } = useCurrentUser()
 const route = useRoute()
-const router = useRouter()
 
 const today = computed(() => {
   const d = new Date()
@@ -63,16 +62,29 @@ const roleLabel = computed(() => {
 })
 const showHeaderNavButtons = computed(() => route.path !== '/')
 
-function handleGoHome() {
-  navigateTo('/')
+async function goHomeWithFallback() {
+  try {
+    await navigateTo('/')
+  } catch {
+    // noop
+  }
+  if (import.meta.client && window.location.pathname !== '/') {
+    window.location.assign('/')
+  }
 }
 
-function handleGoBack() {
+async function handleGoBack() {
   if (import.meta.client && window.history.length > 1) {
-    router.back()
+    const beforePath = window.location.pathname
+    window.history.back()
+    window.setTimeout(() => {
+      if (window.location.pathname === beforePath) {
+        window.location.assign('/')
+      }
+    }, 320)
     return
   }
-  navigateTo('/')
+  await goHomeWithFallback()
 }
 
 function handleLogout() {
@@ -146,6 +158,8 @@ function handleLogout() {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  position: relative;
+  z-index: 3;
 }
 
 .home-nav-btn {

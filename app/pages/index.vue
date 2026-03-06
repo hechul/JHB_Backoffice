@@ -6,7 +6,7 @@
     </div>
 
     <div class="feature-grid">
-      <NuxtLink to="/upload" class="feature-card active">
+      <NuxtLink to="/dashboard" class="feature-card active">
         <div class="feature-icon">
           <BarChart3 :size="22" :stroke-width="1.8" />
         </div>

@@ -101,10 +101,10 @@
               <ChevronLeft :size="15" :stroke-width="1.8" />
               <span>뒤로</span>
             </button>
-            <button type="button" class="header-nav-btn" aria-label="홈으로 이동" @click="handleGoHome">
+            <NuxtLink to="/" class="header-nav-btn" aria-label="홈으로 이동">
               <Home :size="15" :stroke-width="1.8" />
               <span>홈</span>
-            </button>
+            </NuxtLink>
           </div>
         </div>
         <div class="header-actions">
@@ -196,7 +196,6 @@ import {
 } from 'lucide-vue-next'
 
 const route = useRoute()
-const router = useRouter()
 const { user, isViewer, isAdmin, profileLoaded, profileRevision, logout } = useCurrentUser()
 const { selectedMonth, selectedPeriodLabel, availableMonths, monthsLoading, monthsError, refreshMonths, selectMonth, prevMonth, nextMonth } = useAnalysisPeriod()
 
@@ -283,16 +282,31 @@ function handlePageRefresh() {
   window.location.reload()
 }
 
-function handleGoHome() {
-  navigateTo('/')
+async function goHomeWithFallback() {
+  showPeriodMenu.value = false
+  mobileMenuOpen.value = false
+  try {
+    await navigateTo('/')
+  } catch {
+    // noop
+  }
+  if (import.meta.client && window.location.pathname !== '/') {
+    window.location.assign('/')
+  }
 }
 
-function handleGoBack() {
+async function handleGoBack() {
   if (import.meta.client && window.history.length > 1) {
-    router.back()
+    const beforePath = window.location.pathname
+    window.history.back()
+    window.setTimeout(() => {
+      if (window.location.pathname === beforePath) {
+        window.location.assign('/')
+      }
+    }, 320)
     return
   }
-  navigateTo('/')
+  await goHomeWithFallback()
 }
 
 function selectPeriodMonth(value: string) {
@@ -398,6 +412,8 @@ watch(
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  position: relative;
+  z-index: 3;
 }
 
 .header-nav-btn {
