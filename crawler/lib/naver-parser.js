@@ -248,13 +248,46 @@ async function extractBlogMedia(rawUrl, options = {}) {
             try {
                 return await frame.evaluate(() => {
                     const urls = []
+                    const basePaths = new Set()
+
+                    const getBasePath = (u) => {
+                        try {
+                            const p = new URL(u)
+                            const parts = p.pathname.split('/')
+                            parts.pop()
+                            return parts.join('/')
+                        } catch (e) { return u }
+                    }
+
+                    // 1. 블로거가 업로드한 진짜 원본 해상도(고화질) 이미지는 a 태그나 기타 컨테이너의 data-linkdata 에 JSON으로 들어있음
+                    document.querySelectorAll('[data-linkdata]').forEach(el => {
+                        try {
+                            const parsed = JSON.parse(el.getAttribute('data-linkdata'));
+                            if (parsed.src && typeof parsed.src === 'string') {
+                                // 외부 사이트 아이콘이나 스티커 등 불필요한 이미지 필터링
+                                if (parsed.src.includes('pstatic.net') && !parsed.src.includes('storep-phinf.pstatic.net')) {
+                                    urls.push(parsed.src);
+                                    basePaths.add(getBasePath(parsed.src));
+                                }
+                            }
+                        } catch (e) { }
+                    });
+
+                    // 2. data-linkdata가 없는 일반 img 태그들 (fallback)
                     document.querySelectorAll('img').forEach(img => {
                         // data-lazy-src, data-src 우선 (SE3 lazy-load 원본 URL)
                         const src = img.getAttribute('data-lazy-src') ||
                             img.getAttribute('data-src') ||
                             img.getAttribute('data-original') ||
                             img.getAttribute('src')
-                        if (src) urls.push(src)
+
+                        if (src) {
+                            const bp = getBasePath(src);
+                            if (!basePaths.has(bp)) {
+                                urls.push(src);
+                                basePaths.add(bp);
+                            }
+                        }
                     })
                     return urls
                 })
