@@ -1,40 +1,35 @@
-/**
- * 블로그 미디어 수집 흐름 제어 composable
- * job 등록 → 폴링 → 완료 감지 → 다운로드 URL 반환
- * @nuxtjs/supabase 쿠키 기반 인증 사용 (별도 Authorization 헤더 불필요)
- */
+import { ref, computed, onUnmounted } from 'vue'
 
-export interface JobStatus {
-    jobId: string
-    status: 'pending' | 'running' | 'done' | 'partial' | 'failed'
+export interface BatchProgress {
     totalUrls: number
+    processedCount: number
     successCount: number
     failCount: number
-    downloadUrl: string | null
-    downloadFiles?: Array<{
-        id: string
-        label: string
-        url: string
-        fileCount?: number
-        sizeBytes?: number
-    }>
-    isExpired: boolean
-    expiresAt: string | null
+    currentUrl: string
     failures: Array<{ url: string; reason: string }>
-    completedAt: string | null
-    createdAt: string | null
 }
 
-const POLL_INTERVAL_MS = 3000
-const MAX_POLL_DURATION_MS = 30 * 60 * 1000 // 30분 (다건/동영상 포함 대용량 작업 대응)
-
 export function useBlogMediaCollector() {
-    const isStarting = ref(false)
+    const isRunning = ref(false)
+    const isDone = ref(false)
     const isPolling = ref(false)
-    const currentJob = ref<JobStatus | null>(null)
     const errorMessage = ref('')
+
+    const progress = ref<BatchProgress>({
+        totalUrls: 0,
+        processedCount: 0,
+        successCount: 0,
+        failCount: 0,
+        currentUrl: '',
+        failures: []
+    })
+
     let pollTimer: ReturnType<typeof setInterval> | null = null
     let pollStartTime = 0
+    let queue: string[] = []
+    let currentJobId: string | null = null
+    const POLL_INTERVAL_MS = 3000
+    const MAX_POLL_DURATION_MS = 30 * 60 * 1000 // 30분
 
     function clearPoll() {
         if (pollTimer) {
@@ -45,108 +40,216 @@ export function useBlogMediaCollector() {
 
     function reset() {
         clearPoll()
-        isStarting.value = false
+        isRunning.value = false
+        isDone.value = false
         isPolling.value = false
-        currentJob.value = null
         errorMessage.value = ''
+        queue = []
+        currentJobId = null
+        progress.value = {
+            totalUrls: 0,
+            processedCount: 0,
+            successCount: 0,
+            failCount: 0,
+            currentUrl: '',
+            failures: []
+        }
     }
 
-    async function pollStatus(jobId: string) {
+    // 다운로드 유틸리티
+    function safeFileName(name: string): string {
+        return String(name || 'blog_media.zip').replace(/[\\/:*?"<>|]/g, '_')
+    }
+
+    function extractFilenameFromDisposition(contentDisposition: string | null): string | null {
+        const raw = String(contentDisposition || '').trim()
+        if (!raw) return null
+        const utf8Matched = raw.match(/filename\*=UTF-8''([^;]+)/i)
+        if (utf8Matched?.[1]) {
+            try { return decodeURIComponent(utf8Matched[1]) } catch { /* noop */ }
+        }
+        const quoted = raw.match(/filename="([^"]+)"/i)
+        if (quoted?.[1]) return quoted[1]
+        const plain = raw.match(/filename=([^;]+)/i)
+        if (plain?.[1]) return plain[1].trim()
+        return null
+    }
+
+    async function downloadAndCleanup(fileObj: { id: string, url: string, label?: string }, jobId: string) {
+        try {
+            const url = fileObj.url
+            const fallbackName = `${fileObj.label || 'blog_media'}.zip`
+
+            const isAbsolute = /^https?:\/\//i.test(String(url || ''))
+            const response = await fetch(url, {
+                method: 'GET',
+                mode: isAbsolute ? 'cors' : 'same-origin',
+                credentials: isAbsolute ? 'omit' : 'include',
+                cache: 'no-store',
+            })
+
+            if (!response.ok) throw new Error(`다운로드 실패 (${response.status})`)
+
+            const blob = await response.blob()
+            if (!blob || blob.size <= 0) throw new Error('다운로드 파일이 비어 있습니다.')
+
+            const filename = safeFileName(
+                extractFilenameFromDisposition(response.headers.get('content-disposition')) || fallbackName
+            )
+
+            const objectUrl = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = objectUrl
+            link.download = filename
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            URL.revokeObjectURL(objectUrl)
+
+            // 다운로드 성공 후 즉시 cleanup 호출
+            await $fetch(`/api/blog/cleanup/${jobId}`, {
+                method: 'POST',
+                body: { partId: fileObj.id }
+            }).catch(e => console.error('[cleanup] Failed:', e))
+
+        } catch (e: any) {
+            console.error('[downloadAndCleanup] Error:', e)
+            throw e
+        }
+    }
+
+    async function handleJobComplete(data: any) {
+        clearPoll()
+        isPolling.value = false
+
+        let successInThisJob = false
+
+        if (data.status === 'done' || data.status === 'partial') {
+            const files = data.downloadFiles || []
+            let downloaded = 0
+            for (const file of files) {
+                try {
+                    await downloadAndCleanup(file, data.jobId)
+                    downloaded++
+                } catch (e) {
+                    // 다운로드 중 실패
+                }
+            }
+            if (downloaded > 0) {
+                successInThisJob = true
+            } else if (data.status === 'done') {
+                if (data.downloadUrl) {
+                    try {
+                        await downloadAndCleanup({ id: 'legacy', url: data.downloadUrl, label: 'blog_media' }, data.jobId)
+                        successInThisJob = true
+                    } catch (e) { }
+                }
+            }
+        }
+
+        if (successInThisJob) {
+            progress.value.successCount++
+        } else {
+            // 실패 사유 추출
+            const reason = data.failures?.[0]?.reason || '다운로드 실패 또는 미디어 없음'
+            progress.value.failures.push({ url: progress.value.currentUrl, reason })
+            progress.value.failCount++
+        }
+
+        progress.value.processedCount++
+        setTimeout(processNext, 1500)
+    }
+
+    async function pollStatus() {
+        if (!currentJobId) return
+
         if (Date.now() - pollStartTime > MAX_POLL_DURATION_MS) {
             clearPoll()
             isPolling.value = false
-            errorMessage.value = '처리 시간이 길어지고 있습니다. 잠시 후 다시 상태를 확인해 주세요.'
+            progress.value.failures.push({ url: progress.value.currentUrl, reason: '타임아웃' })
+            progress.value.failCount++
+            progress.value.processedCount++
+            setTimeout(processNext, 1000)
             return
         }
 
         try {
-            const data = await $fetch<JobStatus>(`/api/blog/status/${jobId}`)
-            currentJob.value = data
-
+            const data = await $fetch<any>(`/api/blog/status/${currentJobId}`)
             const done = ['done', 'partial', 'failed'].includes(data.status)
             if (done) {
-                clearPoll()
-                isPolling.value = false
+                await handleJobComplete(data)
             }
         } catch (err: any) {
             console.error('[useBlogMediaCollector] 폴링 오류:', err)
         }
     }
 
-    async function startJob(urls: string[]) {
-        reset()
-        isStarting.value = true
-        errorMessage.value = ''
+    async function processNext() {
+        if (queue.length === 0) {
+            isRunning.value = false
+            isDone.value = true
+            return
+        }
+
+        const nextUrl = queue.shift()!
+        progress.value.currentUrl = nextUrl
+        currentJobId = null
 
         try {
             const result = await $fetch<{ jobId: string; totalUrls: number; status: string }>(
                 '/api/blog/start',
                 {
                     method: 'POST',
-                    body: { urls }
+                    body: { urls: [nextUrl] }
                 }
             )
 
-            currentJob.value = {
-                jobId: result.jobId,
-                status: 'pending',
-                totalUrls: result.totalUrls,
-                successCount: 0,
-                failCount: 0,
-                downloadUrl: null,
-                downloadFiles: [],
-                isExpired: false,
-                expiresAt: null,
-                failures: [],
-                completedAt: null,
-                createdAt: new Date().toISOString()
-            }
-
-            // 폴링 시작
+            currentJobId = result.jobId
             isPolling.value = true
             pollStartTime = Date.now()
-            pollTimer = setInterval(() => pollStatus(result.jobId), POLL_INTERVAL_MS)
-
+            pollTimer = setInterval(pollStatus, POLL_INTERVAL_MS)
         } catch (err: any) {
-            errorMessage.value = err?.data?.message || err?.message || '작업 시작 실패'
-        } finally {
-            isStarting.value = false
+            progress.value.failures.push({ url: nextUrl, reason: '작업시작실패' })
+            progress.value.failCount++
+            progress.value.processedCount++
+            setTimeout(processNext, 1000)
         }
     }
 
+    async function startBatch(urls: string[]) {
+        reset()
+        if (!urls || urls.length === 0) return
+
+        isRunning.value = true
+        queue = [...urls]
+        progress.value.totalUrls = urls.length
+
+        await processNext()
+    }
+
     const statusLabel = computed(() => {
-        const s = currentJob.value?.status
-        if (!s) return ''
-        const map: Record<string, string> = {
-            pending: '서버 준비 중 (최대 90초)...',
-            running: '수집 중... (URL당 약 1~2분 소요)',
-            done: '완료',
-            partial: '일부 완료',
-            failed: '실패'
-        }
-        return map[s] || s
+        if (isDone.value) return '모든 작업 완료'
+        if (!isRunning.value) return '대기 중'
+        return `(${progress.value.processedCount + 1}/${progress.value.totalUrls}) 처리 및 자동 다운로드 중...`
     })
 
-    const isInProgress = computed(() =>
-        ['pending', 'running'].includes(currentJob.value?.status || '')
-    )
+    const statusVariant = computed(() => {
+        if (isDone.value) return progress.value.failCount === 0 ? 'success' : 'warning'
+        if (isRunning.value) return 'info'
+        return 'neutral'
+    })
 
-    const isDone = computed(() =>
-        ['done', 'partial', 'failed'].includes(currentJob.value?.status || '')
-    )
-
-    // cleanup
     onUnmounted(() => clearPoll())
 
     return {
-        isStarting,
+        isRunning,
+        isDone,
         isPolling,
-        currentJob,
+        progress,
         errorMessage,
         statusLabel,
-        isInProgress,
-        isDone,
-        startJob,
+        statusVariant,
+        startBatch,
         reset
     }
 }

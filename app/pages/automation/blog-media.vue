@@ -7,8 +7,8 @@
 
     <div class="page-header">
       <div>
-        <h1 class="page-title">블로그 미디어 수집</h1>
-        <p class="page-subtitle">네이버 블로그 URL을 입력하면 이미지·동영상을 일괄 수집해 ZIP으로 다운로드합니다.</p>
+        <h1 class="page-title">블로그 미디어 수집 (최적화 모드)</h1>
+        <p class="page-subtitle">네이버 블로그 URL을 입력하면 원본 고화질 이미지·동영상을 1건씩 순차 수집 후 자동 다운로드합니다. <br>(서버 용량 최적화를 위해 다운로드가 완료된 파일은 즉시 삭제됩니다.)</p>
       </div>
       <NuxtLink to="/automation" class="btn btn-secondary btn-sm">자동화 홈</NuxtLink>
     </div>
@@ -18,7 +18,7 @@
       <div class="card-header">
         <h3 class="card-title">
           <Link :size="18" :stroke-width="1.8" style="color: var(--color-primary)" />
-          블로그 URL 입력 (최대 10개)
+          블로그 URL 입력
         </h3>
         <StatusBadge v-if="urlCount > 0" :label="`${urlCount}개`" variant="info" dot />
       </div>
@@ -27,13 +27,12 @@
         v-model="urlInput"
         class="url-textarea"
         placeholder="https://blog.naver.com/blogId/postNo&#10;https://blog.naver.com/blogId/postNo&#10;(한 줄에 하나씩)"
-        :disabled="isInProgress || isStarting"
+        :disabled="isRunning"
         rows="8"
       />
 
       <div class="url-meta">
-        <span class="text-xs text-muted">{{ urlCount }}/10개 입력됨</span>
-        <span v-if="urlCount > 10" class="text-xs text-danger">최대 10개까지 입력 가능합니다.</span>
+        <span class="text-xs text-muted">{{ urlCount }}개 입력됨</span>
       </div>
 
       <div class="actions">
@@ -42,8 +41,8 @@
           :disabled="!canStart"
           @click="handleStart"
         >
-          <Download v-if="!isStarting && !isInProgress" :size="16" :stroke-width="2" />
-          <Loader2 v-else :size="16" :stroke-width="2" class="spin" />
+          <Loader2 v-if="isRunning" :size="16" :stroke-width="2" class="spin" />
+          <Download v-else :size="16" :stroke-width="2" />
           {{ startButtonLabel }}
         </button>
         <button v-if="isDone || errorMessage" class="btn btn-ghost btn-sm" @click="handleReset">
@@ -54,7 +53,7 @@
     </div>
 
     <!-- 진행 상태 카드 -->
-    <div v-if="currentJob" class="card">
+    <div v-if="isRunning || isDone" class="card">
       <div class="card-header">
         <h3 class="card-title">진행 상태</h3>
         <StatusBadge :label="statusLabel" :variant="statusVariant" dot />
@@ -62,82 +61,38 @@
 
       <div class="progress-grid">
         <div class="progress-item">
-          <span class="progress-label">상태</span>
-          <strong>{{ statusLabel }}</strong>
-        </div>
-        <div class="progress-item">
           <span class="progress-label">전체 URL</span>
-          <strong>{{ currentJob.totalUrls }}개</strong>
+          <strong>{{ progress.totalUrls }}개</strong>
         </div>
         <div class="progress-item">
-          <span class="progress-label">성공</span>
-          <strong class="text-success">{{ currentJob.successCount }}개</strong>
+          <span class="progress-label">처리 완료</span>
+          <strong>{{ progress.processedCount }}개</strong>
+        </div>
+        <div class="progress-item">
+          <span class="progress-label">성공 (자동다운로드됨)</span>
+          <strong class="text-success">{{ progress.successCount }}개</strong>
         </div>
         <div class="progress-item">
           <span class="progress-label">실패</span>
-          <strong :class="currentJob.failCount > 0 ? 'text-danger' : ''">{{ currentJob.failCount }}개</strong>
+          <strong :class="progress.failCount > 0 ? 'text-danger' : ''">{{ progress.failCount }}개</strong>
         </div>
       </div>
 
-      <!-- 서버 준비 중 안내 -->
-      <div v-if="currentJob.status === 'pending'" class="notice-box">
-        <AlertCircle :size="16" :stroke-width="2" />
-        <span>서버 준비 중입니다. 처음 실행 시 최대 90초 소요될 수 있습니다.</span>
-      </div>
-    </div>
-
-    <!-- 완료 결과 카드 -->
-    <div v-if="isDone && currentJob" class="card">
-      <div class="card-header">
-        <h3 class="card-title">수집 결과</h3>
-        <StatusBadge :label="resultLabel" :variant="statusVariant" dot />
+      <!-- 처리 중 안내창 -->
+      <div v-if="isRunning" class="notice-box">
+        <Loader2 :size="16" :stroke-width="2" class="spin" style="margin-right: 4px;" />
+        <span>현재 <b>{{ progress.currentUrl }}</b> 처리 및 자동 다운로드 대기 중...</span>
       </div>
 
-      <!-- 다운로드 버튼 -->
-      <div v-if="currentJob.downloadUrl && !currentJob.isExpired" class="download-box">
-        <template v-if="currentJob.downloadFiles && currentJob.downloadFiles.length > 0">
-          <button
-            v-for="item in currentJob.downloadFiles"
-            :key="item.id"
-            class="btn btn-primary"
-            :disabled="isDownloading(item.id)"
-            @click="downloadPart(item)"
-          >
-            <Loader2 v-if="isDownloading(item.id)" :size="16" :stroke-width="2" class="spin" />
-            <Download v-else :size="16" :stroke-width="2" />
-            {{ isDownloading(item.id) ? '다운로드 중...' : item.label }}
-            <span v-if="item.fileCount" class="download-meta">({{ item.fileCount }}개)</span>
-            <span v-if="item.sizeBytes" class="download-meta">{{ formatBytes(item.sizeBytes) }}</span>
-          </button>
-        </template>
-        <button
-          v-else
-          class="btn btn-primary"
-          :disabled="isDownloading('legacy')"
-          @click="downloadLegacy"
-        >
-          <Loader2 v-if="isDownloading('legacy')" :size="16" :stroke-width="2" class="spin" />
-          <Download v-else :size="16" :stroke-width="2" />
-          {{ isDownloading('legacy') ? '다운로드 중...' : `ZIP 다운로드 (${currentJob.successCount}개 URL 수집)` }}
-        </button>
-        <p class="text-xs text-muted mt-sm">
-          다운로드 링크 만료: {{ formatExpiry(currentJob.expiresAt) }}
-        </p>
-      </div>
-
-      <div v-else-if="currentJob.isExpired" class="notice-box notice-warn">
-        <AlertTriangle :size="16" :stroke-width="2" />
-        <span>다운로드 링크가 만료되었습니다. 다시 수집해 주세요.</span>
-      </div>
-
-      <div v-else-if="currentJob.status === 'failed'" class="notice-box notice-error">
-        <AlertTriangle :size="16" :stroke-width="2" />
-        <span>모든 URL 수집에 실패했습니다. 아래 실패 목록을 확인해 주세요.</span>
+      <!-- 완료 결과 카드 안내 -->
+      <div v-if="isDone" class="notice-box" style="background: #ECFDF5; color: #065F46; border-color: #A7F3D0;">
+        <Download :size="16" :stroke-width="2" />
+        <span>모든 URL 수집 작업이 종료되었습니다. 브라우저의 다운로드 폴더를 확인해주세요.</span>
       </div>
 
       <!-- 실패 목록 -->
-      <div v-if="currentJob.failures.length > 0" class="failure-section">
-        <div class="failure-title">실패 URL ({{ currentJob.failures.length }}건)</div>
+      <div v-if="progress.failures.length > 0" class="failure-section">
+        <div class="failure-title">실패 내역 ({{ progress.failures.length }}건)</div>
         <div class="table-wrapper">
           <table class="data-table">
             <thead>
@@ -147,7 +102,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="f in currentJob.failures" :key="f.url">
+              <tr v-for="f in progress.failures" :key="f.url">
                 <td class="url-cell">
                   <a :href="f.url" target="_blank" rel="noopener" class="text-link">{{ f.url }}</a>
                 </td>
@@ -158,7 +113,7 @@
             </tbody>
           </table>
         </div>
-        <button class="btn btn-ghost btn-sm mt-sm" @click="retryFailed">
+        <button v-if="isDone" class="btn btn-ghost btn-sm mt-sm" @click="retryFailed">
           <RefreshCw :size="14" :stroke-width="2" />
           실패 URL만 재시도
         </button>
@@ -177,19 +132,19 @@ definePageMeta({ layout: 'home' })
 const { isViewer, canModify } = useCurrentUser()
 
 const {
-  isStarting,
-  isInProgress,
+  isRunning,
   isDone,
-  currentJob,
+  isPolling,
+  progress,
   errorMessage,
   statusLabel,
-  startJob,
+  statusVariant,
+  startBatch,
   reset
 } = useBlogMediaCollector()
-const toast = useToast()
 
+const toast = useToast()
 const urlInput = ref('')
-const downloadingIds = ref<Set<string>>(new Set())
 
 const parsedUrls = computed(() =>
   urlInput.value
@@ -203,189 +158,29 @@ const urlCount = computed(() => parsedUrls.value.length)
 const canStart = computed(() =>
   canModify.value &&
   urlCount.value > 0 &&
-  urlCount.value <= 10 &&
-  !isStarting.value &&
-  !isInProgress.value
+  !isRunning.value
 )
 
 const startButtonLabel = computed(() => {
-  if (isStarting.value) return '시작 중...'
-  if (isInProgress.value) return '수집 중...'
-  return '수집 시작'
+  if (isRunning.value) return '수집 및 다운로드 진행 중...'
+  if (isDone.value) return '새로 수집 시작'
+  return '순차 수집 및 자동 다운로드 시작'
 })
 
-const statusVariant = computed(() => {
-  const s = currentJob.value?.status
-  if (s === 'done') return 'success'
-  if (s === 'partial') return 'warning'
-  if (s === 'failed') return 'danger'
-  return 'info'
-})
-
-const resultLabel = computed(() => {
-  const job = currentJob.value
-  if (!job) return ''
-  if (job.status === 'done') return `완료 (${job.successCount}/${job.totalUrls})`
-  if (job.status === 'partial') return `일부 완료 (${job.successCount}/${job.totalUrls})`
-  return `실패 (0/${job.totalUrls})`
-})
 
 async function handleStart() {
-  await startJob(parsedUrls.value)
+  await startBatch(parsedUrls.value)
 }
 
 function handleReset() {
   reset()
   urlInput.value = ''
-  downloadingIds.value = new Set()
 }
 
 function retryFailed() {
-  if (!currentJob.value) return
-  const failedUrls = currentJob.value.failures.map(f => f.url)
+  const failedUrls = progress.value.failures.map(f => f.url)
   urlInput.value = failedUrls.join('\n')
   reset()
-}
-
-function formatExpiry(expiresAt: string | null): string {
-  if (!expiresAt) return '-'
-  const d = new Date(expiresAt)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-function formatBytes(value: number): string {
-  const bytes = Number(value || 0)
-  if (!Number.isFinite(bytes) || bytes <= 0) return ''
-  const kb = bytes / 1024
-  if (kb < 1024) return `${kb.toFixed(1)}KB`
-  return `${(kb / 1024).toFixed(1)}MB`
-}
-
-function extractFilenameFromDisposition(contentDisposition: string | null): string | null {
-  const raw = String(contentDisposition || '').trim()
-  if (!raw) return null
-  const utf8Matched = raw.match(/filename\*=UTF-8''([^;]+)/i)
-  if (utf8Matched?.[1]) {
-    try { return decodeURIComponent(utf8Matched[1]) } catch { /* noop */ }
-  }
-  const quoted = raw.match(/filename="([^"]+)"/i)
-  if (quoted?.[1]) return quoted[1]
-  const plain = raw.match(/filename=([^;]+)/i)
-  if (plain?.[1]) return plain[1].trim()
-  return null
-}
-
-function safeFileName(name: string): string {
-  return String(name || 'blog_media.zip').replace(/[\\/:*?"<>|]/g, '_')
-}
-
-function isDownloading(id: string): boolean {
-  return downloadingIds.value.has(id)
-}
-
-async function downloadByFetch(url: string, fallbackName: string): Promise<void> {
-  const isAbsolute = /^https?:\/\//i.test(String(url || ''))
-  const response = await fetch(url, {
-    method: 'GET',
-    mode: isAbsolute ? 'cors' : 'same-origin',
-    credentials: isAbsolute ? 'omit' : 'include',
-    cache: 'no-store',
-  })
-
-  if (!response.ok) {
-    let message = `다운로드 실패 (${response.status})`
-    try {
-      const payload = await response.json()
-      if (payload?.statusMessage) message = payload.statusMessage
-      else if (payload?.message) message = payload.message
-    } catch {
-      const text = await response.text().catch(() => '')
-      if (text) message = text.slice(0, 160)
-    }
-    throw new Error(message)
-  }
-
-  const blob = await response.blob()
-  if (!blob || blob.size <= 0) {
-    throw new Error('다운로드 파일이 비어 있습니다.')
-  }
-
-  const filename =
-    safeFileName(
-      extractFilenameFromDisposition(response.headers.get('content-disposition'))
-      || fallbackName
-      || 'blog_media.zip'
-    )
-
-  const objectUrl = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = objectUrl
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(objectUrl)
-}
-
-async function cleanupDownloadedPart(jobId: string, partId?: string) {
-  if (!jobId) return
-  await $fetch(`/api/blog/cleanup/${jobId}`, {
-    method: 'POST',
-    body: partId ? { partId } : {},
-  })
-}
-
-async function downloadPart(item: { id: string; url: string; label: string }) {
-  if (!item?.url || isDownloading(item.id)) return
-  const jobId = currentJob.value?.jobId || ''
-  const next = new Set(downloadingIds.value)
-  next.add(item.id)
-  downloadingIds.value = next
-  try {
-    await downloadByFetch(item.url, `${item.label || item.id || 'blog_media'}.zip`)
-    await cleanupDownloadedPart(jobId, item.id).catch(() => {
-      toast.warning('다운로드 정리 처리에 실패했습니다. 잠시 후 새로고침해 주세요.')
-    })
-    if (currentJob.value?.downloadFiles) {
-      currentJob.value.downloadFiles = currentJob.value.downloadFiles.filter((file) => file.id !== item.id)
-      currentJob.value.downloadUrl = currentJob.value.downloadFiles[0]?.url || null
-      if (currentJob.value.downloadFiles.length === 0) {
-        currentJob.value.isExpired = true
-      }
-    }
-    toast.success(`${item.label || item.id} 다운로드 완료`)
-  } catch (error: any) {
-    toast.error(error?.message || '다운로드 실패')
-  } finally {
-    const done = new Set(downloadingIds.value)
-    done.delete(item.id)
-    downloadingIds.value = done
-  }
-}
-
-async function downloadLegacy() {
-  const job = currentJob.value
-  if (!job?.downloadUrl || isDownloading('legacy')) return
-  const next = new Set(downloadingIds.value)
-  next.add('legacy')
-  downloadingIds.value = next
-  try {
-    await downloadByFetch(job.downloadUrl, `blog_media_${job.jobId}.zip`)
-    await cleanupDownloadedPart(job.jobId).catch(() => {
-      toast.warning('다운로드 정리 처리에 실패했습니다. 잠시 후 새로고침해 주세요.')
-    })
-    if (currentJob.value) {
-      currentJob.value.downloadUrl = null
-      currentJob.value.isExpired = true
-    }
-    toast.success('ZIP 다운로드 완료')
-  } catch (error: any) {
-    toast.error(error?.message || '다운로드 실패')
-  } finally {
-    const done = new Set(downloadingIds.value)
-    done.delete('legacy')
-    downloadingIds.value = done
-  }
 }
 
 function failureReasonLabel(reason: string): string {
@@ -524,18 +319,6 @@ function failureReasonLabel(reason: string): string {
   background: #FEF2F2;
   color: #991B1B;
   border-color: #FECACA;
-}
-
-.download-box {
-  margin-top: var(--space-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-}
-
-.download-meta {
-  font-size: 0.75rem;
-  opacity: 0.92;
 }
 
 .failure-section {
