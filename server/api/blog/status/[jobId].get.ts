@@ -1,5 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 
+const BLOG_MEDIA_BUCKET = 'blog-media-zips'
+const SIGNED_URL_TTL_SEC = 60 * 60
+
 export default defineEventHandler(async (event) => {
     const jobId = getRouterParam(event, 'jobId')
     if (!jobId) {
@@ -34,21 +37,52 @@ export default defineEventHandler(async (event) => {
     // 다운로드 URL 만료 확인
     const isExpired = job.expires_at ? new Date(job.expires_at as string) < new Date() : false
     const availableZipParts = rawZipParts.filter((part: any) => String(part?.path || '').trim().length > 0)
-    const downloadFiles = !isExpired
-        ? availableZipParts.map((part: any, idx: number) => {
-            const id = String(part?.id || `part-${idx + 1}`)
-            return {
-                id,
-                label: `ZIP ${idx + 1}`,
-                url: `/api/blog/download/${job.id}?part=${encodeURIComponent(id)}`,
-                fileCount: Number(part?.fileCount || 0),
-                sizeBytes: Number(part?.sizeBytes || 0),
-            }
-        })
-        : []
+    let downloadFiles: Array<{
+        id: string
+        label: string
+        url: string
+        fileCount: number
+        sizeBytes: number
+    }> = []
 
+    if (!isExpired) {
+        const signedPartItems = await Promise.all(
+            availableZipParts.map(async (part: any, idx: number) => {
+                const path = String(part?.path || '').trim()
+                if (!path) return null
+                const { data: signed, error: signedErr } = await adminClient
+                    .storage
+                    .from(BLOG_MEDIA_BUCKET)
+                    .createSignedUrl(path, SIGNED_URL_TTL_SEC)
+                if (signedErr || !signed?.signedUrl) {
+                    return null
+                }
+                const id = String(part?.id || `part-${idx + 1}`)
+                return {
+                    id,
+                    label: `ZIP ${idx + 1}`,
+                    url: signed.signedUrl,
+                    fileCount: Number(part?.fileCount || 0),
+                    sizeBytes: Number(part?.sizeBytes || 0),
+                }
+            })
+        )
+        downloadFiles = signedPartItems.filter(Boolean) as typeof downloadFiles
+    }
+
+    let directDownloadUrl: string | null = null
     const hasLegacySingle = Boolean(storagePath) && !isExpired && downloadFiles.length === 0
-    const proxyDownloadUrl = hasLegacySingle ? `/api/blog/download/${job.id}` : (downloadFiles[0]?.url || null)
+    if (hasLegacySingle) {
+        const { data: signed, error: signedErr } = await adminClient
+            .storage
+            .from(BLOG_MEDIA_BUCKET)
+            .createSignedUrl(storagePath, SIGNED_URL_TTL_SEC)
+        if (!signedErr && signed?.signedUrl) {
+            directDownloadUrl = signed.signedUrl
+        }
+    } else {
+        directDownloadUrl = downloadFiles[0]?.url || null
+    }
 
     return {
         jobId: job.id,
@@ -56,8 +90,8 @@ export default defineEventHandler(async (event) => {
         totalUrls: job.total_urls,
         successCount: job.success_count,
         failCount: job.fail_count,
-        // 보안/정리 일관성을 위해 스토리지 signed URL 대신 서버 프록시 다운로드 URL 사용
-        downloadUrl: proxyDownloadUrl,
+        // 대용량 ZIP 손상 방지를 위해 스토리지 signed URL 직접 다운로드 사용
+        downloadUrl: directDownloadUrl,
         downloadFiles,
         isExpired,
         expiresAt: job.expires_at,

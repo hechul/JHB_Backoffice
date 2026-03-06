@@ -284,9 +284,11 @@ function isDownloading(id: string): boolean {
 }
 
 async function downloadByFetch(url: string, fallbackName: string): Promise<void> {
+  const isAbsolute = /^https?:\/\//i.test(String(url || ''))
   const response = await fetch(url, {
     method: 'GET',
-    credentials: 'include',
+    mode: isAbsolute ? 'cors' : 'same-origin',
+    credentials: isAbsolute ? 'omit' : 'include',
     cache: 'no-store',
   })
 
@@ -325,13 +327,32 @@ async function downloadByFetch(url: string, fallbackName: string): Promise<void>
   URL.revokeObjectURL(objectUrl)
 }
 
+async function cleanupDownloadedPart(jobId: string, partId?: string) {
+  if (!jobId) return
+  await $fetch(`/api/blog/cleanup/${jobId}`, {
+    method: 'POST',
+    body: partId ? { partId } : {},
+  })
+}
+
 async function downloadPart(item: { id: string; url: string; label: string }) {
   if (!item?.url || isDownloading(item.id)) return
+  const jobId = currentJob.value?.jobId || ''
   const next = new Set(downloadingIds.value)
   next.add(item.id)
   downloadingIds.value = next
   try {
     await downloadByFetch(item.url, `${item.label || item.id || 'blog_media'}.zip`)
+    await cleanupDownloadedPart(jobId, item.id).catch(() => {
+      toast.warning('다운로드 정리 처리에 실패했습니다. 잠시 후 새로고침해 주세요.')
+    })
+    if (currentJob.value?.downloadFiles) {
+      currentJob.value.downloadFiles = currentJob.value.downloadFiles.filter((file) => file.id !== item.id)
+      currentJob.value.downloadUrl = currentJob.value.downloadFiles[0]?.url || null
+      if (currentJob.value.downloadFiles.length === 0) {
+        currentJob.value.isExpired = true
+      }
+    }
     toast.success(`${item.label || item.id} 다운로드 완료`)
   } catch (error: any) {
     toast.error(error?.message || '다운로드 실패')
@@ -350,6 +371,13 @@ async function downloadLegacy() {
   downloadingIds.value = next
   try {
     await downloadByFetch(job.downloadUrl, `blog_media_${job.jobId}.zip`)
+    await cleanupDownloadedPart(job.jobId).catch(() => {
+      toast.warning('다운로드 정리 처리에 실패했습니다. 잠시 후 새로고침해 주세요.')
+    })
+    if (currentJob.value) {
+      currentJob.value.downloadUrl = null
+      currentJob.value.isExpired = true
+    }
     toast.success('ZIP 다운로드 완료')
   } catch (error: any) {
     toast.error(error?.message || '다운로드 실패')
