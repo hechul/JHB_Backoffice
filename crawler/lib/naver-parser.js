@@ -157,8 +157,10 @@ async function extractBlogMedia(rawUrl, options = {}) {
 
         const page = await context.newPage()
 
-        // 동영상 추출용 네트워크 응답 수집기
+        // 동영상 추출용 네트워크 응답 수집기 및 메타데이터(vid/inkey) 기반 보조 추출
         const interceptedVideos = new Set()
+
+        // 1. 네트워크 인터셉터 (iframe 등에서 재생 시 발생하는 요청 캡처)
         page.on('response', async (response) => {
             try {
                 const reqUrl = response.url()
@@ -196,10 +198,50 @@ async function extractBlogMedia(rawUrl, options = {}) {
         // SE3 에디터 이미지 렌더링 대기 (넓은 선택자로 — lazy-load 포함)
         await page.waitForSelector('img', { timeout: 8000 }).catch(() => { })
 
-        // 추가 렌더링 여유 대기
+        // 추가 렌더링 여유 대기 (동영상 모듈 초기화 대기 포함)
         await page.waitForTimeout(2000)
         await autoScroll(page)
         await page.waitForTimeout(1200)
+
+        // 2. DOM에서 직접 vid, inkey 추출 (가장 확실한 방법)
+        const videoKeys = await page.evaluate(() => {
+            const keys = new Set();
+            document.querySelectorAll('[data-module]').forEach(el => {
+                const data = el.getAttribute('data-module');
+                if (data && data.includes('vid') && data.includes('inkey')) {
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.data && parsed.data.vid && parsed.data.inkey) {
+                            keys.add(JSON.stringify({ vid: parsed.data.vid, inKey: parsed.data.inkey }));
+                        }
+                    } catch (e) { }
+                }
+            });
+            return Array.from(keys).map(k => JSON.parse(k));
+        });
+
+        // 추출된 키로 동영상 API 서버 직접 찌르기
+        for (const keyObj of videoKeys) {
+            try {
+                const apiRes = await page.request.get(`https://apis.naver.com/rmcnmv/rmcnmv/vod/play/v2.0/${keyObj.vid}?key=${keyObj.inKey}`);
+                const json = await apiRes.json();
+                const list = json?.videos?.list || [];
+
+                // 최고 화질 1개만 추출 (ZIP 파일 용량 최적화)
+                let bestVideo = null;
+                for (const v of list) {
+                    if (v.source && v.source.includes('mp4')) {
+                        if (!bestVideo || (v.size && v.size > bestVideo.size)) {
+                            bestVideo = v;
+                        }
+                    }
+                }
+
+                if (bestVideo && bestVideo.source) {
+                    interceptedVideos.add(bestVideo.source);
+                }
+            } catch (e) { }
+        }
 
         // 이미지 URL 추출 함수 — 메인 frame과 중첩 frame 모두 탐색
         async function extractImagesFromFrame(frame) {
