@@ -11,6 +11,11 @@ const DOWNLOAD_TIMEOUT_MS = 30000
 const DOWNLOAD_RETRY_COUNT = Math.max(1, Math.min(Number.parseInt(process.env.BLOG_DOWNLOAD_RETRY_COUNT || '3', 10) || 3, 5))
 const DOWNLOAD_RETRY_BACKOFF_MS = 700
 
+function isLikelyTextContent(contentType = '') {
+    const t = String(contentType).toLowerCase()
+    return t.includes('text/') || t.includes('application/json') || t.includes('application/xml') || t.includes('application/xhtml+xml') || t.includes('application/javascript')
+}
+
 function detectExtFromContentType(contentType = '') {
     const t = String(contentType).toLowerCase()
     if (t.includes('video/mp4')) return 'mp4'
@@ -21,6 +26,43 @@ function detectExtFromContentType(contentType = '') {
     if (t.includes('image/gif')) return 'gif'
     if (t.includes('image/webp')) return 'webp'
     return ''
+}
+
+function detectExtFromMagic(buffer) {
+    if (!buffer || buffer.length < 12) return ''
+
+    // jpeg
+    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return 'jpg'
+    // png
+    if (
+        buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47 &&
+        buffer[4] === 0x0D && buffer[5] === 0x0A && buffer[6] === 0x1A && buffer[7] === 0x0A
+    ) return 'png'
+    // gif
+    if (
+        buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 &&
+        buffer[3] === 0x38 && (buffer[4] === 0x39 || buffer[4] === 0x37) && buffer[5] === 0x61
+    ) return 'gif'
+    // webp: RIFF....WEBP
+    if (
+        buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+        buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50
+    ) return 'webp'
+    // mp4/mov: ....ftyp
+    if (buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70) {
+        return 'mp4'
+    }
+    // m3u8 text
+    const head = buffer.slice(0, 32).toString('utf8').toUpperCase()
+    if (head.includes('#EXTM3U')) return 'm3u8'
+
+    return ''
+}
+
+function looksLikeHtml(buffer) {
+    if (!buffer || buffer.length === 0) return false
+    const head = buffer.slice(0, 512).toString('utf8').toLowerCase()
+    return head.includes('<!doctype html') || head.includes('<html') || head.includes('<head') || head.includes('<body')
 }
 
 /**
@@ -138,9 +180,24 @@ async function createZip(results) {
                 for (const mediaUrl of targets) {
                     try {
                         const downloaded = await downloadFile(mediaUrl)
-                        const ext =
-                            detectExtFromContentType(downloaded.contentType) ||
-                            getExt(mediaUrl)
+
+                        if (!downloaded.buffer || downloaded.buffer.length < 64) {
+                            console.warn(`[zipper] 너무 작은 응답으로 제외: ${mediaUrl} (${downloaded.buffer?.length || 0} bytes)`)
+                            continue
+                        }
+
+                        if (looksLikeHtml(downloaded.buffer) || isLikelyTextContent(downloaded.contentType)) {
+                            const magic = detectExtFromMagic(downloaded.buffer)
+                            const isM3u8 = magic === 'm3u8'
+                            if (!isM3u8) {
+                                console.warn(`[zipper] HTML/텍스트 응답 제외: ${mediaUrl} (${downloaded.contentType || '-'})`)
+                                continue
+                            }
+                        }
+
+                        const extByMagic = detectExtFromMagic(downloaded.buffer)
+                        const extByHeader = detectExtFromContentType(downloaded.contentType)
+                        const ext = extByMagic || extByHeader || getExt(mediaUrl)
                         const filename = `${blogId}_${logNo}_${String(fileIndex).padStart(3, '0')}.${ext}`
                         archive.append(downloaded.buffer, { name: filename })
                         fileIndex++
