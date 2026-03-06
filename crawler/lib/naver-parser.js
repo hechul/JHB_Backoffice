@@ -191,18 +191,20 @@ async function extractBlogMedia(rawUrl, options = {}) {
             return route.continue()
         })
 
+        // networkidle 대신 load 사용 — 네이버 블로그는 광고/추적 요청이 끊이지 않아
+        // networkidle 조건이 타임아웃까지 충족되지 않는 경우가 빈번함
         await page.goto(url, {
-            waitUntil: 'networkidle',
+            waitUntil: 'load',
             timeout: PAGE_TIMEOUT_MS
         })
 
         // SE3 에디터 이미지 렌더링 대기 (넓은 선택자로 — lazy-load 포함)
-        await page.waitForSelector('img', { timeout: 8000 }).catch(() => { })
+        await page.waitForSelector('img', { timeout: 10000 }).catch(() => { })
 
         // 추가 렌더링 여유 대기 (동영상 모듈 초기화 대기 포함)
-        await page.waitForTimeout(2000)
+        await page.waitForTimeout(2500)
         await autoScroll(page)
-        await page.waitForTimeout(1200)
+        await page.waitForTimeout(1500)
 
         // 2. DOM에서 직접 vid, inkey 추출 (가장 확실한 방법)
         const videoKeys = await page.evaluate(() => {
