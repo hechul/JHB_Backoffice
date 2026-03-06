@@ -57,7 +57,6 @@
       </div>
     </Transition>
 
-    <div v-if="showPanel" class="bell-overlay" @click="showPanel = false"></div>
   </div>
 </template>
 
@@ -152,11 +151,37 @@ function getIcon(type: DisplayNotification['type']) {
   }
 }
 
+function handleDocumentPointerDown(event: PointerEvent) {
+  if (!showPanel.value) return
+  const root = bellRef.value
+  if (!root) {
+    showPanel.value = false
+    return
+  }
+  const target = event.target as Node | null
+  if (target && root.contains(target)) return
+  showPanel.value = false
+}
+
+function handleEscapeKey(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  showPanel.value = false
+}
+
+function handleWindowBlur() {
+  showPanel.value = false
+}
+
 watch(() => route.fullPath, () => {
   showPanel.value = false
 })
 
 onMounted(async () => {
+  if (import.meta.client) {
+    document.addEventListener('pointerdown', handleDocumentPointerDown, true)
+    window.addEventListener('keydown', handleEscapeKey)
+    window.addEventListener('blur', handleWindowBlur)
+  }
   await refreshNotifications()
   refreshTimer = setInterval(() => {
     refreshNotifications()
@@ -164,6 +189,11 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  if (import.meta.client) {
+    document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
+    window.removeEventListener('keydown', handleEscapeKey)
+    window.removeEventListener('blur', handleWindowBlur)
+  }
   if (refreshTimer) clearInterval(refreshTimer)
 })
 </script>
@@ -365,12 +395,6 @@ onBeforeUnmount(() => {
   font-size: 0.8125rem;
   color: var(--color-text-muted);
   line-height: 1.5;
-}
-
-.bell-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 49;
 }
 
 .dropdown-enter-active {

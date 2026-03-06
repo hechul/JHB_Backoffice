@@ -109,7 +109,11 @@
         </div>
         <div class="header-actions">
           <!-- Period Selector -->
-          <div v-if="showPeriodSelector" class="period-selector period-selector-fixed">
+          <div
+            v-if="showPeriodSelector"
+            ref="periodSelectorRef"
+            class="period-selector period-selector-fixed"
+          >
             <button class="period-nav" @click="prevMonth">
               <ChevronLeft :size="16" :stroke-width="2" />
             </button>
@@ -167,9 +171,6 @@
       </main>
     </div>
 
-    <!-- Overlay for dropdown -->
-    <div v-if="showPeriodMenu" class="overlay" @click="showPeriodMenu = false"></div>
-
     <!-- Global Toast -->
     <ToastContainer />
   </div>
@@ -201,6 +202,7 @@ const { selectedMonth, selectedPeriodLabel, availableMonths, monthsLoading, mont
 
 const sidebarCollapsed = ref(false)
 const mobileMenuOpen = ref(false)
+const periodSelectorRef = ref<HTMLElement | null>(null)
 const periodEnabledPaths = ['/dashboard', '/customers', '/logs', '/upload', '/filter']
 
 const analysisMenuItems = computed(() => {
@@ -324,6 +326,28 @@ function togglePeriodMenu() {
   showPeriodMenu.value = !showPeriodMenu.value
 }
 
+function handleDocumentPointerDown(event: PointerEvent) {
+  if (!showPeriodMenu.value) return
+  const root = periodSelectorRef.value
+  if (!root) {
+    showPeriodMenu.value = false
+    return
+  }
+  const target = event.target as Node | null
+  if (target && root.contains(target)) return
+  showPeriodMenu.value = false
+}
+
+function handleEscapeKey(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  showPeriodMenu.value = false
+  mobileMenuOpen.value = false
+}
+
+function handleWindowBlur() {
+  showPeriodMenu.value = false
+}
+
 watch(() => route.path, () => {
   mobileMenuOpen.value = false
   showPeriodMenu.value = false
@@ -333,8 +357,18 @@ watch(showPeriodSelector, (visible) => {
   if (!visible) showPeriodMenu.value = false
 })
 
-onMounted(async () => {
-  // 인증 로직 후 데이터 조회
+onMounted(() => {
+  if (!import.meta.client) return
+  document.addEventListener('pointerdown', handleDocumentPointerDown, true)
+  window.addEventListener('keydown', handleEscapeKey)
+  window.addEventListener('blur', handleWindowBlur)
+})
+
+onBeforeUnmount(() => {
+  if (!import.meta.client) return
+  document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
+  window.removeEventListener('keydown', handleEscapeKey)
+  window.removeEventListener('blur', handleWindowBlur)
 })
 
 watch(
@@ -882,12 +916,6 @@ watch(
   height: 1px;
   background: var(--color-border-light);
   margin: var(--space-sm) var(--space-md);
-}
-
-.overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 49;
 }
 
 /* Disabled nav item */
