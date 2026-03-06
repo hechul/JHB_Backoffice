@@ -212,43 +212,70 @@ async function extractBlogMedia(rawUrl, options = {}) {
         })
 
         await page.goto(url, {
-            waitUntil: 'domcontentloaded',
+            waitUntil: 'networkidle',
             timeout: PAGE_TIMEOUT_MS
         })
 
-        // postfiles 이미지가 DOM에 나타날 때까지 최대 15초 대기 (SE3 렌더링 대기)
-        await page.waitForSelector(
-            'img[src*="postfiles.pstatic.net"], img[src*="blogfiles.pstatic.net"]',
-            { timeout: 15000 }
-        ).catch(() => { /* 이미지 없는 포스트 허용 */ })
+        // SE3 에디터 이미지 렌더링 대기 (넓은 선택자로 — lazy-load 포함)
+        await page.waitForSelector('img', { timeout: 8000 }).catch(() => { })
 
         // 추가 렌더링 여유 대기
-        await page.waitForTimeout(1500)
+        await page.waitForTimeout(2000)
         await autoScroll(page)
-        await page.waitForTimeout(800)
+        await page.waitForTimeout(1200)
 
-        // 이미지 URL 추출 — data-src, data-lazy-src 우선 (lazy-load 원본), src는 fallback
-        const rawImageUrls = await page.evaluate(() => {
-            const urls = []
-            document.querySelectorAll('img').forEach(img => {
-                // data-src, data-lazy-src에 원본 URL이 있는 경우가 많음
-                const src = img.getAttribute('data-lazy-src') ||
-                    img.getAttribute('data-src') ||
-                    img.getAttribute('src')
-                if (src) urls.push(src)
-            })
-            return urls
-        })
+        // 이미지 URL 추출 함수 — 메인 frame과 중첩 frame 모두 탐색
+        async function extractImagesFromFrame(frame) {
+            try {
+                return await frame.evaluate(() => {
+                    const urls = []
+                    document.querySelectorAll('img').forEach(img => {
+                        // data-lazy-src, data-src 우선 (SE3 lazy-load 원본 URL)
+                        const src = img.getAttribute('data-lazy-src') ||
+                            img.getAttribute('data-src') ||
+                            img.getAttribute('data-original') ||
+                            img.getAttribute('src')
+                        if (src) urls.push(src)
+                    })
+                    return urls
+                })
+            } catch {
+                return []
+            }
+        }
 
+        // 메인 frame 이미지 수집
+        let rawImageUrls = await extractImagesFromFrame(page.mainFrame())
 
-        // 동영상 URL 추출
+        // 중첩 frame(blog.naver.com 래퍼 구조) 이미지 수집
+        for (const frame of page.frames()) {
+            if (frame === page.mainFrame()) continue
+            const frameUrl = frame.url()
+            // PostView / 블로그 콘텐츠 frame만 처리
+            if (frameUrl && (frameUrl.includes('blog.naver.com') || frameUrl.includes('PostView'))) {
+                const frameImages = await extractImagesFromFrame(frame)
+                rawImageUrls = rawImageUrls.concat(frameImages)
+            }
+        }
+
+        // 동영상 URL 추출 (메인 frame + 자식 frame)
         const videoUrls = await extractVideoUrls(page)
+        for (const frame of page.frames()) {
+            if (frame === page.mainFrame()) continue
+            const frameUrl = frame.url()
+            if (frameUrl && (frameUrl.includes('blog.naver.com') || frameUrl.includes('PostView'))) {
+                try {
+                    const frameVideoUrls = await extractVideoUrls(frame)
+                    videoUrls.push(...frameVideoUrls)
+                } catch { }
+            }
+        }
 
         await browser.close()
         browser = null
 
         // 이미지 URL 정규화 및 필터링
-        const imageUrls = rawImageUrls
+        const imageUrls = Array.from(new Set(rawImageUrls))
             .map((src) => normalizeImageUrl(src, imageType))
             .filter(Boolean)
 

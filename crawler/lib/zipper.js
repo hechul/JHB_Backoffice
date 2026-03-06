@@ -65,22 +65,38 @@ function looksLikeHtml(buffer) {
     return head.includes('<!doctype html') || head.includes('<html') || head.includes('<head') || head.includes('<body')
 }
 
+const DEFAULT_HEADERS = {
+    'Referer': 'https://blog.naver.com/',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+    'Accept-Language': 'ko-KR,ko;q=0.9',
+}
+
 /**
  * URL에서 파일 다운로드 → Buffer + contentType 반환
+ * 리다이렉트(301/302/307/308)를 최대 MAX_REDIRECTS회 Referer 유지하며 follow
  */
-function downloadFileOnce(url) {
+const MAX_REDIRECTS = 5
+function downloadFileOnce(url, redirectCount = 0) {
     return new Promise((resolve, reject) => {
         const client = url.startsWith('https') ? https : http
         const timer = setTimeout(() => reject(new Error('download timeout')), DOWNLOAD_TIMEOUT_MS)
 
-        const req = client.get(url, {
-            headers: {
-                'Referer': 'https://blog.naver.com/',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36'
+        const req = client.get(url, { headers: DEFAULT_HEADERS }, (res) => {
+            // 리다이렉트 처리
+            if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+                const location = res.headers['location']
+                clearTimeout(timer)
+                res.resume() // 응답 body 버림
+                if (!location) return reject(new Error('redirect without location'))
+                if (redirectCount >= MAX_REDIRECTS) return reject(new Error('too many redirects'))
+                const nextUrl = location.startsWith('http') ? location : new URL(location, url).toString()
+                return resolve(downloadFileOnce(nextUrl, redirectCount + 1))
             }
-        }, (res) => {
+
             if (res.statusCode !== 200) {
                 clearTimeout(timer)
+                res.resume()
                 return reject(new Error(`HTTP ${res.statusCode}`))
             }
             const chunks = []
