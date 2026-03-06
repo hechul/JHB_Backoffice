@@ -38,11 +38,7 @@ function normalizeNaverBlogUrl(url) {
     }
 }
 
-/**
- * 이미지 URL 정규화
- * 기본 품질은 w1080(환경변수 BLOG_IMAGE_TYPE으로 조정 가능)
- */
-function normalizeImageUrl(src, imageType = DEFAULT_IMAGE_TYPE) {
+function normalizeImageUrl(src) {
     const absolute = toAbsoluteUrl(src)
     if (!absolute) return null
     try {
@@ -51,10 +47,13 @@ function normalizeImageUrl(src, imageType = DEFAULT_IMAGE_TYPE) {
             !absolute.includes('postfiles.pstatic.net')) {
             return null
         }
-        // type 파라미터를 지정 품질로 고정
-        const url = new URL(absolute)
-        if (imageType) url.searchParams.set('type', imageType)
-        return url.toString()
+
+        // type= 파라미터를 강제로 수정하면 404가 나는 경우가 많으므로 (서명/토큰 만료 등)
+        // 원본 URL을 최대한 유지한다.
+        const urlObj = new URL(absolute)
+
+        // 불필요한 추적 파라미터 등은 제거
+        return urlObj.toString()
     } catch {
         return null
     }
@@ -276,7 +275,7 @@ async function extractBlogMedia(rawUrl, options = {}) {
 
         // 이미지 URL 정규화 및 필터링
         const imageUrls = Array.from(new Set(rawImageUrls))
-            .map((src) => normalizeImageUrl(src, imageType))
+            .map((src) => normalizeImageUrl(src))
             .filter(Boolean)
 
         const allUrls = Array.from(new Set([
