@@ -95,7 +95,23 @@
 
       <!-- 다운로드 버튼 -->
       <div v-if="currentJob.downloadUrl && !currentJob.isExpired" class="download-box">
+        <template v-if="currentJob.downloadFiles && currentJob.downloadFiles.length > 0">
+          <a
+            v-for="item in currentJob.downloadFiles"
+            :key="item.id"
+            :href="item.url"
+            class="btn btn-primary"
+            download
+            target="_blank"
+          >
+            <Download :size="16" :stroke-width="2" />
+            {{ item.label }}
+            <span v-if="item.fileCount" class="download-meta">({{ item.fileCount }}개)</span>
+            <span v-if="item.sizeBytes" class="download-meta">{{ formatBytes(item.sizeBytes) }}</span>
+          </a>
+        </template>
         <a
+          v-else
           :href="currentJob.downloadUrl"
           class="btn btn-primary"
           download
@@ -234,12 +250,23 @@ function formatExpiry(expiresAt: string | null): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+function formatBytes(value: number): string {
+  const bytes = Number(value || 0)
+  if (!Number.isFinite(bytes) || bytes <= 0) return ''
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(1)}KB`
+  return `${(kb / 1024).toFixed(1)}MB`
+}
+
 function failureReasonLabel(reason: string): string {
   const map: Record<string, string> = {
     '접근불가': '접근불가',
     '파싱실패': '파싱실패',
     '미디어_없음': '미디어 없음',
-    '타임아웃': '타임아웃'
+    '타임아웃': '타임아웃',
+    'ZIP업로드실패': 'ZIP 업로드 실패',
+    '용량초과': '용량 초과',
+    '용량초과(일부제외)': '용량 초과(일부 제외)',
   }
   return map[reason] || reason
 }
@@ -374,6 +401,11 @@ function failureReasonLabel(reason: string): string {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
+}
+
+.download-meta {
+  font-size: 0.75rem;
+  opacity: 0.92;
 }
 
 .failure-section {

@@ -4,6 +4,7 @@
 const { chromium } = require('playwright')
 
 const PAGE_TIMEOUT_MS = 90000  // Render 무료 플랜 느린 환경 대응 (90초)
+const DEFAULT_IMAGE_TYPE = String(process.env.BLOG_IMAGE_TYPE || 'w800')
 
 function toAbsoluteUrl(src) {
     if (!src) return null
@@ -38,10 +39,10 @@ function normalizeNaverBlogUrl(url) {
 }
 
 /**
- * 이미지 URL 정규화 — type=w2000으로 교체해 최대 화질 획득
- * (네이버 CDN: type 없음 → 5KB 최소, type=w2000 → 71KB 최대)
+ * 이미지 URL 정규화
+ * 기본 품질은 w1080(환경변수 BLOG_IMAGE_TYPE으로 조정 가능)
  */
-function normalizeImageUrl(src) {
+function normalizeImageUrl(src, imageType = DEFAULT_IMAGE_TYPE) {
     const absolute = toAbsoluteUrl(src)
     if (!absolute) return null
     try {
@@ -50,9 +51,9 @@ function normalizeImageUrl(src) {
             !absolute.includes('postfiles.pstatic.net')) {
             return null
         }
-        // type=w2000으로 교체 (최대 화질)
+        // type 파라미터를 지정 품질로 고정
         const url = new URL(absolute)
-        url.searchParams.set('type', 'w2000')
+        if (imageType) url.searchParams.set('type', imageType)
         return url.toString()
     } catch {
         return null
@@ -171,7 +172,8 @@ function extractVideoUrls(page) {
 /**
  * 단일 블로그 URL에서 미디어 URL 추출
  */
-async function extractBlogMedia(rawUrl) {
+async function extractBlogMedia(rawUrl, options = {}) {
+    const imageType = String(options.imageType || DEFAULT_IMAGE_TYPE || '').trim()
     const url = normalizeNaverBlogUrl(rawUrl)
     let browser = null
 
@@ -247,7 +249,7 @@ async function extractBlogMedia(rawUrl) {
 
         // 이미지 URL 정규화 및 필터링
         const imageUrls = rawImageUrls
-            .map(normalizeImageUrl)
+            .map((src) => normalizeImageUrl(src, imageType))
             .filter(Boolean)
 
         const allUrls = Array.from(new Set([
@@ -255,7 +257,7 @@ async function extractBlogMedia(rawUrl) {
             ...videoUrls.map(normalizeVideoUrl).filter(Boolean),
         ]))
 
-        console.log(`[parser] ${rawUrl} → 이미지 ${imageUrls.length}개, 동영상 ${videoUrls.length}개`)
+        console.log(`[parser] ${rawUrl} → 이미지 ${imageUrls.length}개, 동영상 ${videoUrls.length}개, imageType=${imageType || '-'}`)
         return allUrls
 
     } catch (err) {

@@ -4,11 +4,12 @@
 const archiver = require('archiver')
 const https = require('https')
 const http = require('http')
-const { Readable } = require('stream')
 
 // 0이면 제한 없이 전체 저장
 const MAX_MEDIA_PER_POST = Number.parseInt(process.env.MAX_MEDIA_PER_POST || '0', 10) || 0
 const DOWNLOAD_TIMEOUT_MS = 30000
+const DOWNLOAD_RETRY_COUNT = Math.max(1, Math.min(Number.parseInt(process.env.BLOG_DOWNLOAD_RETRY_COUNT || '3', 10) || 3, 5))
+const DOWNLOAD_RETRY_BACKOFF_MS = 700
 
 function detectExtFromContentType(contentType = '') {
     const t = String(contentType).toLowerCase()
@@ -25,7 +26,7 @@ function detectExtFromContentType(contentType = '') {
 /**
  * URL에서 파일 다운로드 → Buffer + contentType 반환
  */
-function downloadFile(url) {
+function downloadFileOnce(url) {
     return new Promise((resolve, reject) => {
         const client = url.startsWith('https') ? https : http
         const timer = setTimeout(() => reject(new Error('download timeout')), DOWNLOAD_TIMEOUT_MS)
@@ -60,6 +61,21 @@ function downloadFile(url) {
             reject(err)
         })
     })
+}
+
+async function downloadFile(url) {
+    let lastError = null
+    for (let attempt = 1; attempt <= DOWNLOAD_RETRY_COUNT; attempt += 1) {
+        try {
+            return await downloadFileOnce(url)
+        } catch (err) {
+            lastError = err
+            if (attempt >= DOWNLOAD_RETRY_COUNT) break
+            const waitMs = DOWNLOAD_RETRY_BACKOFF_MS * attempt
+            await new Promise((resolve) => setTimeout(resolve, waitMs))
+        }
+    }
+    throw lastError || new Error('download failed')
 }
 
 /**

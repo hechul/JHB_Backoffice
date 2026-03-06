@@ -8,8 +8,9 @@ const BUCKET_NAME = 'blog-media-zips'
 /**
  * ZIP Buffer를 Supabase Storage에 업로드하고 서명된 다운로드 URL 반환
  */
-async function uploadZipToStorage(supabase, jobId, zipBuffer) {
-    const filename = `${jobId}/blog_media_${jobId.slice(0, 8)}.zip`
+async function uploadZipToStorage(supabase, jobId, zipBuffer, options = {}) {
+    const customFilename = String(options.filename || '').trim()
+    const filename = customFilename || `${jobId}/blog_media_${jobId.slice(0, 8)}.zip`
 
     console.log(`[uploader] 업로드 시작: ${filename} (${(zipBuffer.length / 1024 / 1024).toFixed(2)}MB)`)
 

@@ -11,6 +11,13 @@ export interface JobStatus {
     successCount: number
     failCount: number
     downloadUrl: string | null
+    downloadFiles?: Array<{
+        id: string
+        label: string
+        url: string
+        fileCount?: number
+        sizeBytes?: number
+    }>
     isExpired: boolean
     expiresAt: string | null
     failures: Array<{ url: string; reason: string }>
@@ -19,7 +26,7 @@ export interface JobStatus {
 }
 
 const POLL_INTERVAL_MS = 3000
-const MAX_POLL_DURATION_MS = 10 * 60 * 1000 // 10분 (URL당 스크롤 포함 최대 2분 × 5개)
+const MAX_POLL_DURATION_MS = 30 * 60 * 1000 // 30분 (다건/동영상 포함 대용량 작업 대응)
 
 export function useBlogMediaCollector() {
     const isStarting = ref(false)
@@ -48,7 +55,7 @@ export function useBlogMediaCollector() {
         if (Date.now() - pollStartTime > MAX_POLL_DURATION_MS) {
             clearPoll()
             isPolling.value = false
-            errorMessage.value = '처리 시간이 초과되었습니다. 다시 시도해 주세요.'
+            errorMessage.value = '처리 시간이 길어지고 있습니다. 잠시 후 다시 상태를 확인해 주세요.'
             return
         }
 
@@ -87,6 +94,7 @@ export function useBlogMediaCollector() {
                 successCount: 0,
                 failCount: 0,
                 downloadUrl: null,
+                downloadFiles: [],
                 isExpired: false,
                 expiresAt: null,
                 failures: [],
