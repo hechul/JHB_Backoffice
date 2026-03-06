@@ -122,13 +122,32 @@ function downloadFileOnce(url, redirectCount = 0) {
 }
 
 async function downloadFile(url) {
+    let currentUrl = url
     let lastError = null
-    for (let attempt = 1; attempt <= DOWNLOAD_RETRY_COUNT; attempt += 1) {
+
+    // Fallback 로직을 허용하기 위해 +2회 추가 기회 부여
+    const maxAttempts = DOWNLOAD_RETRY_COUNT + 2
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
-            return await downloadFileOnce(url)
+            return await downloadFileOnce(currentUrl)
         } catch (err) {
             lastError = err
-            if (attempt >= DOWNLOAD_RETRY_COUNT) break
+
+            // 네이버 블로그 이미지 404 Fallback 처리
+            if (err.message === 'HTTP 404') {
+                if (currentUrl.includes('type=w2000')) {
+                    console.log(`[zipper] 404 for w2000, fallback to w1: ${currentUrl}`)
+                    currentUrl = currentUrl.replace('type=w2000', 'type=w1')
+                    continue // 즉시 재시도
+                }
+                if (currentUrl.includes('type=w1')) {
+                    console.log(`[zipper] 404 for w1, fallback to original: ${currentUrl}`)
+                    currentUrl = currentUrl.replace('?type=w1', '').replace('&type=w1', '')
+                    continue // 즉시 재시도
+                }
+            }
+
+            if (attempt >= maxAttempts) break
             const waitMs = DOWNLOAD_RETRY_BACKOFF_MS * attempt
             await new Promise((resolve) => setTimeout(resolve, waitMs))
         }

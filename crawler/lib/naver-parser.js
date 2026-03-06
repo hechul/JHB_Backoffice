@@ -48,11 +48,12 @@ function normalizeImageUrl(src) {
             return null
         }
 
-        // type= 파라미터를 강제로 수정하면 404가 나는 경우가 많으므로 (서명/토큰 만료 등)
-        // 원본 URL을 최대한 유지한다.
         const urlObj = new URL(absolute)
 
-        // 불필요한 추적 파라미터 등은 제거
+        // type 파라미터가 없으면 초저화질 썸네일(약 2KB)을 반환.
+        // type=w2000 등 큰 해상도를 주입하면 고해상도를 반환 (단, 원본보다 크면 404 가능성 있음 -> zipper.js에서 fallback)
+        urlObj.searchParams.set('type', 'w2000')
+
         return urlObj.toString()
     } catch {
         return null
