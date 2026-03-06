@@ -96,30 +96,30 @@
       <!-- 다운로드 버튼 -->
       <div v-if="currentJob.downloadUrl && !currentJob.isExpired" class="download-box">
         <template v-if="currentJob.downloadFiles && currentJob.downloadFiles.length > 0">
-          <a
+          <button
             v-for="item in currentJob.downloadFiles"
             :key="item.id"
-            :href="item.url"
             class="btn btn-primary"
-            download
-            target="_blank"
+            :disabled="isDownloading(item.id)"
+            @click="downloadPart(item)"
           >
-            <Download :size="16" :stroke-width="2" />
-            {{ item.label }}
+            <Loader2 v-if="isDownloading(item.id)" :size="16" :stroke-width="2" class="spin" />
+            <Download v-else :size="16" :stroke-width="2" />
+            {{ isDownloading(item.id) ? '다운로드 중...' : item.label }}
             <span v-if="item.fileCount" class="download-meta">({{ item.fileCount }}개)</span>
             <span v-if="item.sizeBytes" class="download-meta">{{ formatBytes(item.sizeBytes) }}</span>
-          </a>
+          </button>
         </template>
-        <a
+        <button
           v-else
-          :href="currentJob.downloadUrl"
           class="btn btn-primary"
-          download
-          target="_blank"
+          :disabled="isDownloading('legacy')"
+          @click="downloadLegacy"
         >
-          <Download :size="16" :stroke-width="2" />
-          ZIP 다운로드 ({{ currentJob.successCount }}개 URL 수집)
-        </a>
+          <Loader2 v-if="isDownloading('legacy')" :size="16" :stroke-width="2" class="spin" />
+          <Download v-else :size="16" :stroke-width="2" />
+          {{ isDownloading('legacy') ? '다운로드 중...' : `ZIP 다운로드 (${currentJob.successCount}개 URL 수집)` }}
+        </button>
         <p class="text-xs text-muted mt-sm">
           다운로드 링크 만료: {{ formatExpiry(currentJob.expiresAt) }}
         </p>
@@ -186,8 +186,10 @@ const {
   startJob,
   reset
 } = useBlogMediaCollector()
+const toast = useToast()
 
 const urlInput = ref('')
+const downloadingIds = ref<Set<string>>(new Set())
 
 const parsedUrls = computed(() =>
   urlInput.value
@@ -235,6 +237,7 @@ async function handleStart() {
 function handleReset() {
   reset()
   urlInput.value = ''
+  downloadingIds.value = new Set()
 }
 
 function retryFailed() {
@@ -256,6 +259,105 @@ function formatBytes(value: number): string {
   const kb = bytes / 1024
   if (kb < 1024) return `${kb.toFixed(1)}KB`
   return `${(kb / 1024).toFixed(1)}MB`
+}
+
+function extractFilenameFromDisposition(contentDisposition: string | null): string | null {
+  const raw = String(contentDisposition || '').trim()
+  if (!raw) return null
+  const utf8Matched = raw.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Matched?.[1]) {
+    try { return decodeURIComponent(utf8Matched[1]) } catch { /* noop */ }
+  }
+  const quoted = raw.match(/filename="([^"]+)"/i)
+  if (quoted?.[1]) return quoted[1]
+  const plain = raw.match(/filename=([^;]+)/i)
+  if (plain?.[1]) return plain[1].trim()
+  return null
+}
+
+function safeFileName(name: string): string {
+  return String(name || 'blog_media.zip').replace(/[\\/:*?"<>|]/g, '_')
+}
+
+function isDownloading(id: string): boolean {
+  return downloadingIds.value.has(id)
+}
+
+async function downloadByFetch(url: string, fallbackName: string): Promise<void> {
+  const response = await fetch(url, {
+    method: 'GET',
+    credentials: 'include',
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    let message = `다운로드 실패 (${response.status})`
+    try {
+      const payload = await response.json()
+      if (payload?.statusMessage) message = payload.statusMessage
+      else if (payload?.message) message = payload.message
+    } catch {
+      const text = await response.text().catch(() => '')
+      if (text) message = text.slice(0, 160)
+    }
+    throw new Error(message)
+  }
+
+  const blob = await response.blob()
+  if (!blob || blob.size <= 0) {
+    throw new Error('다운로드 파일이 비어 있습니다.')
+  }
+
+  const filename =
+    safeFileName(
+      extractFilenameFromDisposition(response.headers.get('content-disposition'))
+      || fallbackName
+      || 'blog_media.zip'
+    )
+
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(objectUrl)
+}
+
+async function downloadPart(item: { id: string; url: string; label: string }) {
+  if (!item?.url || isDownloading(item.id)) return
+  const next = new Set(downloadingIds.value)
+  next.add(item.id)
+  downloadingIds.value = next
+  try {
+    await downloadByFetch(item.url, `${item.label || item.id || 'blog_media'}.zip`)
+    toast.success(`${item.label || item.id} 다운로드 완료`)
+  } catch (error: any) {
+    toast.error(error?.message || '다운로드 실패')
+  } finally {
+    const done = new Set(downloadingIds.value)
+    done.delete(item.id)
+    downloadingIds.value = done
+  }
+}
+
+async function downloadLegacy() {
+  const job = currentJob.value
+  if (!job?.downloadUrl || isDownloading('legacy')) return
+  const next = new Set(downloadingIds.value)
+  next.add('legacy')
+  downloadingIds.value = next
+  try {
+    await downloadByFetch(job.downloadUrl, `blog_media_${job.jobId}.zip`)
+    toast.success('ZIP 다운로드 완료')
+  } catch (error: any) {
+    toast.error(error?.message || '다운로드 실패')
+  } finally {
+    const done = new Set(downloadingIds.value)
+    done.delete('legacy')
+    downloadingIds.value = done
+  }
 }
 
 function failureReasonLabel(reason: string): string {
