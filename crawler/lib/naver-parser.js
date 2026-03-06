@@ -97,71 +97,30 @@ async function autoScroll(page) {
     })
 }
 
-/**
- * 동영상 URL 추출 — 네이버 스마트에디터 video 태그 및 스크립트 분석
- */
+// 외부에서 네트워크 응답(response) 이벤트를 통해 MP4 URL을 수집하도록 대체됨
+// 기존 HTML/스크립트 기반 동영상 추출 로직은 유지하되 보조 수단으로 사용
 function extractVideoUrls(page) {
     return page.evaluate(() => {
         const urls = new Set()
-
         const push = (value) => {
             if (!value) return
             const v = String(value).trim()
             if (!v) return
-            if (v.startsWith('//')) {
-                urls.add(`https:${v}`)
-                return
-            }
-            if (v.startsWith('http://') || v.startsWith('https://')) {
-                urls.add(v)
-            }
+            if (v.startsWith('//')) { urls.add(`https:${v}`); return }
+            if (v.startsWith('http://') || v.startsWith('https://')) urls.add(v)
         }
 
-        const isLikelyVideo = (value) => {
-            const v = String(value || '').toLowerCase()
-            return (
-                v.includes('mblogvideo-phinf.pstatic.net') ||
-                v.includes('/video/') ||
-                v.includes('/movie/') ||
-                v.includes('/vod/') ||
+        const isLikelyVideo = (v) => {
+            v = String(v || '').toLowerCase()
+            return v.includes('mblogvideo-phinf') || v.includes('/video/') ||
                 v.endsWith('.mp4') || v.includes('.mp4?') ||
-                v.endsWith('.mov') || v.includes('.mov?') ||
-                v.endsWith('.m3u8') || v.includes('.m3u8?')
-            )
+                v.endsWith('.mov') || v.includes('.mov?')
         }
 
-        // 1) video/source 직접 src
-        document.querySelectorAll('video source, video').forEach((el) => {
-            const attrs = ['src', 'data-src', 'data-lazy-src', 'data-video-src']
-            attrs.forEach((attr) => {
-                const value = el.getAttribute(attr)
-                if (value && isLikelyVideo(value)) push(value)
+        document.querySelectorAll('video source, video, iframe').forEach((el) => {
+            ['src', 'data-src', 'data-video-src'].forEach(attr => {
+                const val = el.getAttribute(attr); if (isLikelyVideo(val)) push(val)
             })
-        })
-
-        // 2) iframe embed src
-        document.querySelectorAll('iframe').forEach((el) => {
-            const src = el.getAttribute('src')
-            if (src && isLikelyVideo(src)) push(src)
-        })
-
-        // 3) data-* 속성 전수 조사
-        document.querySelectorAll('[data-src], [data-video-src], [data-lazy-src], [data-play-url], [data-url]').forEach((el) => {
-            const attrs = ['data-src', 'data-video-src', 'data-lazy-src', 'data-play-url', 'data-url']
-            attrs.forEach((attr) => {
-                const value = el.getAttribute(attr)
-                if (value && isLikelyVideo(value)) push(value)
-            })
-        })
-
-        // 4) 스크립트 텍스트 내 직접 URL 추출
-        const scriptRegex = /(https?:\/\/[^\s"'\\]+(?:mblogvideo-phinf\.pstatic\.net[^\s"'\\]*|[^\s"'\\]*\.(?:mp4|mov|m3u8)(?:\?[^\s"'\\]*)?))/ig
-        document.querySelectorAll('script').forEach((el) => {
-            const text = el.textContent || ''
-            let m
-            while ((m = scriptRegex.exec(text)) !== null) {
-                if (m[1]) push(m[1])
-            }
         })
 
         return Array.from(urls)
@@ -197,6 +156,25 @@ async function extractBlogMedia(rawUrl, options = {}) {
         })
 
         const page = await context.newPage()
+
+        // 동영상 추출용 네트워크 응답 수집기
+        const interceptedVideos = new Set()
+        page.on('response', async (response) => {
+            try {
+                const reqUrl = response.url()
+                // 네이버 동영상 플레이어 메타데이터 API
+                if (reqUrl.includes('rmcnmv.naver.com/vod/play/')) {
+                    const json = await response.json()
+                    const list = json?.videos?.list || []
+                    list.forEach(v => {
+                        // 가장 고화질 순으로 혹은 단순히 모두 수집
+                        if (v.source && v.source.includes('mp4')) {
+                            interceptedVideos.add(v.source)
+                        }
+                    })
+                }
+            } catch (e) { }
+        })
 
         // 광고·추적·폰트 등 불필요한 리소스 차단 (속도 대폭 향상)
         await page.route('**', (route) => {
@@ -250,14 +228,13 @@ async function extractBlogMedia(rawUrl, options = {}) {
         for (const frame of page.frames()) {
             if (frame === page.mainFrame()) continue
             const frameUrl = frame.url()
-            // PostView / 블로그 콘텐츠 frame만 처리
             if (frameUrl && (frameUrl.includes('blog.naver.com') || frameUrl.includes('PostView'))) {
                 const frameImages = await extractImagesFromFrame(frame)
                 rawImageUrls = rawImageUrls.concat(frameImages)
             }
         }
 
-        // 동영상 URL 추출 (메인 frame + 자식 frame)
+        // 동영상 URL 추출 (메인 frame + 자식 frame + 네트워크 인터셉터 결과 합병)
         const videoUrls = await extractVideoUrls(page)
         for (const frame of page.frames()) {
             if (frame === page.mainFrame()) continue
@@ -269,6 +246,9 @@ async function extractBlogMedia(rawUrl, options = {}) {
                 } catch { }
             }
         }
+
+        // 인터셉트된 MP4 강제 추가
+        videoUrls.push(...Array.from(interceptedVideos))
 
         await browser.close()
         browser = null
