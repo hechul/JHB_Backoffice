@@ -4,7 +4,7 @@
 const { chromium } = require('playwright')
 
 const PAGE_TIMEOUT_MS = 90000  // Render 무료 플랜 느린 환경 대응 (90초)
-const DEFAULT_IMAGE_TYPE = String(process.env.BLOG_IMAGE_TYPE || 'w800')
+const DEFAULT_IMAGE_TYPE = 'w2000'
 
 function toAbsoluteUrl(src) {
     if (!src) return null
@@ -38,7 +38,7 @@ function normalizeNaverBlogUrl(url) {
     }
 }
 
-function normalizeImageUrl(src) {
+function normalizeImageUrl(src, imageType = DEFAULT_IMAGE_TYPE) {
     const absolute = toAbsoluteUrl(src)
     if (!absolute) return null
     try {
@@ -50,9 +50,9 @@ function normalizeImageUrl(src) {
 
         const urlObj = new URL(absolute)
 
-        // type 파라미터가 없으면 초저화질 썸네일(약 2KB)을 반환.
-        // type=w2000 등 큰 해상도를 주입하면 고해상도를 반환 (단, 원본보다 크면 404 가능성 있음 -> zipper.js에서 fallback)
-        urlObj.searchParams.set('type', 'w2000')
+        // type 파라미터가 없으면 저화질 썸네일이 내려오는 케이스가 있어
+        // 고화질 파라미터를 기본 주입한다.
+        urlObj.searchParams.set('type', imageType || DEFAULT_IMAGE_TYPE)
 
         return urlObj.toString()
     } catch {
@@ -333,7 +333,7 @@ async function extractBlogMedia(rawUrl, options = {}) {
 
         // 이미지 URL 정규화 및 필터링
         const imageUrls = Array.from(new Set(rawImageUrls))
-            .map((src) => normalizeImageUrl(src))
+            .map((src) => normalizeImageUrl(src, imageType))
             .filter(Boolean)
 
         const allUrls = Array.from(new Set([

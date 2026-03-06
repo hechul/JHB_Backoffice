@@ -14,29 +14,9 @@ const EXTRACT_RETRY_COUNT = Math.max(1, Math.min(Number.parseInt(process.env.BLO
 const EXTRACT_RETRY_BACKOFF_MS = 1200
 const MAX_ZIP_PART_MB = Math.max(10, Math.min(Number.parseInt(process.env.BLOG_MAX_ZIP_PART_MB || '45', 10) || 45, 100))
 const MAX_ZIP_PART_BYTES = MAX_ZIP_PART_MB * 1024 * 1024
-const BASE_IMAGE_QUALITY = String(process.env.BLOG_IMAGE_TYPE || 'w800').trim() || 'w800'
-const QUALITY_STEPS = Array.from(new Set([BASE_IMAGE_QUALITY, 'w800', 'w640']))
+const BASE_IMAGE_QUALITY = 'w2000'
 
 let isProcessing = false
-
-function isNaverImageUrl(url) {
-    const value = String(url || '').toLowerCase()
-    return value.includes('blogfiles.pstatic.net') || value.includes('postfiles.pstatic.net')
-}
-
-function remapImageQuality(mediaUrls, imageType) {
-    return (mediaUrls || []).map((mediaUrl) => {
-        const raw = String(mediaUrl || '').trim()
-        if (!raw || !isNaverImageUrl(raw)) return raw
-        try {
-            const parsed = new URL(raw)
-            parsed.searchParams.set('type', imageType)
-            return parsed.toString()
-        } catch {
-            return raw
-        }
-    })
-}
 
 async function splitZipByMediaCount(url, mediaUrls, maxBytes) {
     const fitChunks = []
@@ -67,32 +47,18 @@ async function buildZipChunksForResult(url, mediaUrls) {
         return { chunks: [], droppedCount: 0, usedQuality: BASE_IMAGE_QUALITY }
     }
 
-    let workingUrls = mediaUrls
-    let usedQuality = QUALITY_STEPS[0]
-    let bestZip = await createZip([{ url, mediaUrls: workingUrls }])
-
-    if (bestZip.length > MAX_ZIP_PART_BYTES) {
-        for (const step of QUALITY_STEPS.slice(1)) {
-            const lowered = remapImageQuality(workingUrls, step)
-            const loweredZip = await createZip([{ url, mediaUrls: lowered }])
-            if (loweredZip.length <= bestZip.length) {
-                workingUrls = lowered
-                bestZip = loweredZip
-                usedQuality = step
-            }
-            if (bestZip.length <= MAX_ZIP_PART_BYTES) break
-        }
-    }
+    const usedQuality = BASE_IMAGE_QUALITY
+    const bestZip = await createZip([{ url, mediaUrls }])
 
     if (bestZip.length <= MAX_ZIP_PART_BYTES) {
         return {
-            chunks: [{ mediaUrls: workingUrls, zipBuffer: bestZip }],
+            chunks: [{ mediaUrls, zipBuffer: bestZip }],
             droppedCount: 0,
             usedQuality,
         }
     }
 
-    const split = await splitZipByMediaCount(url, workingUrls, MAX_ZIP_PART_BYTES)
+    const split = await splitZipByMediaCount(url, mediaUrls, MAX_ZIP_PART_BYTES)
     return {
         chunks: split.fitChunks,
         droppedCount: split.dropped.length,

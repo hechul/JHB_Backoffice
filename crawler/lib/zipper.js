@@ -134,22 +134,22 @@ async function downloadFile(url) {
             lastError = err
 
             // 네이버 블로그 이미지 404 Fallback 처리
-            // w2000 → w800 → type 파라미터 제거(CDN 기본값) 순으로 강등
+            // 저화질(no-type) 강등은 금지. 고화질 대역 내에서만 강등
+            // w2000 -> w1600 -> w1080 -> w800
             if (err.message === 'HTTP 404') {
                 if (currentUrl.includes('type=w2000')) {
-                    console.log(`[zipper] 404 for w2000, fallback to w800: ${currentUrl}`)
-                    currentUrl = currentUrl.replace('type=w2000', 'type=w800')
+                    console.log(`[zipper] 404 for w2000, fallback to w1600: ${currentUrl}`)
+                    currentUrl = currentUrl.replace('type=w2000', 'type=w1600')
                     continue
                 }
-                if (currentUrl.includes('type=w800')) {
-                    console.log(`[zipper] 404 for w800, fallback to no-type: ${currentUrl}`)
-                    try {
-                        const u = new URL(currentUrl)
-                        u.searchParams.delete('type')
-                        currentUrl = u.toString()
-                    } catch {
-                        currentUrl = currentUrl.replace(/[?&]type=w800/, '')
-                    }
+                if (currentUrl.includes('type=w1600')) {
+                    console.log(`[zipper] 404 for w1600, fallback to w1080: ${currentUrl}`)
+                    currentUrl = currentUrl.replace('type=w1600', 'type=w1080')
+                    continue
+                }
+                if (currentUrl.includes('type=w1080')) {
+                    console.log(`[zipper] 404 for w1080, fallback to w800: ${currentUrl}`)
+                    currentUrl = currentUrl.replace('type=w1080', 'type=w800')
                     continue
                 }
             }
