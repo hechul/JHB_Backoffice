@@ -146,6 +146,10 @@
             {{ s.name }} 고객 목록 보기
           </button>
         </div>
+        <NuxtLink to="/growth-stages" class="btn btn-secondary btn-sm stage-detail-link">
+          고객 성장 단계 자세히 보기
+          <MoveRight :size="14" :stroke-width="2" />
+        </NuxtLink>
       </div>
     </div>
 
@@ -1259,6 +1263,12 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 120px;
   justify-content: center;
+}
+
+.stage-detail-link {
+  width: 100%;
+  justify-content: center;
+  margin-top: var(--space-sm);
 }
 
 .churn-list {

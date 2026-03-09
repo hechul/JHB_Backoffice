@@ -3,11 +3,11 @@
     <div class="pending-card">
       <div class="pending-head">
         <img src="/jhbiofarm-logo.png" alt="JHBioFarm 로고" class="pending-logo" />
-        <h1 class="pending-title">승인 대기 중</h1>
+        <h1 class="pending-title">{{ statusTitle }}</h1>
       </div>
 
       <p class="pending-desc">
-        관리자 승인 후 백오피스 및 근태관리 기능을 이용할 수 있습니다.
+        {{ statusDescription }}
       </p>
 
       <div class="pending-status">
@@ -28,6 +28,20 @@ definePageMeta({ layout: false })
 
 const { user, fetchProfile, logout } = useCurrentUser()
 const supabaseUser = useSupabaseUser()
+
+const statusTitle = computed(() => {
+  const status = String(user.value.status || '').toLowerCase()
+  if (status === 'rejected') return '접근이 반려된 계정입니다'
+  if (status === 'inactive') return '비활성 계정입니다'
+  return '접근 대기 상태입니다'
+})
+
+const statusDescription = computed(() => {
+  const status = String(user.value.status || '').toLowerCase()
+  if (status === 'rejected') return '계정 접근 요청이 반려되었습니다. 관리자에게 계정 상태를 확인해주세요.'
+  if (status === 'inactive') return '현재 계정이 비활성 상태입니다. 관리자에게 활성화 여부를 확인해주세요.'
+  return '계정 상태가 아직 활성으로 확인되지 않았습니다. 잠시 후 다시 확인해주세요.'
+})
 
 const statusLabel = computed(() => {
   const status = String(user.value.status || '').toLowerCase()

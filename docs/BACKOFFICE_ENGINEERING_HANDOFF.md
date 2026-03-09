@@ -10,7 +10,7 @@
 
 이 서비스는 JHBioFarm 내부 백오피스다. 현재 크게 3개 축으로 운영된다.
 
-1. 매출 분석: 스마트스토어 주문/체험단 업로드 -> 필터링 -> 고객 분석/대시보드/실행 이력
+1. 매출 분석: 스마트스토어 주문/체험단 업로드 -> 필터링 -> 고객 분석/대시보드/고객 성장 단계/실행 이력
 2. 업무 자동화: 아르고 발주 변환, 네이버 블로그 미디어 수집
 3. 근태 관리: 승인된 계정의 출퇴근 기록 및 관리자 전체 관리
 
@@ -84,7 +84,7 @@
 ### 인증/권한
 
 - 비로그인: `/login`만 접근
-- 로그인 + `pending/rejected/inactive`: `/pending-approval` 고정
+- 로그인 + `pending/rejected/inactive`: `/pending-approval` 고정 (현재는 예외 상태 전용 fallback)
 - 로그인 + `active`: 일반 서비스 접근 가능
 
 ### 역할
@@ -93,10 +93,17 @@
 - `modifier`: 데이터 수정 가능, 계정 초대/권한 변경 불가
 - `viewer`: 조회 중심, 수정/실행 불가
 
+현재 회원가입 정책:
+- `/login` 회원가입은 서버 API `POST /api/auth/register` 사용
+- 신규 가입 기본값은 `modifier + active`
+- 관리자 승인 절차 없이 즉시 로그인 가능
+- DB 기본값도 `docs/sql/2026-03-09_profiles_auto_approve_modifier_patch.sql` 기준으로 맞추는 것을 전제
+
 ### 핵심 페이지
 
 - `/`: 홈 허브
 - `/dashboard`: 대시보드
+- `/growth-stages`: 고객 성장 단계 전용 화면
 - `/upload`: 데이터 업로드
 - `/filter`: 필터링
 - `/customers`: 고객 분석
@@ -118,6 +125,7 @@
 
 - `app/composables/useCurrentUser.ts`: 역할/상태/프로필 로딩
 - `app/middleware/auth.global.ts`: 전역 접근 제어
+- `server/api/auth/register.post.ts`: 자동 승인 회원가입 생성 API
 - `app/layouts/default.vue`
 - `app/layouts/home.vue`
 - `app/composables/useAnalysisPeriod.ts`: 월 선택기
@@ -140,6 +148,9 @@
 - 대시보드:
   - `app/pages/dashboard.vue`
   - `app/composables/useGrowthStage.ts`
+- 고객 성장 단계:
+  - `app/pages/growth-stages.vue`
+  - `app/composables/useGrowthInsights.ts`
 - 상품 관리:
   - `app/pages/products.vue`
 

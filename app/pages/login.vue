@@ -116,12 +116,12 @@
         </div>
 
         <button type="submit" class="btn btn-primary btn-lg login-btn" :class="{ 'btn-loading': isLoading }">
-          {{ mode === 'login' ? '로그인' : '회원가입 요청' }}
+          {{ mode === 'login' ? '로그인' : '회원가입' }}
         </button>
 
         <p class="login-note">
           <Info :size="12" :stroke-width="2" />
-          {{ mode === 'login' ? '계정이 없으면 회원가입 후 관리자 승인을 기다려주세요.' : '가입 후 관리자 승인 전까지 서비스 접근이 제한됩니다.' }}
+          {{ mode === 'login' ? '계정이 없으면 바로 회원가입 후 로그인할 수 있습니다.' : '회원가입 시 기본 역할은 수정자로 생성되며 즉시 이용 가능합니다.' }}
         </p>
       </form>
     </div>
@@ -185,8 +185,9 @@ async function handleLogin() {
       await fetchProfile(signInData.user?.id)
       navigateTo('/')
     }
-  } catch {
-    errorMsg.value = '네트워크 오류가 발생했습니다.'
+  } catch (error: any) {
+    const message = String(error?.data?.message || error?.message || '')
+    errorMsg.value = message ? `회원가입 실패: ${message}` : '회원가입 중 오류가 발생했습니다.'
   } finally {
     isLoading.value = false
   }
@@ -214,36 +215,28 @@ async function handleSignup() {
     }
 
     const normalizedEmail = normalizeLoginId(email.value)
-    const { data, error } = await supabase.auth.signUp({
-      email: normalizedEmail,
-      password: password.value,
-      options: {
-        data: {
-          full_name: fullName.value.trim(),
-        },
+    await $fetch('/api/auth/register', {
+      method: 'POST',
+      body: {
+        email: normalizedEmail,
+        password: password.value,
+        fullName: fullName.value.trim(),
       },
     })
 
-    if (error) {
-      if (error.message.includes('already registered')) {
-        errorMsg.value = '이미 가입된 이메일입니다.'
-      } else {
-        errorMsg.value = `회원가입 실패: ${error.message}`
-      }
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password: password.value,
+    })
+
+    if (signInError || !signInData.user?.id) {
+      errorMsg.value = `회원가입 후 로그인에 실패했습니다: ${signInError?.message || '알 수 없는 오류'}`
       return
     }
 
-    infoMsg.value = '회원가입이 완료되었습니다. 관리자 승인 후 이용 가능합니다.'
-    password.value = ''
-    passwordConfirm.value = ''
-
-    if (data.session?.user?.id) {
-      await fetchProfile(data.session.user.id)
-      await navigateTo('/pending-approval')
-    } else {
-      infoMsg.value = '회원가입 요청이 접수되었습니다. 관리자 승인 후 로그인해주세요.'
-      mode.value = 'login'
-    }
+    await fetchProfile(signInData.user.id)
+    infoMsg.value = '회원가입이 완료되었습니다.'
+    await navigateTo('/')
   } catch {
     errorMsg.value = '네트워크 오류가 발생했습니다.'
   } finally {

@@ -92,7 +92,7 @@
 }
 
 html {
-  font-size: 15px;
+  font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -132,11 +132,11 @@ input, select, textarea {
 }
 
 /* --- Typography --- */
-.text-xs { font-size: 0.8125rem; line-height: 1.1rem; }
-.text-sm { font-size: 0.875rem; line-height: 1.3rem; }
-.text-base { font-size: 0.9375rem; line-height: 1.55rem; }
-.text-lg { font-size: 1.0625rem; line-height: 1.6rem; }
-.text-xl { font-size: 1.1875rem; line-height: 1.8rem; }
+.text-xs { font-size: 0.875rem; line-height: 1.2rem; }
+.text-sm { font-size: 0.9375rem; line-height: 1.4rem; }
+.text-base { font-size: 1rem; line-height: 1.6rem; }
+.text-lg { font-size: 1.125rem; line-height: 1.7rem; }
+.text-xl { font-size: 1.25rem; line-height: 1.9rem; }
 .text-2xl { font-size: 1.5rem; line-height: 2rem; }
 .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
 
@@ -157,7 +157,7 @@ input, select, textarea {
   gap: var(--space-sm);
   padding: 8px 16px;
   border-radius: 10px;
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 500;
   transition: transform var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   white-space: nowrap;
@@ -217,14 +217,14 @@ input, select, textarea {
 
 .btn-lg {
   padding: 12px 24px;
-  font-size: 0.9375rem;
+  font-size: 1rem;
   font-weight: 600;
   border-radius: var(--radius-lg);
 }
 
 .btn-sm {
   padding: 4px 10px;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }
 
 .btn:disabled {
@@ -302,14 +302,14 @@ input, select, textarea {
 }
 
 .card-title {
-  font-size: 1rem;
+  font-size: 1.1rem;
   font-weight: 600;
   color: var(--color-text);
 }
 
 .card-caption {
   margin-top: 4px;
-  font-size: 0.8125rem;
+  font-size: 0.9rem;
   color: var(--color-text-secondary);
 }
 
@@ -335,7 +335,7 @@ input, select, textarea {
 .data-table th {
   padding: 10px 16px;
   text-align: left;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--color-text-muted);
   text-transform: uppercase;
@@ -360,7 +360,7 @@ input, select, textarea {
 
 .data-table td {
   padding: 12px 16px;
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   border-bottom: 1px solid var(--color-border-light);
   color: var(--color-text);
 }
@@ -393,7 +393,7 @@ input, select, textarea {
   align-items: center;
   padding: 3px 10px;
   border-radius: 100px;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -411,7 +411,7 @@ input, select, textarea {
   padding: 8px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  font-size: 0.875rem;
+  font-size: 0.95rem;
   color: var(--color-text);
   background: rgba(255, 255, 255, 0.74);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
@@ -471,7 +471,7 @@ input, select, textarea {
   padding: 8px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  font-size: 0.875rem;
+  font-size: 0.95rem;
   color: var(--color-text);
   background: rgba(255, 255, 255, 0.74);
   outline: none;

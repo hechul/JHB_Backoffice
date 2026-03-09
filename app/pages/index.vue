@@ -67,7 +67,7 @@ const { isViewer, isAdmin } = useCurrentUser()
 }
 
 .welcome-greeting {
-  font-size: 0.8125rem;
+  font-size: 0.9rem;
   font-weight: 600;
   letter-spacing: 0.1em;
   color: var(--color-text-muted);
@@ -75,7 +75,7 @@ const { isViewer, isAdmin } = useCurrentUser()
 }
 
 .welcome-title {
-  font-size: 1.9rem;
+  font-size: 2.05rem;
   font-weight: 700;
   color: transparent;
   background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 54%, #0f766e 100%);
@@ -167,7 +167,7 @@ const { isViewer, isAdmin } = useCurrentUser()
 }
 
 .feature-name {
-  font-size: 0.9375rem;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--color-text);
   letter-spacing: 0.01em;

@@ -19,9 +19,9 @@
           </NuxtLink>
         </div>
 
-        <!-- 매출 분석 -->
+        <!-- 매출분석 -->
         <div class="nav-group">
-          <div v-show="!sidebarCollapsed" class="nav-group-label">매출 분석</div>
+          <div v-show="!sidebarCollapsed" class="nav-group-label">매출분석</div>
           <template v-for="item in analysisMenuItems" :key="item.path">
             <!-- 비활성 항목 -->
             <div
@@ -44,6 +44,22 @@
               <span v-show="!sidebarCollapsed">{{ item.label }}</span>
             </NuxtLink>
           </template>
+        </div>
+
+        <!-- 고객 관리 -->
+        <div class="nav-group">
+          <div v-show="!sidebarCollapsed" class="nav-group-label">고객 관리</div>
+          <NuxtLink
+            v-for="item in customerMenuItems"
+            :key="item.path"
+            :to="item.path"
+            class="nav-item"
+            :class="{ active: isActive(item.path) }"
+            @click="mobileMenuOpen = false"
+          >
+            <component :is="item.icon" :size="18" :stroke-width="1.8" />
+            <span v-show="!sidebarCollapsed">{{ item.label }}</span>
+          </NuxtLink>
         </div>
 
         <!-- 상품 관리 -->
@@ -184,6 +200,7 @@ import {
   FileText,
   Home,
   BarChart3,
+  TrendingUp,
   Package,
   CalendarDays,
   ChevronLeft,
@@ -203,38 +220,47 @@ const { selectedMonth, selectedPeriodLabel, availableMonths, monthsLoading, mont
 const sidebarCollapsed = ref(false)
 const mobileMenuOpen = ref(false)
 const periodSelectorRef = ref<HTMLElement | null>(null)
-const periodEnabledPaths = ['/dashboard', '/customers', '/logs', '/upload', '/filter']
+const periodEnabledPaths = ['/dashboard', '/growth-stages', '/customers', '/logs', '/upload', '/filter']
 
 const analysisMenuItems = computed(() => {
-  const items = [
-    { path: '/dashboard', label: '대시보드', icon: BarChart3, disabled: false },
-    { path: '/customers', label: '고객 분석', icon: Users, disabled: false },
-    { path: '/logs', label: '실행 이력', icon: FileText, disabled: false },
-  ]
-  if (isViewer.value) return items
   return [
     { path: '/dashboard', label: '대시보드', icon: BarChart3, disabled: false },
-    { path: '/upload', label: '데이터 업로드', icon: Upload, disabled: false },
-    { path: '/filter', label: '필터링', icon: Filter, disabled: false },
-    { path: '/customers', label: '고객 분석', icon: Users, disabled: false },
-    { path: '/logs', label: '실행 이력', icon: FileText, disabled: false },
+    { path: '/growth-stages', label: '고객 성장 단계', icon: TrendingUp, disabled: false },
+  ]
+})
+
+const customerMenuItems = computed(() => {
+  if (isViewer.value) {
+    return [
+      { path: '/customers', label: '고객 분석', icon: Users },
+      { path: '/logs', label: '실행 이력', icon: FileText },
+    ]
+  }
+
+  return [
+    { path: '/customers', label: '고객 분석', icon: Users },
+    { path: '/upload', label: '데이터 업로드', icon: Upload },
+    { path: '/filter', label: '필터링', icon: Filter },
+    { path: '/logs', label: '실행 이력', icon: FileText },
   ]
 })
 
 const allMenuItems = computed(() => {
   const items = [
-    { path: '/dashboard', label: '대시보드', group: '매출 분석' },
-    { path: '/customers', label: '고객 분석', group: '매출 분석' },
-    { path: '/logs', label: '실행 이력', group: '매출 분석' },
+    { path: '/dashboard', label: '대시보드', group: '매출분석' },
+    { path: '/growth-stages', label: '고객 성장 단계', group: '매출분석' },
+    { path: '/customers', label: '고객 분석', group: '고객 관리' },
+    { path: '/logs', label: '실행 이력', group: '고객 관리' },
     { path: '/attendance', label: '근태 관리', group: '근태 관리' },
   ]
   if (isViewer.value) return items
   const result = [
-    { path: '/dashboard', label: '대시보드', group: '매출 분석' },
-    { path: '/upload', label: '데이터 업로드', group: '매출 분석' },
-    { path: '/filter', label: '필터링', group: '매출 분석' },
-    { path: '/customers', label: '고객 분석', group: '매출 분석' },
-    { path: '/logs', label: '실행 이력', group: '매출 분석' },
+    { path: '/dashboard', label: '대시보드', group: '매출분석' },
+    { path: '/growth-stages', label: '고객 성장 단계', group: '매출분석' },
+    { path: '/customers', label: '고객 분석', group: '고객 관리' },
+    { path: '/upload', label: '데이터 업로드', group: '고객 관리' },
+    { path: '/filter', label: '필터링', group: '고객 관리' },
+    { path: '/logs', label: '실행 이력', group: '고객 관리' },
     { path: '/attendance', label: '근태 관리', group: '근태 관리' },
     { path: '/products', label: '상품 목록', group: '상품 관리' },
   ]
@@ -435,7 +461,7 @@ watch(
 
 .logo-text {
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 1.05rem;
   color: var(--color-text);
   white-space: nowrap;
 }
@@ -456,7 +482,7 @@ watch(
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   color: var(--color-text-secondary);
-  font-size: 0.75rem;
+  font-size: 0.84rem;
   font-weight: 500;
   transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
@@ -482,7 +508,7 @@ watch(
 }
 
 .nav-group-label {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -497,7 +523,7 @@ watch(
   gap: var(--space-md);
   padding: 9px var(--space-md);
   border-radius: 12px;
-  font-size: 0.8125rem;
+  font-size: 0.92rem;
   font-weight: 450;
   color: var(--color-sidebar-text);
   transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
@@ -544,7 +570,7 @@ watch(
 
 .nav-item.nav-home {
   color: var(--color-text-muted);
-  font-size: 0.75rem;
+  font-size: 0.84rem;
   font-weight: 500;
   margin-bottom: var(--space-sm);
 }
@@ -628,13 +654,13 @@ watch(
 }
 
 .user-name {
-  font-size: 0.8125rem;
+  font-size: 0.92rem;
   font-weight: 500;
   color: var(--color-text);
 }
 
 .user-role {
-  font-size: 0.6875rem;
+  font-size: 0.78rem;
   color: var(--color-text-muted);
 }
 

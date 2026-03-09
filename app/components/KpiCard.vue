@@ -79,7 +79,7 @@ const changePrefix = computed(() => {
 }
 
 .kpi-label {
-  font-size: 0.875rem;
+  font-size: 0.96rem;
   color: var(--color-text-secondary);
   font-weight: 450;
 }
@@ -94,7 +94,7 @@ const changePrefix = computed(() => {
 }
 
 .kpi-value {
-  font-size: 1.95rem;
+  font-size: 2.2rem;
   font-weight: 700;
   color: var(--color-text);
   line-height: 1.2;
@@ -102,7 +102,7 @@ const changePrefix = computed(() => {
 
 .kpi-change {
   margin-top: var(--space-sm);
-  font-size: 0.8125rem;
+  font-size: 0.9rem;
   font-weight: 500;
   display: flex;
   align-items: center;
