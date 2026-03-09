@@ -32,10 +32,18 @@
           width="100%"
         />
         <select v-model="filterPetType" class="select">
-            <option value="">전체 펫 타입</option>
-            <option value="DOG">강아지</option>
-            <option value="CAT">고양이</option>
-            <option value="BOTH">공용</option>
+          <option value="">전체 펫 타입</option>
+          <option value="DOG">강아지</option>
+          <option value="CAT">고양이</option>
+          <option value="BOTH">공용</option>
+        </select>
+        <select v-model="filterStage" class="select">
+          <option value="">전체 성장 단계</option>
+          <option value="1">입문</option>
+          <option value="2">성장</option>
+          <option value="3">핵심</option>
+          <option value="4">프리미엄</option>
+          <option value="OTHER">기타</option>
         </select>
       </div>
 
@@ -56,7 +64,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="p in filteredProducts" :key="p.product_id" class="clickable" @click="selectProduct(p)">
+              <tr v-for="p in pagedProducts" :key="p.product_id" class="clickable" @click="selectProduct(p)">
                 <td><span class="text-muted font-mono">{{ p.product_id }}</span></td>
                 <td><strong>{{ p.product_name }}</strong></td>
                 <td>{{ p.option_name || '-' }}</td>
@@ -85,74 +93,85 @@
             </tbody>
           </table>
         </div>
-      </div>
-    </template>
-
-    <!-- Slide Panel: Edit Product -->
-    <Transition name="slide">
-      <div v-if="selectedProduct" class="slide-panel-overlay" @click="selectedProduct = null">
-        <div class="slide-panel" @click.stop>
-          <div class="slide-panel-header">
-            <span class="slide-panel-title">상품 상세</span>
-            <button class="btn btn-ghost btn-sm" @click="selectedProduct = null">
-              <X :size="18" :stroke-width="1.8" />
+        <div v-if="filteredProducts.length > 0" class="pagination">
+          <span class="pagination-info">{{ paginationInfoLabel }}</span>
+          <div class="pagination-controls">
+            <button class="pagination-btn" :disabled="currentPage <= 1" @click="goPrevPage">
+              <ChevronLeft :size="14" :stroke-width="2" />
             </button>
-          </div>
-          <div class="slide-panel-body">
-            <div class="detail-group">
-              <label class="label">상품번호</label>
-              <p class="detail-value font-mono">{{ selectedProduct.product_id }}</p>
-            </div>
-            <div class="detail-group">
-              <label class="label">상품명</label>
-              <input v-model="selectedProduct.product_name" class="input" :disabled="!canModify" />
-            </div>
-            <div class="detail-group">
-              <label class="label">옵션</label>
-              <input v-model="selectedProduct.option_name" class="input" :disabled="!canModify" placeholder="예: 8L, 3개 / 북어 / 블루" />
-            </div>
-            <div class="detail-group">
-              <label class="label">펫 타입</label>
-              <select v-model="selectedProduct.pet_type" class="select" style="width:100%" :disabled="!canModify">
-                <option value="DOG">강아지</option>
-                <option value="CAT">고양이</option>
-                <option value="BOTH">공용</option>
-              </select>
-            </div>
-            <div class="detail-group">
-              <label class="label">성장 단계</label>
-              <select v-model="selectedProduct.stage" class="select" style="width:100%" :disabled="!canModify">
-                <option :value="1">영유아</option>
-                <option :value="2">성장기</option>
-                <option :value="3">성견/성묘</option>
-                <option :value="4">시니어</option>
-                <option :value="null">기타</option>
-              </select>
-            </div>
-            <div class="detail-group">
-              <label class="label">상품 라인</label>
-              <input v-model="selectedProduct.product_line" class="input" :disabled="!canModify" />
-            </div>
-          </div>
-          <div class="slide-panel-footer">
-            <div class="panel-actions">
-              <button
-                v-if="canModify && selectedProduct"
-                class="btn btn-danger"
-                :disabled="deleting"
-                @click="openDeleteModal(selectedProduct)"
-              >
-                {{ deleting ? '삭제 중...' : '삭제' }}
-              </button>
-              <button class="btn btn-secondary" @click="selectedProduct = null">취소</button>
-              <button v-if="canModify" class="btn btn-primary" :disabled="saving" @click="saveProduct">
-                {{ saving ? '저장 중...' : '저장' }}
-              </button>
-            </div>
+            <button
+              v-for="(item, idx) in paginationItems"
+              :key="`product-page-${item}-${idx}`"
+              class="pagination-btn"
+              :class="{ active: typeof item === 'number' && item === currentPage }"
+              :disabled="typeof item !== 'number'"
+              @click="typeof item === 'number' ? goPage(item) : undefined"
+            >
+              {{ typeof item === 'number' ? item : '…' }}
+            </button>
+            <button class="pagination-btn" :disabled="currentPage >= totalPages" @click="goNextPage">
+              <ChevronRight :size="14" :stroke-width="2" />
+            </button>
           </div>
         </div>
       </div>
-    </Transition>
+    </template>
+
+    <SlidePanel v-model="showDetailPanel" title="상품 상세">
+      <template v-if="selectedProduct">
+        <div class="detail-group">
+          <label class="label">상품번호</label>
+          <p class="detail-value font-mono">{{ selectedProduct.product_id }}</p>
+        </div>
+        <div class="detail-group">
+          <label class="label">상품명</label>
+          <input v-model="selectedProduct.product_name" class="input" :disabled="!canModify" />
+        </div>
+        <div class="detail-group">
+          <label class="label">옵션</label>
+          <input v-model="selectedProduct.option_name" class="input" :disabled="!canModify" placeholder="예: 8L, 3개 / 북어 / 블루" />
+        </div>
+        <div class="detail-group">
+          <label class="label">펫 타입</label>
+          <select v-model="selectedProduct.pet_type" class="select" style="width:100%" :disabled="!canModify">
+            <option value="DOG">강아지</option>
+            <option value="CAT">고양이</option>
+            <option value="BOTH">공용</option>
+          </select>
+        </div>
+        <div class="detail-group">
+          <label class="label">성장 단계</label>
+          <select v-model="selectedProduct.stage" class="select" style="width:100%" :disabled="!canModify">
+            <option :value="1">입문</option>
+            <option :value="2">성장</option>
+            <option :value="3">핵심</option>
+            <option :value="4">프리미엄</option>
+            <option :value="null">기타</option>
+          </select>
+        </div>
+        <div class="detail-group">
+          <label class="label">상품 라인</label>
+          <input v-model="selectedProduct.product_line" class="input" :disabled="!canModify" />
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="panel-actions">
+          <button
+            v-if="canModify && selectedProduct"
+            class="btn btn-danger"
+            :disabled="deleting"
+            @click="openDeleteModal(selectedProduct)"
+          >
+            {{ deleting ? '삭제 중...' : '삭제' }}
+          </button>
+          <button class="btn btn-secondary" @click="showDetailPanel = false">취소</button>
+          <button v-if="canModify" class="btn btn-primary" :disabled="saving" @click="saveProduct">
+            {{ saving ? '저장 중...' : '저장' }}
+          </button>
+        </div>
+      </template>
+    </SlidePanel>
 
     <!-- Add Product Modal -->
     <Transition name="fade">
@@ -184,10 +203,10 @@
               <div class="detail-group flex-1">
                 <label class="label">성장 단계</label>
                 <select v-model="newProduct.stage" class="select" style="width:100%">
-                  <option :value="1">영유아</option>
-                  <option :value="2">성장기</option>
-                  <option :value="3">성견/성묘</option>
-                  <option :value="4">시니어</option>
+                  <option :value="1">입문</option>
+                  <option :value="2">성장</option>
+                  <option :value="3">핵심</option>
+                  <option :value="4">프리미엄</option>
                   <option :value="null">기타</option>
                 </select>
               </div>
@@ -225,7 +244,8 @@
 </template>
 
 <script setup lang="ts">
-import { PlusCircle, Edit3, X, PackageOpen, Trash2 } from 'lucide-vue-next'
+import { PlusCircle, Edit3, X, PackageOpen, Trash2, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { productStageLabel } from '~/composables/useGrowthStage'
 import { matchesSearchQuery } from '~/composables/useTextSearch'
 
 definePageMeta({ layout: 'default' })
@@ -247,6 +267,7 @@ interface Product {
 
 const searchQuery = ref('')
 const filterPetType = ref('')
+const filterStage = ref('')
 const selectedProduct = ref<Product | null>(null)
 const showAddModal = ref(false)
 const loading = ref(true)
@@ -256,6 +277,8 @@ const addError = ref('')
 const showDeleteModal = ref(false)
 const deleteTarget = ref<Product | null>(null)
 const supportsOptionColumn = ref(true)
+const PAGE_SIZE = 10
+const currentPage = ref(1)
 
 const newProduct = ref<{
   product_id: string
@@ -274,6 +297,12 @@ const newProduct = ref<{
 })
 
 const products = ref<Product[]>([])
+const showDetailPanel = computed({
+  get: () => Boolean(selectedProduct.value),
+  set: (value: boolean) => {
+    if (!value) selectedProduct.value = null
+  },
+})
 
 function generateProductId(): string {
   const rand = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
@@ -322,7 +351,9 @@ const filteredProducts = computed(() => {
         p.product_id,
       )
       const matchPet = !filterPetType.value || p.pet_type === filterPetType.value
-      return matchSearch && matchPet
+      const matchStage = !filterStage.value
+        || (filterStage.value === 'OTHER' ? p.stage === null : String(p.stage ?? '') === filterStage.value)
+      return matchSearch && matchPet && matchStage
     })
     .sort((a, b) => {
       const byName = a.product_name.localeCompare(b.product_name, 'ko')
@@ -330,6 +361,75 @@ const filteredProducts = computed(() => {
       return (a.option_name || '').localeCompare(b.option_name || '', 'ko')
     })
 })
+
+const totalPages = computed(() => {
+  const total = filteredProducts.value.length
+  return Math.max(1, Math.ceil(total / PAGE_SIZE))
+})
+
+const pagedProducts = computed(() => {
+  const start = (currentPage.value - 1) * PAGE_SIZE
+  return filteredProducts.value.slice(start, start + PAGE_SIZE)
+})
+
+const paginationInfoLabel = computed(() => {
+  const total = filteredProducts.value.length
+  if (total === 0) return '총 0개'
+  const start = (currentPage.value - 1) * PAGE_SIZE + 1
+  const end = Math.min(start + PAGE_SIZE - 1, total)
+  return `총 ${total}개 중 ${start}-${end}`
+})
+
+const paginationItems = computed<Array<number | string>>(() => {
+  const total = totalPages.value
+  const current = currentPage.value
+  if (total <= 7) return Array.from({ length: total }, (_, idx) => idx + 1)
+
+  const items: Array<number | string> = [1]
+  let start = Math.max(2, current - 1)
+  let end = Math.min(total - 1, current + 1)
+
+  if (current <= 3) {
+    start = 2
+    end = 4
+  } else if (current >= total - 2) {
+    start = total - 3
+    end = total - 1
+  }
+
+  if (start > 2) items.push('ellipsis-prev')
+  for (let page = start; page <= end; page += 1) items.push(page)
+  if (end < total - 1) items.push('ellipsis-next')
+
+  items.push(total)
+  return items
+})
+
+watch([searchQuery, filterPetType, filterStage], () => {
+  currentPage.value = 1
+})
+
+watch(
+  () => filteredProducts.value.length,
+  () => {
+    if (currentPage.value > totalPages.value) {
+      currentPage.value = totalPages.value
+    }
+  },
+)
+
+function goPage(page: number) {
+  if (page < 1 || page > totalPages.value) return
+  currentPage.value = page
+}
+
+function goPrevPage() {
+  goPage(currentPage.value - 1)
+}
+
+function goNextPage() {
+  goPage(currentPage.value + 1)
+}
 
 function petBadgeClass(type: string) {
   switch (type) {
@@ -346,9 +446,7 @@ function petLabel(type: string) {
 }
 
 function stageLabel(stage: number | null) {
-  if (stage === null || stage === undefined) return '기타'
-  const map: Record<number, string> = { 1: '영유아', 2: '성장기', 3: '성견/성묘', 4: '시니어' }
-  return map[stage] || '-'
+  return productStageLabel(stage)
 }
 
 function formatDate(dateStr: string) {
@@ -593,12 +691,6 @@ async function deleteProduct() {
   font-size: 0.8125rem;
   color: #991B1B;
 }
-
-/* Transitions */
-.slide-enter-active .slide-panel { animation: slideInRight 0.25s ease; }
-.slide-leave-active .slide-panel { animation: slideInRight 0.2s ease reverse; }
-.slide-enter-active { animation: fadeIn 0.15s ease; }
-.slide-leave-active { animation: fadeIn 0.15s ease reverse; }
 
 .fade-enter-active { animation: fadeIn 0.15s ease; }
 .fade-leave-active { animation: fadeIn 0.1s ease reverse; }

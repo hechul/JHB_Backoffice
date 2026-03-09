@@ -164,6 +164,7 @@ import {
   MoveRight,
 } from 'lucide-vue-next'
 import { Chart, DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler } from 'chart.js'
+import { customerStageLabel, progressiveCustomerStage, productStageLabel } from '~/composables/useGrowthStage'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
 
 Chart.register(DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler)
@@ -193,6 +194,7 @@ interface CustomerAgg {
   name: string
   id: string
   petType: 'DOG' | 'CAT' | 'BOTH'
+  stage: 'Entry' | 'Growth' | 'Core' | 'Premium' | 'Other'
   purchaseCount: number
   lastOrder: string
   daysSinceLastOrder: number
@@ -261,6 +263,7 @@ const topProducts = ref<TopProductRow[]>([])
 const stageData = ref<StageDatum[]>([
   { name: '입문', count: 0, percent: 0 },
   { name: '성장', count: 0, percent: 0 },
+  { name: '핵심', count: 0, percent: 0 },
   { name: '프리미엄', count: 0, percent: 0 },
 ])
 const churnData = ref<ChurnRow[]>([])
@@ -288,6 +291,7 @@ function navigateToCustomers(query: Record<string, string> = {}) {
 function stageQueryByName(stageName: string): string {
   if (stageName === '입문') return 'Entry'
   if (stageName === '성장') return 'Growth'
+  if (stageName === '핵심') return 'Core'
   if (stageName === '프리미엄') return 'Premium'
   return ''
 }
@@ -344,11 +348,7 @@ function sanitizePetType(value: unknown): ProductMeta['pet_type'] {
 }
 
 function stageLabelByCode(code: number | null | undefined): string {
-  if (code === 1) return '입문'
-  if (code === 2) return '성장'
-  if (code === 3) return '핵심'
-  if (code === 4) return '프리미엄'
-  return '기타'
+  return productStageLabel(code)
 }
 
 function petLabel(type: ProductMeta['pet_type']): string {
@@ -365,12 +365,6 @@ function inferPetTypeFromName(productName: string): ProductMeta['pet_type'] {
   if (hasDog) return 'DOG'
   if (hasCat) return 'CAT'
   return 'BOTH'
-}
-
-function deriveCustomerStage(purchaseCount: number): StageDatum['name'] {
-  if (purchaseCount >= 5) return '프리미엄'
-  if (purchaseCount >= 4) return '성장'
-  return '입문'
 }
 
 function customerGroupKey(row: PurchaseRow): string {
@@ -401,6 +395,28 @@ function derivePetType(rows: PurchaseRow[]): ProductMeta['pet_type'] {
   if (hasDog) return 'DOG'
   if (hasCat) return 'CAT'
   return 'BOTH'
+}
+
+function deriveCustomerStage(rows: PurchaseRow[]): CustomerAgg['stage'] {
+  const stageByDate = new Map<string, number | null>()
+
+  for (const row of rows) {
+    const idKey = String(row.product_id || '').trim()
+    const metaById = idKey ? productMetaById.value[idKey] : null
+    const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
+    const metaByName = nameKey ? productMetaByName.value[nameKey] : null
+    const stage = metaById?.stage ?? metaByName?.stage ?? null
+    const dateKey = purchaseDateKey(row) || String(row.order_date || '').trim() || '1970-01-01'
+    const prevStage = stageByDate.get(dateKey)
+    const nextStage = Math.max(prevStage || 0, stage || 0) || null
+    stageByDate.set(dateKey, nextStage)
+  }
+
+  const orderedStages = Array.from(stageByDate.entries())
+    .sort((a, b) => parseOrderDate(a[0]).getTime() - parseOrderDate(b[0]).getTime())
+    .map(([, stage]) => stage)
+
+  return progressiveCustomerStage(orderedStages)
 }
 
 function maskBuyerId(raw: string): string {
@@ -569,6 +585,7 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
       name: latest.buyer_name || '-',
       id: latest.buyer_id || '-',
       petType: derivePetType(customerRows),
+      stage: deriveCustomerStage(customerRows),
       purchaseCount,
       lastOrder,
       daysSinceLastOrder: daysFromNow(lastOrder),
@@ -599,15 +616,20 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
   const stageCountMap = {
     입문: 0,
     성장: 0,
+    핵심: 0,
     프리미엄: 0,
   }
   for (const customer of customerAggs) {
-    stageCountMap[deriveCustomerStage(customer.purchaseCount)] += 1
+    const stageName = customerStageLabel(customer.stage)
+    if (stageName in stageCountMap) {
+      stageCountMap[stageName as keyof typeof stageCountMap] += 1
+    }
   }
-  const stageMax = Math.max(stageCountMap.입문, stageCountMap.성장, stageCountMap.프리미엄, 1)
+  const stageMax = Math.max(stageCountMap.입문, stageCountMap.성장, stageCountMap.핵심, stageCountMap.프리미엄, 1)
   stageData.value = [
     { name: '입문', count: stageCountMap.입문, percent: Math.round((stageCountMap.입문 / stageMax) * 100) },
     { name: '성장', count: stageCountMap.성장, percent: Math.round((stageCountMap.성장 / stageMax) * 100) },
+    { name: '핵심', count: stageCountMap.핵심, percent: Math.round((stageCountMap.핵심 / stageMax) * 100) },
     { name: '프리미엄', count: stageCountMap.프리미엄, percent: Math.round((stageCountMap.프리미엄 / stageMax) * 100) },
   ]
 

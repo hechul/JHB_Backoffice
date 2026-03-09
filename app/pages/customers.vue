@@ -17,6 +17,7 @@
           <option value="">성장 단계 전체</option>
           <option value="Entry">입문</option>
           <option value="Growth">성장</option>
+          <option value="Core">핵심</option>
           <option value="Premium">프리미엄</option>
         </select>
 
@@ -222,10 +223,11 @@ import {
 } from 'lucide-vue-next'
 import type { LocationQuery } from 'vue-router'
 import * as XLSX from 'xlsx'
+import { customerStageLabel, customerStagePercent, progressiveCustomerStage } from '~/composables/useGrowthStage'
 import { matchesSearchQuery } from '~/composables/useTextSearch'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
 
-type CustomerStage = 'Entry' | 'Growth' | 'Premium'
+type CustomerStage = 'Entry' | 'Growth' | 'Core' | 'Premium' | 'Other'
 
 interface CustomerProductStat {
   key: string
@@ -271,6 +273,7 @@ interface PurchaseRow {
 
 interface ProductMeta {
   pet_type: 'DOG' | 'CAT' | 'BOTH'
+  stage: number | null
 }
 
 const supabase = useSupabaseClient()
@@ -293,7 +296,7 @@ const loading = ref(false)
 const customers = ref<CustomerRow[]>([])
 const customerOrders = ref<CustomerOrderRow[]>([])
 const productMetaById = ref<Record<string, ProductMeta>>({})
-const productPetTypeByName = ref<Record<string, ProductMeta['pet_type']>>({})
+const productMetaByName = ref<Record<string, ProductMeta>>({})
 const PAGE_SIZE = 10
 const DB_FETCH_PAGE_SIZE = 1000
 const currentPage = ref(1)
@@ -346,6 +349,13 @@ function mergePetType(prev: ProductMeta['pet_type'] | undefined, next: ProductMe
   return 'BOTH'
 }
 
+function mergeProductMeta(prev: ProductMeta | undefined, next: ProductMeta): ProductMeta {
+  return {
+    pet_type: mergePetType(prev?.pet_type, next.pet_type),
+    stage: Math.max(prev?.stage || 0, next.stage || 0) || null,
+  }
+}
+
 function inferPetTypeFromName(productName: string): ProductMeta['pet_type'] {
   const normalized = normalizeForMatch(productName)
   const hasDog = normalized.includes('강아지') || normalized.includes('강견') || normalized.includes('견')
@@ -361,12 +371,6 @@ function daysFromNow(dateStr: string): number {
   return Math.floor(ms / (1000 * 60 * 60 * 24))
 }
 
-function deriveStageByCount(orderCount: number): CustomerStage {
-  if (orderCount >= 5) return 'Premium'
-  if (orderCount >= 4) return 'Growth'
-  return 'Entry'
-}
-
 function derivePetType(rows: PurchaseRow[]): 'DOG' | 'CAT' | 'BOTH' {
   let hasDog = false
   let hasCat = false
@@ -375,7 +379,7 @@ function derivePetType(rows: PurchaseRow[]): 'DOG' | 'CAT' | 'BOTH' {
     const idKey = String(row.product_id || '').trim()
     const metaById = idKey ? productMetaById.value[idKey] : null
     const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
-    const petTypeFromName = nameKey ? productPetTypeByName.value[nameKey] : undefined
+    const petTypeFromName = nameKey ? productMetaByName.value[nameKey]?.pet_type : undefined
     const petType = metaById?.pet_type || petTypeFromName || inferPetTypeFromName(row.product_name || '')
 
     if (petType === 'BOTH') return 'BOTH'
@@ -387,6 +391,28 @@ function derivePetType(rows: PurchaseRow[]): 'DOG' | 'CAT' | 'BOTH' {
   if (hasDog) return 'DOG'
   if (hasCat) return 'CAT'
   return 'BOTH'
+}
+
+function deriveStage(rows: PurchaseRow[]): CustomerStage {
+  const stageByDate = new Map<string, number | null>()
+
+  for (const row of rows) {
+    const idKey = String(row.product_id || '').trim()
+    const metaById = idKey ? productMetaById.value[idKey] : null
+    const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
+    const metaByName = nameKey ? productMetaByName.value[nameKey] : undefined
+    const stage = metaById?.stage ?? metaByName?.stage ?? null
+    const dateKey = purchaseDateKey(row) || String(row.order_date || '').trim() || '1970-01-01'
+    const prevStage = stageByDate.get(dateKey)
+    const nextStage = Math.max(prevStage || 0, stage || 0) || null
+    stageByDate.set(dateKey, nextStage)
+  }
+
+  const orderedStages = Array.from(stageByDate.entries())
+    .sort((a, b) => parseOrderDate(a[0]).getTime() - parseOrderDate(b[0]).getTime())
+    .map(([, stage]) => stage)
+
+  return progressiveCustomerStage(orderedStages)
 }
 
 function purchaseDateKey(row: Pick<PurchaseRow, 'order_date'>): string {
@@ -440,7 +466,7 @@ function buildCustomerProductStats(rows: PurchaseRow[]): CustomerProductStat[] {
 async function loadProductMeta() {
   const { data, error } = await supabase
     .from('products')
-    .select('product_id, product_name, pet_type')
+    .select('product_id, product_name, pet_type, stage')
     .is('deleted_at', null)
 
   if (error) {
@@ -449,27 +475,30 @@ async function loadProductMeta() {
   }
 
   const map: Record<string, ProductMeta> = {}
-  const nameMap: Record<string, ProductMeta['pet_type']> = {}
+  const nameMap: Record<string, ProductMeta> = {}
   for (const row of (data || []) as any[]) {
     const petType = sanitizePetType(row.pet_type)
+    const stage = Number.isFinite(Number(row.stage)) ? Number(row.stage) : null
+    const meta: ProductMeta = { pet_type: petType, stage }
     map[String(row.product_id)] = {
       pet_type: petType,
+      stage,
     }
 
     const rawName = String(row.product_name || '').trim()
     const rawNameKey = normalizeForMatch(rawName)
     if (rawNameKey) {
-      nameMap[rawNameKey] = mergePetType(nameMap[rawNameKey], petType)
+      nameMap[rawNameKey] = mergeProductMeta(nameMap[rawNameKey], meta)
     }
 
     const canonicalName = normalizeMissionProductName(rawName)
     const canonicalNameKey = normalizeForMatch(canonicalName)
     if (canonicalNameKey) {
-      nameMap[canonicalNameKey] = mergePetType(nameMap[canonicalNameKey], petType)
+      nameMap[canonicalNameKey] = mergeProductMeta(nameMap[canonicalNameKey], meta)
     }
   }
   productMetaById.value = map
-  productPetTypeByName.value = nameMap
+  productMetaByName.value = nameMap
 }
 
 async function fetchCustomers() {
@@ -539,7 +568,7 @@ async function fetchCustomers() {
         buyerName: latest.buyer_name || '',
         buyerId: latest.buyer_id || '',
         petType: derivePetType(customerRows),
-        stage: deriveStageByCount(purchaseCount),
+        stage: deriveStage(customerRows),
         purchaseCount,
         productCount,
         lastOrder,
@@ -687,8 +716,7 @@ const activeFilters = computed(() => {
   if (filterProductName.value) filters.push({ key: 'productName', label: `상품: ${filterProductName.value}` })
   const petMap: Record<string, string> = { DOG: '강아지', CAT: '고양이', BOTH: '모두' }
   if (filterPetType.value) filters.push({ key: 'petType', label: `펫: ${petMap[filterPetType.value]}` })
-  const stageMap: Record<string, string> = { Entry: '입문', Growth: '성장', Premium: '프리미엄' }
-  if (filterStage.value) filters.push({ key: 'stage', label: `단계: ${stageMap[filterStage.value]}` })
+  if (filterStage.value) filters.push({ key: 'stage', label: `단계: ${customerStageLabel(filterStage.value)}` })
   if (filterChurn.value) filters.push({ key: 'churn', label: filterChurn.value === 'true' ? '이탈 위험' : '정상' })
   if (filterPurchaseCount.value) {
     const label = filterPurchaseCount.value === '1' ? '구매: 1회 이상' : `구매: ${filterPurchaseCount.value}회 이상`
@@ -719,8 +747,7 @@ function clearAllFilters() {
 }
 
 function stageLabel(stage: string) {
-  const stageMap: Record<string, string> = { Entry: '입문', Growth: '성장', Premium: '프리미엄' }
-  return stageMap[stage] || stage
+  return customerStageLabel(stage)
 }
 
 function asSingleQueryValue(val: string | string[] | null | undefined): string {
@@ -740,11 +767,7 @@ function applyFiltersFromQuery(query: LocationQuery) {
   filterPetType.value = pet === 'DOG' || pet === 'CAT' || pet === 'BOTH' ? pet : ''
 
   const stage = asSingleQueryValue(query.stage)
-  if (stage === 'Core') {
-    filterStage.value = 'Premium'
-  } else {
-    filterStage.value = stage === 'Entry' || stage === 'Growth' || stage === 'Premium' ? stage : ''
-  }
+  filterStage.value = stage === 'Entry' || stage === 'Growth' || stage === 'Core' || stage === 'Premium' ? stage : ''
 
   const churn = asSingleQueryValue(query.churn)
   filterChurn.value = churn === 'true' || churn === 'false' ? churn : ''
@@ -850,8 +873,7 @@ watch(
 )
 
 function stagePercent(stage: string): number {
-  const map: Record<string, number> = { Entry: 33, Growth: 66, Premium: 100 }
-  return map[stage] || 0
+  return customerStagePercent(stage)
 }
 
 async function openCustomerDetail(customer: CustomerRow) {
