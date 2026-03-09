@@ -3,14 +3,14 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const supabase = useSupabaseClient()
 
   async function resolveSessionUser() {
-    if (user.value) return user.value
+    if (user.value?.id) return user.value
     try {
       const { data, error } = await supabase.auth.getSession()
       if (error) {
         console.error('auth middleware getSession error:', error)
         return null
       }
-      return data.session?.user || null
+      return data.session?.user?.id ? data.session.user : null
     } catch (error) {
       console.error('auth middleware getSession exception:', error)
       return null
@@ -36,6 +36,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   async function resolveProfileStatus(userId: string) {
+    if (!userId || userId === 'undefined' || userId === 'null') {
+      return 'active'
+    }
     try {
       const primary = await supabase
         .from('profiles')

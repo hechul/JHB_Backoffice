@@ -29,7 +29,6 @@ export default defineNuxtConfig({
         },
       ],
     },
-    pageTransition: { name: 'page', mode: 'out-in' },
   },
 
   css: ['~/assets/css/main.css'],
@@ -43,4 +42,3 @@ export default defineNuxtConfig({
     layouts: 'layouts',
   },
 })
-

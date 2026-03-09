@@ -405,8 +405,6 @@ watch(
   bottom: 0;
   z-index: 100;
   transition: width var(--transition-normal), box-shadow var(--transition-normal);
-  backdrop-filter: blur(calc(var(--liquid-blur) + 4px)) saturate(150%);
-  -webkit-backdrop-filter: blur(calc(var(--liquid-blur) + 4px)) saturate(150%);
 }
 
 .sidebar.collapsed {
@@ -681,8 +679,6 @@ watch(
   height: var(--header-height);
   background: rgba(255, 255, 255, 0.74);
   border-bottom: 1px solid rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(calc(var(--liquid-blur) + 6px)) saturate(145%);
-  -webkit-backdrop-filter: blur(calc(var(--liquid-blur) + 6px)) saturate(145%);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -835,8 +831,6 @@ watch(
   padding: var(--space-sm);
   animation: dropdownIn 0.18s var(--ease-emphasized);
   transform-origin: top right;
-  backdrop-filter: blur(calc(var(--liquid-blur) + 2px)) saturate(140%);
-  -webkit-backdrop-filter: blur(calc(var(--liquid-blur) + 2px)) saturate(140%);
 }
 
 .period-dropdown-header {
