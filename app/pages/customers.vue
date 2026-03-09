@@ -231,6 +231,7 @@ import * as XLSX from 'xlsx'
 import { customerStageLabel, customerStagePercent, progressiveCustomerStage } from '~/composables/useGrowthStage'
 import { matchesSearchQuery } from '~/composables/useTextSearch'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
+import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
 import { buildWeekOptions, weekCodeFromDate, weekLabelFromCode } from '~/composables/useWeekFilter'
 
 type CustomerStage = 'Entry' | 'Growth' | 'Core' | 'Premium' | 'Other'
@@ -273,6 +274,8 @@ interface PurchaseRow {
   product_id: string
   product_name: string
   option_info: string
+  source_product_name?: string
+  source_option_info?: string
   quantity: number
   order_date: string
   target_month: string
@@ -526,10 +529,12 @@ async function fetchCustomers() {
     await loadProductMeta()
 
     const collected: any[] = []
+    const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
+    const baseColumns = 'purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month'
     for (let from = 0; ; from += DB_FETCH_PAGE_SIZE) {
       let query = supabase
         .from('purchases')
-        .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month')
+        .select(purchaseSelectColumns(baseColumns, includeSourceColumns))
         .not('filter_ver', 'is', null)
         .eq('is_fake', false)
         .eq('needs_review', false)
@@ -568,11 +573,7 @@ async function fetchCustomers() {
       const purchaseCount = new Set(customerRows.map((row) => purchaseDateKey(row)).filter(Boolean)).size
       if (purchaseCount <= 0) continue
       const productCount = customerRows.reduce((sum, row) => {
-        const count = computePurchaseQuantity({
-          productName: row.product_name,
-          optionInfo: row.option_info,
-          quantity: row.quantity,
-        }).totalCount
+        const count = computePurchaseQuantity(purchaseQuantityInput(row)).totalCount
         return sum + count
       }, 0)
       const productStats = buildCustomerProductStats(customerRows)
@@ -608,9 +609,11 @@ async function fetchCustomerOrders(customer: CustomerRow) {
   const requestSeq = ++customerOrdersFetchSeq.value
   const monthSnapshot = selectedMonth.value
   const weekSnapshot = filterWeek.value
+  const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
+  const baseColumns = 'order_date, product_name, option_info, quantity, target_month'
   let query = supabase
     .from('purchases')
-    .select('order_date, product_name, option_info, quantity, target_month')
+    .select(purchaseSelectColumns(baseColumns, includeSourceColumns))
     .not('filter_ver', 'is', null)
     .eq('is_fake', false)
     .eq('needs_review', false)
@@ -642,11 +645,13 @@ async function fetchCustomerOrders(customer: CustomerRow) {
     date: String(row.order_date || '').slice(0, 10),
     product: row.product_name || '-',
     optionInfo: String(row.option_info || '').trim() || '-',
-    itemCount: computePurchaseQuantity({
-      productName: String(row.product_name || ''),
-      optionInfo: String(row.option_info || ''),
+    itemCount: computePurchaseQuantity(purchaseQuantityInput({
+      product_name: String(row.product_name || ''),
+      option_info: String(row.option_info || ''),
+      source_product_name: String(row.source_product_name || ''),
+      source_option_info: String(row.source_option_info || ''),
       quantity: Number(row.quantity) || 1,
-    }).totalCount,
+    })).totalCount,
   }))
 
   if (requestSeq !== customerOrdersFetchSeq.value) return

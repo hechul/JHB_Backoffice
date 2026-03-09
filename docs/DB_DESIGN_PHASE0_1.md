@@ -298,6 +298,8 @@ CREATE TABLE public.purchases (
   product_id        VARCHAR NOT NULL,
   product_name      VARCHAR NOT NULL,
   option_info       VARCHAR,
+  source_product_name VARCHAR,
+  source_option_info  VARCHAR,
   quantity          INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
   order_date        DATE NOT NULL,
   order_status      VARCHAR NOT NULL,

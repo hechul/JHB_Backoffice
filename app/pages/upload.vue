@@ -246,6 +246,7 @@ import {
   type ParsedWorkbookSheet,
   type ColumnValidation,
 } from '~/composables/useExcelParser'
+import { purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
 import { matchesSearchQuery } from '~/composables/useTextSearch'
 import * as XLSX from 'xlsx'
 
@@ -287,6 +288,8 @@ interface PurchaseDbRow {
   product_id: string
   product_name: string
   option_info: string | null
+  source_product_name?: string | null
+  source_option_info?: string | null
   quantity: number
   order_date: string
   order_status: string
@@ -521,7 +524,7 @@ function applyOptionFilter(query: any, optionValue: string) {
 }
 
 function toPurchaseRestorePayload(row: PurchaseDbRow) {
-  return {
+  const payload: Record<string, any> = {
     upload_batch_id: row.upload_batch_id,
     target_month: row.target_month,
     buyer_id: row.buyer_id,
@@ -545,6 +548,9 @@ function toPurchaseRestorePayload(row: PurchaseDbRow) {
     filter_ver: row.filter_ver,
     quantity_warning: row.quantity_warning,
   }
+  if ('source_product_name' in row) payload.source_product_name = row.source_product_name || ''
+  if ('source_option_info' in row) payload.source_option_info = row.source_option_info || ''
+  return payload
 }
 
 async function fetchExistingPurchasesSnapshot(purchaseIds: string[]): Promise<Map<string, PurchaseDbRow>> {
@@ -552,7 +558,7 @@ async function fetchExistingPurchasesSnapshot(purchaseIds: string[]): Promise<Ma
   const snapshot = new Map<string, PurchaseDbRow>()
   if (ids.length === 0) return snapshot
 
-  const columns = [
+  const baseColumns = [
     'purchase_id',
     'upload_batch_id',
     'target_month',
@@ -577,6 +583,8 @@ async function fetchExistingPurchasesSnapshot(purchaseIds: string[]): Promise<Ma
     'filter_ver',
     'quantity_warning',
   ].join(', ')
+  const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
+  const columns = purchaseSelectColumns(baseColumns, includeSourceColumns)
 
   for (const batch of chunkArray(ids)) {
     const { data, error } = await runQueryWithRetry(
@@ -1275,10 +1283,11 @@ async function startUpload() {
       uploadProgress.value = 30
 
       const totalOrderBatches = Math.max(1, Math.ceil(valid.length / DB_BATCH_SIZE))
+      const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
       for (let i = 0; i < valid.length; i += DB_BATCH_SIZE) {
         const batch = valid.slice(i, i + DB_BATCH_SIZE).map((row) => {
           const resolved = resolvedOrderMap.get(row.purchase_id)
-          return {
+          const payload: Record<string, any> = {
             purchase_id: row.purchase_id,
             upload_batch_id: batchId,
             target_month: targetMonth,
@@ -1296,6 +1305,11 @@ async function startUpload() {
             claim_status: row.claim_status,
             quantity_warning: row.quantity >= 2,
           }
+          if (includeSourceColumns) {
+            payload.source_product_name = row.product_name
+            payload.source_option_info = row.option_info || ''
+          }
+          return payload
         })
         const batchNumber = Math.floor(i / DB_BATCH_SIZE) + 1
         const { data, error } = await runQueryWithRetry(

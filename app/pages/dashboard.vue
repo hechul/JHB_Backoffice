@@ -191,6 +191,7 @@ import {
 import { Chart, DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler } from 'chart.js'
 import { customerStageLabel, progressiveCustomerStage, productStageLabel } from '~/composables/useGrowthStage'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
+import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
 import { buildWeekOptions, weekCodeFromDate, weekLabelFromCode } from '~/composables/useWeekFilter'
 
 Chart.register(DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler)
@@ -203,6 +204,8 @@ interface PurchaseRow {
   product_id: string
   product_name: string
   option_info: string
+  source_product_name?: string
+  source_option_info?: string
   quantity: number
   order_date: string
   target_month: string
@@ -621,11 +624,13 @@ async function loadProductMeta() {
 async function fetchPurchases(month: string): Promise<PurchaseRow[]> {
   const rows: PurchaseRow[] = []
   const PAGE_SIZE = 1000
+  const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
+  const baseColumns = 'purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month, is_fake, needs_review, filter_ver'
 
   for (let from = 0; ; from += PAGE_SIZE) {
     let query = supabase
       .from('purchases')
-      .select('purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month, is_fake, needs_review, filter_ver')
+      .select(purchaseSelectColumns(baseColumns, includeSourceColumns))
       .not('filter_ver', 'is', null)
       .order('order_date', { ascending: false })
       .order('purchase_id', { ascending: false })
@@ -644,6 +649,8 @@ async function fetchPurchases(month: string): Promise<PurchaseRow[]> {
       product_id: String(row.product_id || ''),
       product_name: String(row.product_name || ''),
       option_info: String(row.option_info || ''),
+      source_product_name: String(row.source_product_name || ''),
+      source_option_info: String(row.source_option_info || ''),
       quantity: Number(row.quantity) || 1,
       order_date: String(row.order_date || ''),
       target_month: String(row.target_month || ''),
@@ -737,11 +744,7 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
   for (const row of realRows) {
     const baseKey = String(row.product_id || '').trim() || normalizeForMatch(row.product_name || '')
     if (!baseKey) continue
-    const quantityResult = computePurchaseQuantity({
-      productName: row.product_name,
-      optionInfo: row.option_info,
-      quantity: row.quantity,
-    })
+    const quantityResult = computePurchaseQuantity(purchaseQuantityInput(row))
 
     const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
     const meta = productMetaById.value[String(row.product_id || '').trim()] || productMetaByName.value[nameKey]

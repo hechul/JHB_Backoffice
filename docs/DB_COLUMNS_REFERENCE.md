@@ -73,6 +73,8 @@ Supabase Auth(`auth.users`)와 1:1 연결. 회원가입 시 트리거로 자동 
 | `product_id` | varchar | ✕ | — | 매핑된 내부 상품 ID (`P-...`). 업로드 시 자동 매핑 또는 수동 매핑으로 설정. `products.product_id` 참조 (논리적 FK) |
 | `product_name` | varchar | ✕ | — | 정규화된 상품명. 예: `츄라잇`, `애착트릿`. 업로드 시 정규화 규칙 적용 |
 | `option_info` | varchar | ○ | — | 정규화된 옵션 정보. 예: `브라이트`, `북어`, `치킨` |
+| `source_product_name` | varchar | ○ | — | **원본 상품명**. 예: `굿포펫 이즈바이트 ... 270g, 3개`. 대시보드/고객 분석 수량 계산 시 원문 `g`, `n개` 정보를 복원하는 용도 |
+| `source_option_info` | varchar | ○ | — | **원본 옵션 정보**. 업로드 시 스마트스토어 원문 옵션을 별도 보존 |
 | `quantity` | integer | ✕ | `1` | 주문 수량. CHECK: > 0 |
 | `order_date` | date | ✕ | — | 주문일 (`주문일시` 기준). 체험단 날짜 매칭에 사용 |
 | `order_status` | varchar | ✕ | — | 주문 상태. 예: `구매확정`, `배송완료`, `발송완료` |
