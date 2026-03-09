@@ -1,9 +1,18 @@
 <template>
   <div class="dashboard">
     <div class="status-row">
-      <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
-      <StatusBadge v-if="dashboardLoading" label="데이터 불러오는 중" variant="info" />
-      <span v-else class="text-xs text-muted">실구매 주문 {{ currentMetrics.realPurchase.toLocaleString() }}건 기준</span>
+      <div class="status-row-main">
+        <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
+        <StatusBadge v-if="selectedMonth !== 'all' && dashboardWeekFilter" :label="weekLabelFromCode(selectedMonth, dashboardWeekFilter)" variant="info" />
+        <StatusBadge v-if="dashboardLoading" label="데이터 불러오는 중" variant="info" />
+        <span v-else class="text-xs text-muted">실구매 주문 {{ currentMetrics.realPurchase.toLocaleString() }}건 기준</span>
+      </div>
+      <div v-if="selectedMonth !== 'all'" class="status-row-actions">
+        <select v-model="dashboardWeekFilter" class="select select-compact">
+          <option value="">주차 전체</option>
+          <option v-for="week in dashboardWeekOptions" :key="week.value" :value="week.value">{{ week.label }}</option>
+        </select>
+      </div>
     </div>
 
     <div class="kpi-grid">
@@ -48,7 +57,10 @@
     <div class="charts-grid">
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">월별 실구매 추이</h3>
+          <div class="dashboard-card-head">
+            <h3 class="card-title">{{ trendTitle }}</h3>
+            <p class="card-caption">선택한 기간 기준 실구매 건수 흐름을 한눈에 확인합니다.</p>
+          </div>
           <StatusBadge :label="trendRangeLabel" variant="neutral" />
         </div>
         <div class="trend-chart">
@@ -60,7 +72,10 @@
 
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">실구매 고객 펫 타입</h3>
+          <div class="dashboard-card-head">
+            <h3 class="card-title">실구매 고객 펫 타입</h3>
+            <p class="card-caption">고객별 구매 이력을 기준으로 강아지/고양이/공용 비중을 집계합니다.</p>
+          </div>
         </div>
         <div class="pet-chart">
           <div class="pet-donut">
@@ -80,7 +95,10 @@
     <div class="bottom-grid">
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">실구매 인기 상품 TOP 5</h3>
+          <div class="dashboard-card-head">
+            <h3 class="card-title">실구매 인기 상품 TOP 5</h3>
+            <p class="card-caption">실구매 수량 기준 상위 상품과 옵션 구성을 확인합니다.</p>
+          </div>
           <StatusBadge :label="`${selectedPeriodLabel} 기준`" variant="neutral" />
         </div>
         <div v-if="topProducts.length === 0" class="empty-inline">실구매 상품 데이터가 없습니다.</div>
@@ -104,7 +122,10 @@
 
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">고객 성장 단계</h3>
+          <div class="dashboard-card-head">
+            <h3 class="card-title">고객 성장 단계</h3>
+            <p class="card-caption">상품 Stage 규칙으로 계산한 고객 분포입니다.</p>
+          </div>
         </div>
         <div class="stage-bars">
           <div v-for="s in stageData" :key="s.name" class="stage-item">
@@ -131,15 +152,19 @@
     <div class="single-grid">
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">이탈 위험 고객</h3>
-          <StatusBadge :label="`${currentMetrics.churnCount}명`" variant="danger" dot />
+          <div>
+            <h3 class="card-title">이탈 위험 고객</h3>
+            <p class="card-caption">최근 주문 기준 90일 이상 경과한 실구매 고객입니다.</p>
+          </div>
+          <StatusBadge :label="churnCountLabel" variant="danger" dot />
         </div>
-        <div v-if="churnData.length === 0" class="empty-inline">현재 기준 이탈 위험 고객이 없습니다.</div>
+        <div v-if="visibleChurnData.length === 0" class="empty-inline">현재 조건에 맞는 이탈 위험 고객이 없습니다.</div>
         <div v-else class="churn-list">
-          <div v-for="c in churnData" :key="`${c.name}-${c.id}`" class="churn-item">
+          <div v-for="c in visibleChurnData" :key="`${c.name}-${c.id}`" class="churn-item">
             <div class="churn-info">
               <span class="churn-name">{{ c.name }}</span>
               <span class="churn-id">{{ c.id }}</span>
+              <span class="churn-date">최근 주문 {{ c.lastOrder }}</span>
             </div>
             <div class="churn-meta">
               <span class="churn-days">{{ c.days }}일 경과</span>
@@ -166,6 +191,7 @@ import {
 import { Chart, DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler } from 'chart.js'
 import { customerStageLabel, progressiveCustomerStage, productStageLabel } from '~/composables/useGrowthStage'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
+import { buildWeekOptions, weekCodeFromDate, weekLabelFromCode } from '~/composables/useWeekFilter'
 
 Chart.register(DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler)
 
@@ -234,6 +260,7 @@ interface ChurnRow {
   id: string
   days: number
   pet: string
+  lastOrder: string
 }
 
 const router = useRouter()
@@ -267,24 +294,55 @@ const stageData = ref<StageDatum[]>([
   { name: '프리미엄', count: 0, percent: 0 },
 ])
 const churnData = ref<ChurnRow[]>([])
-const trendMonthTokens = ref<string[]>([])
+const trendLabels = ref<string[]>([])
 const trendValues = ref<number[]>([])
+const dashboardWeekFilter = ref('')
+const dashboardFetchSeq = ref(0)
+const dashboardRows = ref<PurchaseRow[]>([])
 
 const productMetaById = ref<Record<string, ProductMeta>>({})
 const productMetaByName = ref<Record<string, ProductMeta>>({})
 
+const dashboardWeekOptions = computed(() => {
+  if (selectedMonth.value === 'all') return []
+  return buildWeekOptions(selectedMonth.value)
+})
+
+const trendTitle = computed(() => {
+  if (selectedMonth.value === 'all') return '월별 실구매 추이'
+  if (dashboardWeekFilter.value) return '일별 실구매 추이'
+  return '주차별 실구매 추이'
+})
+
 const trendRangeLabel = computed(() => {
-  if (trendMonthTokens.value.length === 0) return '최근 6개월'
-  if (trendMonthTokens.value.length === 1) return `${formatMonthLabel(trendMonthTokens.value[0])}`
-  const first = formatMonthLabel(trendMonthTokens.value[0])
-  const last = formatMonthLabel(trendMonthTokens.value[trendMonthTokens.value.length - 1])
-  return `${first} ~ ${last}`
+  if (selectedMonth.value === 'all') {
+    if (trendLabels.value.length === 0) return '최근 6개월'
+    if (trendLabels.value.length === 1) return trendLabels.value[0]
+    return `${trendLabels.value[0]} ~ ${trendLabels.value[trendLabels.value.length - 1]}`
+  }
+  if (dashboardWeekFilter.value) return weekLabelFromCode(selectedMonth.value, dashboardWeekFilter.value)
+  return `${selectedPeriodLabel.value} 기준`
+})
+
+const visibleChurnData = computed(() => {
+  return churnData.value.slice(0, 5)
+})
+
+const churnCountLabel = computed(() => {
+  if (!dashboardWeekFilter.value || selectedMonth.value === 'all') {
+    return `${currentMetrics.value.churnCount}명`
+  }
+  return `${weekLabelFromCode(selectedMonth.value, dashboardWeekFilter.value)} · ${currentMetrics.value.churnCount}명`
 })
 
 function navigateToCustomers(query: Record<string, string> = {}) {
-  const withMonth = selectedMonth.value !== 'all'
-    ? { month: selectedMonth.value, ...query }
-    : query
+  const base: Record<string, string> = selectedMonth.value !== 'all'
+    ? { month: selectedMonth.value }
+    : {}
+  if (selectedMonth.value !== 'all' && dashboardWeekFilter.value) {
+    base.week = dashboardWeekFilter.value
+  }
+  const withMonth = { ...base, ...query }
   router.push({ path: '/customers', query: withMonth })
 }
 
@@ -444,7 +502,13 @@ function formatMonthLabel(token: string): string {
   return `${y}.${m}`
 }
 
-function buildTrendMonths(): string[] {
+function formatDayLabel(dateToken: string): string {
+  const day = Number(String(dateToken || '').slice(8, 10))
+  if (!Number.isFinite(day)) return dateToken
+  return `${day}일`
+}
+
+function buildTrendMonths(monthSnapshot: string): string[] {
   const monthTokens = availableMonths.value
     .map((item) => String(item.value || ''))
     .filter((token) => /^\d{4}-\d{2}$/.test(token))
@@ -454,14 +518,72 @@ function buildTrendMonths(): string[] {
     return monthTokens
   }
 
-  const pivot = selectedMonth.value !== 'all' && /^\d{4}-\d{2}$/.test(selectedMonth.value)
-    ? selectedMonth.value
+  const pivot = monthSnapshot !== 'all' && /^\d{4}-\d{2}$/.test(monthSnapshot)
+    ? monthSnapshot
     : toMonthToken(new Date())
   const fallback: string[] = []
   for (let i = 5; i >= 0; i -= 1) {
     fallback.push(shiftMonthToken(pivot, -i))
   }
   return fallback
+}
+
+function buildWeekDateTokens(monthToken: string, weekCode: string): string[] {
+  const [year, month] = String(monthToken || '').split('-').map((part) => Number(part))
+  const weekNumber = Number(String(weekCode || '').replace('W', ''))
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(weekNumber) || weekNumber <= 0) return []
+
+  const totalDays = new Date(year, month, 0).getDate()
+  const startDay = (weekNumber - 1) * 7 + 1
+  const endDay = Math.min(totalDays, startDay + 6)
+  const tokens: string[] = []
+  for (let day = startDay; day <= endDay; day += 1) {
+    tokens.push(`${monthToken}-${String(day).padStart(2, '0')}`)
+  }
+  return tokens
+}
+
+function applyTrendSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekSnapshot: string) {
+  const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
+
+  if (monthSnapshot === 'all') {
+    const monthTokens = buildTrendMonths(monthSnapshot)
+    const countMap = new Map<string, number>(monthTokens.map((token) => [token, 0]))
+    for (const row of realRows) {
+      const monthToken = String(row.target_month || '')
+      if (countMap.has(monthToken)) {
+        countMap.set(monthToken, (countMap.get(monthToken) || 0) + 1)
+      }
+    }
+    trendLabels.value = monthTokens.map((token) => formatMonthLabel(token))
+    trendValues.value = monthTokens.map((token) => countMap.get(token) || 0)
+    return
+  }
+
+  if (weekSnapshot) {
+    const dateTokens = buildWeekDateTokens(monthSnapshot, weekSnapshot)
+    const countMap = new Map<string, number>(dateTokens.map((token) => [token, 0]))
+    for (const row of realRows) {
+      const dateToken = String(row.order_date || '').slice(0, 10)
+      if (countMap.has(dateToken)) {
+        countMap.set(dateToken, (countMap.get(dateToken) || 0) + 1)
+      }
+    }
+    trendLabels.value = dateTokens.map((token) => formatDayLabel(token))
+    trendValues.value = dateTokens.map((token) => countMap.get(token) || 0)
+    return
+  }
+
+  const weekOptions = buildWeekOptions(monthSnapshot)
+  const countMap = new Map<string, number>(weekOptions.map((option) => [option.value, 0]))
+  for (const row of realRows) {
+    const weekCode = weekCodeFromDate(row.order_date)
+    if (countMap.has(weekCode)) {
+      countMap.set(weekCode, (countMap.get(weekCode) || 0) + 1)
+    }
+  }
+  trendLabels.value = weekOptions.map((option) => option.label.split(' ')[0])
+  trendValues.value = weekOptions.map((option) => countMap.get(option.value) || 0)
 }
 
 async function loadProductMeta() {
@@ -533,34 +655,6 @@ async function fetchPurchases(month: string): Promise<PurchaseRow[]> {
   }
 
   return rows
-}
-
-async function fetchTrendCounts(monthTokens: string[]): Promise<Map<string, number>> {
-  const countMap = new Map<string, number>()
-  for (const month of monthTokens) countMap.set(month, 0)
-  if (monthTokens.length === 0) return countMap
-
-  const PAGE_SIZE = 1000
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from('purchases')
-      .select('target_month, is_fake, needs_review, filter_ver')
-      .in('target_month', monthTokens)
-      .not('filter_ver', 'is', null)
-      .order('target_month', { ascending: true })
-      .range(from, from + PAGE_SIZE - 1)
-
-    if (error) throw error
-    const chunk = (data || []) as any[]
-    for (const row of chunk) {
-      if (Boolean(row.is_fake) || Boolean(row.needs_review) || !row.filter_ver) continue
-      const month = String(row.target_month || '')
-      countMap.set(month, (countMap.get(month) || 0) + 1)
-    }
-    if (chunk.length < PAGE_SIZE) break
-  }
-
-  return countMap
 }
 
 function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
@@ -687,34 +781,47 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
 
   churnData.value = churnCustomers
     .sort((a, b) => b.daysSinceLastOrder - a.daysSinceLastOrder)
-    .slice(0, 5)
     .map((item) => ({
       name: item.name,
       id: maskBuyerId(item.id),
       days: item.daysSinceLastOrder,
       pet: petLabel(item.petType),
+      lastOrder: item.lastOrder,
     }))
 }
 
 async function fetchDashboardData() {
+  const requestSeq = ++dashboardFetchSeq.value
+  const monthSnapshot = selectedMonth.value
   if (!profileLoaded.value) return
   dashboardLoading.value = true
   try {
     await loadProductMeta()
 
-    const scopeRows = await fetchPurchases(selectedMonth.value)
-    applyDashboardMetrics(scopeRows)
+    const sourceRows = await fetchPurchases(monthSnapshot)
 
-    const trendMonths = buildTrendMonths()
-    const trendMap = await fetchTrendCounts(trendMonths)
-    trendMonthTokens.value = trendMonths
-    trendValues.value = trendMonths.map((month) => trendMap.get(month) || 0)
+    if (requestSeq !== dashboardFetchSeq.value) return
+    dashboardRows.value = sourceRows
   } catch (error: any) {
     console.error('Failed to fetch dashboard data:', error)
     toast.error(`대시보드 데이터를 불러오지 못했습니다: ${error?.message || '알 수 없는 오류'}`)
   } finally {
-    dashboardLoading.value = false
+    if (requestSeq === dashboardFetchSeq.value) {
+      dashboardLoading.value = false
+    }
   }
+}
+
+function applyDashboardScope() {
+  const monthSnapshot = selectedMonth.value
+  const weekSnapshot = monthSnapshot !== 'all' ? dashboardWeekFilter.value : ''
+  const sourceRows = dashboardRows.value
+  const scopeRows = monthSnapshot !== 'all' && weekSnapshot
+    ? sourceRows.filter((row) => weekCodeFromDate(row.order_date) === weekSnapshot)
+    : sourceRows
+
+  applyDashboardMetrics(scopeRows)
+  applyTrendSeries(scopeRows, monthSnapshot, weekSnapshot)
 }
 
 function renderPetChart() {
@@ -759,7 +866,7 @@ function renderTrendChart() {
   trendChartInstance.value = new Chart(trendChartCanvas.value, {
     type: 'line',
     data: {
-      labels: trendMonthTokens.value.map((month) => formatMonthLabel(month)),
+      labels: trendLabels.value,
       datasets: [{
         data: trendValues.value,
         borderColor: '#2563EB',
@@ -815,6 +922,17 @@ function renderTrendChart() {
 }
 
 watch(
+  () => selectedMonth.value,
+  (month, prevMonth) => {
+    if (!prevMonth || month === prevMonth) return
+    if (dashboardWeekFilter.value) {
+      dashboardWeekFilter.value = ''
+    }
+  },
+  { flush: 'sync' },
+)
+
+watch(
   () => [selectedMonth.value, profileLoaded.value, profileRevision.value],
   async ([month, loaded]) => {
     if (!month || !loaded) return
@@ -824,7 +942,28 @@ watch(
 )
 
 watch(
-  () => [petData.value, trendMonthTokens.value, trendValues.value],
+  () => [selectedMonth.value, dashboardWeekFilter.value, dashboardRows.value],
+  () => {
+    applyDashboardScope()
+  },
+)
+
+watch(
+  () => [selectedMonth.value, dashboardWeekOptions.value.map((option) => option.value).join(',')],
+  () => {
+    if (selectedMonth.value === 'all') {
+      dashboardWeekFilter.value = ''
+      return
+    }
+
+    if (dashboardWeekFilter.value && !dashboardWeekOptions.value.some((option) => option.value === dashboardWeekFilter.value)) {
+      dashboardWeekFilter.value = ''
+    }
+  },
+)
+
+watch(
+  () => [petData.value, trendLabels.value, trendValues.value],
   async () => {
     await nextTick()
     renderPetChart()
@@ -849,7 +988,27 @@ onBeforeUnmount(() => {
 .status-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.status-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.status-row-actions {
+  display: flex;
+  align-items: center;
+}
+
+.dashboard-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .kpi-grid {
@@ -881,17 +1040,21 @@ onBeforeUnmount(() => {
 }
 
 .empty-inline {
-  padding: var(--space-md) 0;
-  font-size: 0.8125rem;
+  padding: var(--space-lg) 0;
+  font-size: 0.875rem;
   color: var(--color-text-muted);
 }
 
+.card-toolbar {
+  justify-content: flex-start;
+}
+
 .trend-chart {
-  padding-top: var(--space-sm);
+  padding-top: var(--space-md);
 }
 
 .trend-chart-area {
-  height: 200px;
+  height: 228px;
 }
 
 .pet-chart {
@@ -926,13 +1089,13 @@ onBeforeUnmount(() => {
 }
 
 .legend-label {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   color: var(--color-text-secondary);
-  width: 48px;
+  width: 56px;
 }
 
 .legend-value {
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: var(--color-text);
 }
@@ -946,7 +1109,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  padding: var(--space-md) 0;
+  padding: 14px 0;
   border-bottom: 1px solid var(--color-border-light);
 }
 
@@ -955,13 +1118,13 @@ onBeforeUnmount(() => {
 }
 
 .top-product-rank {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 700;
   flex-shrink: 0;
   background: var(--color-bg);
@@ -992,8 +1155,8 @@ onBeforeUnmount(() => {
 }
 
 .top-product-name {
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: 0.9375rem;
+  font-weight: 600;
   color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1001,12 +1164,12 @@ onBeforeUnmount(() => {
 }
 
 .top-product-option {
-  font-size: 0.6875rem;
+  font-size: 0.8125rem;
   color: var(--color-text-muted);
 }
 
 .top-product-meta {
-  font-size: 0.6875rem;
+  font-size: 0.8125rem;
   color: var(--color-text-muted);
 }
 
@@ -1018,16 +1181,16 @@ onBeforeUnmount(() => {
 }
 
 .top-product-count {
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: var(--color-text);
-  width: 42px;
+  width: 54px;
   text-align: right;
 }
 
 .top-product-bar-wrap {
-  width: 60px;
-  height: 6px;
+  width: 88px;
+  height: 8px;
   background: #F3F4F6;
   border-radius: 3px;
   overflow: hidden;
@@ -1043,7 +1206,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: flex-end;
   justify-content: space-around;
-  height: 180px;
+  height: 196px;
   padding-top: var(--space-lg);
 }
 
@@ -1055,8 +1218,8 @@ onBeforeUnmount(() => {
 }
 
 .stage-bar-outer {
-  width: 40px;
-  height: 120px;
+  width: 46px;
+  height: 132px;
   background: #F3F4F6;
   border-radius: var(--radius-sm);
   display: flex;
@@ -1072,13 +1235,13 @@ onBeforeUnmount(() => {
 }
 
 .stage-count {
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-text);
 }
 
 .stage-name {
-  font-size: 0.6875rem;
+  font-size: 0.8125rem;
   color: var(--color-text-muted);
 }
 
@@ -1104,7 +1267,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-md) 0;
+  padding: 14px 0;
   border-bottom: 1px solid var(--color-border-light);
 }
 
@@ -1118,14 +1281,19 @@ onBeforeUnmount(() => {
 }
 
 .churn-name {
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: 0.9375rem;
+  font-weight: 600;
   color: var(--color-text);
 }
 
 .churn-id {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--color-text-muted);
+}
+
+.churn-date {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
 }
 
 .churn-meta {
@@ -1135,7 +1303,7 @@ onBeforeUnmount(() => {
 }
 
 .churn-days {
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--color-danger);
 }
@@ -1153,7 +1321,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1024px) {
   .trend-chart-area {
-    height: 180px;
+    height: 196px;
   }
 
   .pet-chart {
@@ -1203,17 +1371,17 @@ onBeforeUnmount(() => {
   }
 
   .top-product-bar-wrap {
-    width: 120px;
+    width: 132px;
   }
 
   .stage-bars {
-    height: 150px;
+    height: 164px;
     padding-top: var(--space-md);
   }
 
   .stage-bar-outer {
-    width: 34px;
-    height: 96px;
+    width: 38px;
+    height: 108px;
   }
 
   .stage-actions {

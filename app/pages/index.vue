@@ -7,10 +7,10 @@
 
     <div class="feature-grid">
       <NuxtLink to="/dashboard" class="feature-card active">
-        <div class="feature-icon">
-          <BarChart3 :size="22" :stroke-width="1.8" />
+        <div class="feature-icon feature-icon-logo">
+          <img src="/goodforpat.png" alt="굿포펫" class="feature-brand-mark" />
         </div>
-        <span class="feature-name">매출 분석</span>
+        <span class="feature-name">굿포펫</span>
       </NuxtLink>
 
       <NuxtLink to="/attendance" class="feature-card active">
@@ -39,7 +39,6 @@
 
 <script setup lang="ts">
 import {
-  BarChart3,
   Bot,
   Clock3,
   UserCog,
@@ -68,7 +67,7 @@ const { isViewer, isAdmin } = useCurrentUser()
 }
 
 .welcome-greeting {
-  font-size: 0.6875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.1em;
   color: var(--color-text-muted);
@@ -76,7 +75,7 @@ const { isViewer, isAdmin } = useCurrentUser()
 }
 
 .welcome-title {
-  font-size: 1.62rem;
+  font-size: 1.9rem;
   font-weight: 700;
   color: transparent;
   background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 54%, #0f766e 100%);
@@ -140,8 +139,8 @@ const { isViewer, isAdmin } = useCurrentUser()
 }
 
 .feature-icon {
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
@@ -151,6 +150,16 @@ const { isViewer, isAdmin } = useCurrentUser()
   transition: transform var(--transition-normal), box-shadow var(--transition-normal), background var(--transition-normal);
 }
 
+.feature-icon-logo {
+  padding: 8px;
+}
+
+.feature-brand-mark {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .feature-card:hover .feature-icon {
   transform: translateY(-1px) scale(1.02);
   background: linear-gradient(145deg, rgba(219, 234, 254, 0.95) 0%, rgba(191, 219, 254, 0.85) 100%);
@@ -158,7 +167,7 @@ const { isViewer, isAdmin } = useCurrentUser()
 }
 
 .feature-name {
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: var(--color-text);
   letter-spacing: 0.01em;
