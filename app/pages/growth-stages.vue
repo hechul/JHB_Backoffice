@@ -1,14 +1,14 @@
 <template>
   <div class="growth-page">
     <div class="card growth-hero">
-      <div>
+      <div class="growth-hero-copy">
         <div class="growth-hero-head">
           <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
           <StatusBadge :label="`${insights.totalCustomers.toLocaleString()}명 고객`" variant="info" />
           <StatusBadge :label="`${insights.realPurchases.toLocaleString()}건 실구매`" variant="success" />
         </div>
         <h1 class="growth-title">고객 성장 단계</h1>
-        <p class="growth-desc">지금 고객이 어느 단계에 몰려 있는지, 누가 실제로 올라가고 있는지, 어느 단계에서 정체되는지를 한 화면에서 확인합니다.</p>
+        <p class="growth-desc">고객이 지금 어디에 몰려 있는지, 어느 단계가 실제로 올라가고 있는지, 어디에서 정체되는지를 차트 중심으로 바로 봅니다.</p>
       </div>
       <NuxtLink to="/dashboard" class="btn btn-secondary btn-sm growth-back-link">
         <BarChart3 :size="14" :stroke-width="2" />
@@ -20,56 +20,129 @@
 
     <template v-else>
       <div class="growth-summary-grid">
-        <div v-for="summary in insights.summaries" :key="summary.stage" class="card stage-summary-card">
-          <div class="stage-summary-top">
+        <div v-for="summary in insights.summaries" :key="summary.stage" class="card growth-summary-card">
+          <div class="growth-summary-top">
             <StatusBadge :label="summary.label" :variant="badgeVariant(summary.stage)" />
-            <span class="stage-summary-ratio">전체 {{ summary.ratio }}%</span>
+            <span class="growth-summary-ratio">{{ summary.ratio }}%</span>
           </div>
-          <div class="stage-summary-count">{{ summary.count.toLocaleString() }}명</div>
-          <div class="stage-summary-meter">
-            <div class="stage-summary-meter-fill" :class="`stage-fill-${summary.stage.toLowerCase()}`" :style="{ width: `${summary.ratio}%` }"></div>
+          <strong class="growth-summary-count">{{ summary.count.toLocaleString() }}명</strong>
+          <div class="growth-summary-meter">
+            <div
+              class="growth-summary-meter-fill"
+              :class="`fill-${summary.stage.toLowerCase()}`"
+              :style="{ width: `${summary.ratio}%` }"
+            />
           </div>
-          <div class="stage-summary-meta">
+          <div class="growth-summary-meta">
             <span>재구매 {{ summary.repeatCustomers.toLocaleString() }}명</span>
-            <span>이탈 위험 {{ summary.churnCustomers.toLocaleString() }}명</span>
-            <span>평균 구매횟수 {{ summary.avgPurchaseCount }}</span>
+            <span>이탈위험 {{ summary.churnCustomers.toLocaleString() }}명</span>
+            <span>평균 {{ summary.avgPurchaseCount }}회</span>
           </div>
-          <button class="btn btn-ghost btn-sm stage-summary-action" @click="navigateToCustomers(summary.stage)">
-            {{ summary.label }} 고객 보기
+          <button class="btn btn-ghost btn-sm growth-summary-action" @click="navigateToCustomers(summary.stage)">
+            고객 보기
             <MoveRight :size="14" :stroke-width="2" />
           </button>
         </div>
       </div>
 
-      <div class="growth-overview-grid">
-        <div class="card">
-          <div class="card-header growth-card-header compact">
+      <div class="growth-chart-grid">
+        <div class="card growth-chart-card">
+          <div class="card-header growth-card-header">
             <div>
               <h3 class="card-title">성장 단계 분포</h3>
-              <p class="card-caption">현재 고객이 어디에 가장 많이 몰려 있는지 비중으로 봅니다.</p>
+              <p class="card-caption">현재 고객이 어느 단계에 가장 많이 쌓여 있는지 한 번에 봅니다.</p>
             </div>
           </div>
-          <div class="distribution-list">
-            <div v-for="row in distributionRows" :key="row.stage" class="distribution-item">
-              <div class="distribution-head">
-                <div class="distribution-label-wrap">
-                  <StatusBadge :label="row.label" :variant="badgeVariant(row.stage)" />
-                  <span class="distribution-sub">{{ row.count.toLocaleString() }}명</span>
+          <div class="growth-chart-content growth-chart-content-split">
+            <div class="growth-chart-shell doughnut-shell">
+              <canvas ref="distributionChartCanvas"></canvas>
+            </div>
+            <div class="distribution-legend">
+              <button
+                v-for="row in distributionRows"
+                :key="row.stage"
+                type="button"
+                class="distribution-legend-item"
+                @click="navigateToCustomers(row.stage)"
+              >
+                <span class="distribution-dot" :style="{ backgroundColor: stageColor(row.stage) }" />
+                <div class="distribution-legend-text">
+                  <strong>{{ row.label }}</strong>
+                  <span>{{ row.count.toLocaleString() }}명 · {{ row.ratio }}%</span>
                 </div>
-                <span class="distribution-percent">{{ row.ratio }}%</span>
-              </div>
-              <div class="distribution-track">
-                <div class="distribution-fill" :class="`distribution-fill-${row.stage.toLowerCase()}`" :style="{ width: `${row.ratio}%` }"></div>
-              </div>
+                <MoveRight :size="14" :stroke-width="2" />
+              </button>
             </div>
           </div>
         </div>
 
+        <div class="card growth-chart-card">
+          <div class="card-header growth-card-header">
+            <div>
+              <h3 class="card-title">단계 전환</h3>
+              <p class="card-caption">실제로 입문에서 성장으로, 성장에서 핵심으로 얼마나 넘어가는지 봅니다.</p>
+            </div>
+          </div>
+          <div class="growth-chart-content">
+            <div class="growth-chart-shell">
+              <canvas ref="transitionChartCanvas"></canvas>
+            </div>
+            <div class="transition-summary-grid">
+              <div v-for="item in transitionRows" :key="item.key" class="transition-summary-item">
+                <div class="transition-summary-top">
+                  <span class="transition-summary-label">{{ item.label }}</span>
+                  <strong class="transition-summary-count">{{ item.count.toLocaleString() }}명</strong>
+                </div>
+                <div class="transition-summary-track">
+                  <div class="transition-summary-fill" :style="{ width: `${item.rate}%` }" />
+                </div>
+                <div class="transition-summary-foot">
+                  <span>{{ stageLabel(item.fromStage) }} 대비 {{ item.rate }}%</span>
+                  <button class="btn btn-ghost btn-sm" @click="navigateToCustomers(item.toStage)">
+                    보기
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="growth-chart-grid growth-chart-grid-wide">
+        <div class="card growth-chart-card growth-chart-card-wide">
+          <div class="card-header growth-card-header">
+            <div>
+              <h3 class="card-title">단계별 행동 비교</h3>
+              <p class="card-caption">각 단계 고객의 재구매율과 이탈위험 비중을 같은 축에서 비교합니다.</p>
+            </div>
+          </div>
+          <div class="growth-chart-content">
+            <div class="growth-chart-shell behavior-shell">
+              <canvas ref="behaviorChartCanvas"></canvas>
+            </div>
+            <div class="behavior-highlight-grid">
+              <div v-for="row in behaviorRows" :key="row.stage" class="behavior-highlight-item">
+                <div class="behavior-highlight-top">
+                  <StatusBadge :label="row.label" :variant="badgeVariant(row.stage)" />
+                  <strong>{{ row.count.toLocaleString() }}명</strong>
+                </div>
+                <div class="behavior-highlight-metrics">
+                  <span>재구매율 {{ row.repeatRate }}%</span>
+                  <span>이탈위험 {{ row.churnRate }}%</span>
+                  <span>평균 {{ row.avgPurchaseCount }}회</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="growth-support-grid">
         <div class="card">
           <div class="card-header growth-card-header compact">
             <div>
               <h3 class="card-title">지금 봐야 할 신호</h3>
-              <p class="card-caption">대표님 관점에서 바로 판단 가능한 핵심 상태입니다.</p>
+              <p class="card-caption">대표님이 바로 판단할 수 있는 요약 신호입니다.</p>
             </div>
           </div>
           <div class="signal-grid">
@@ -80,84 +153,15 @@
             </div>
           </div>
         </div>
-      </div>
-
-      <div class="growth-main-grid">
-        <div class="card">
-          <div class="card-header growth-card-header compact">
-            <div>
-              <h3 class="card-title">단계 전환 퍼널</h3>
-              <p class="card-caption">각 단계에서 다음 단계로 실제로 얼마나 넘어갔는지 전환 수와 전환율을 같이 봅니다.</p>
-            </div>
-          </div>
-          <div class="funnel-list">
-            <div v-for="item in transitionRows" :key="item.key" class="funnel-item">
-              <div class="funnel-head">
-                <span class="funnel-label">{{ item.label }}</span>
-                <span class="funnel-count">{{ item.count.toLocaleString() }}명</span>
-              </div>
-              <div class="funnel-track">
-                <div class="funnel-fill" :style="{ width: `${item.rate}%` }"></div>
-              </div>
-              <div class="funnel-foot">
-                <span>{{ stageLabel(item.fromStage) }} 고객 대비 {{ item.rate }}%</span>
-                <button class="btn btn-ghost btn-sm transition-action" @click="navigateToCustomers(item.toStage)">
-                  {{ stageLabel(item.toStage) }} 고객 보기
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
 
         <div class="card">
           <div class="card-header growth-card-header compact">
             <div>
-              <h3 class="card-title">단계별 행동</h3>
-              <p class="card-caption">각 단계 고객이 얼마나 다시 사고, 어디서 이탈하는지 행동 지표로 비교합니다.</p>
+              <h3 class="card-title">최근 승급 고객</h3>
+              <p class="card-caption">최근 실제로 단계가 올라간 고객입니다.</p>
             </div>
           </div>
-          <div class="behavior-list">
-            <div v-for="row in behaviorRows" :key="row.stage" class="behavior-item">
-              <div class="behavior-top">
-                <StatusBadge :label="row.label" :variant="badgeVariant(row.stage)" />
-                <span class="behavior-count">{{ row.count.toLocaleString() }}명</span>
-              </div>
-              <div class="behavior-metric">
-                <div class="behavior-label-row">
-                  <span>재구매율</span>
-                  <strong>{{ row.repeatRate }}%</strong>
-                </div>
-                <div class="behavior-track">
-                  <div class="behavior-fill behavior-fill-repeat" :style="{ width: `${row.repeatRate}%` }"></div>
-                </div>
-              </div>
-              <div class="behavior-metric">
-                <div class="behavior-label-row">
-                  <span>이탈위험 비중</span>
-                  <strong>{{ row.churnRate }}%</strong>
-                </div>
-                <div class="behavior-track">
-                  <div class="behavior-fill behavior-fill-churn" :style="{ width: `${row.churnRate}%` }"></div>
-                </div>
-              </div>
-              <div class="behavior-foot">
-                <span>평균 구매횟수 {{ row.avgPurchaseCount }}</span>
-                <span>재구매 {{ row.repeatCustomers }}명</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="growth-detail-grid">
-        <div class="card">
-          <div class="card-header growth-card-header compact">
-            <div>
-              <h3 class="card-title">최근 단계 전환 고객</h3>
-              <p class="card-caption">최근 실제로 승급한 고객 흐름입니다.</p>
-            </div>
-          </div>
-          <div v-if="insights.recentTransitions.length === 0" class="empty-inline">최근 전환 고객이 없습니다.</div>
+          <div v-if="insights.recentTransitions.length === 0" class="empty-inline">최근 승급 고객이 없습니다.</div>
           <div v-else class="transition-list">
             <div v-for="item in insights.recentTransitions" :key="`${item.customerKey}-${item.date}-${item.toStage}`" class="transition-list-item">
               <div class="transition-list-main">
@@ -174,7 +178,9 @@
             </div>
           </div>
         </div>
+      </div>
 
+      <div class="growth-detail-grid">
         <div class="card">
           <div class="card-header growth-card-header compact">
             <div>
@@ -208,26 +214,31 @@
             </div>
           </div>
         </div>
-      </div>
 
-      <div class="growth-product-grid">
-        <div v-for="group in insights.stageProducts" :key="group.stage" class="card product-group-card">
+        <div class="card">
           <div class="card-header growth-card-header compact">
             <div>
-              <h3 class="card-title">{{ group.label }} 인기 상품</h3>
-              <p class="card-caption">현재 {{ group.label }} 단계 고객이 실제로 많이 구매한 상품입니다.</p>
+              <h3 class="card-title">단계별 인기 상품</h3>
+              <p class="card-caption">각 단계 고객이 실제로 많이 산 상품입니다.</p>
             </div>
           </div>
-          <div v-if="group.products.length === 0" class="empty-inline">표시할 상품이 없습니다.</div>
-          <div v-else class="product-rank-list">
-            <div v-for="(item, index) in group.products" :key="`${group.stage}-${item.name}-${item.optionInfo}-${index}`" class="product-rank-item">
-              <span class="product-rank-index">{{ index + 1 }}</span>
-              <div class="product-rank-info">
-                <span class="product-rank-name">{{ item.name }}</span>
-                <span class="product-rank-option">옵션 {{ item.optionInfo }}</span>
-                <span class="product-rank-meta">{{ item.pet }} · {{ item.stage }}</span>
+          <div class="stage-product-stack">
+            <div v-for="group in insights.stageProducts" :key="group.stage" class="stage-product-block">
+              <div class="stage-product-head">
+                <StatusBadge :label="group.label" :variant="badgeVariant(group.stage)" />
+                <button class="btn btn-ghost btn-sm" @click="navigateToCustomers(group.stage)">고객 보기</button>
               </div>
-              <span class="product-rank-count">{{ formatGrowthCount(item.count) }}개</span>
+              <div v-if="group.products.length === 0" class="empty-inline">표시할 상품이 없습니다.</div>
+              <div v-else class="product-rank-list compact">
+                <div v-for="(item, index) in group.products.slice(0, 3)" :key="`${group.stage}-${item.name}-${item.optionInfo}-${index}`" class="product-rank-item compact">
+                  <span class="product-rank-index">{{ index + 1 }}</span>
+                  <div class="product-rank-info">
+                    <span class="product-rank-name">{{ item.name }}</span>
+                    <span class="product-rank-option">옵션 {{ item.optionInfo }}</span>
+                  </div>
+                  <span class="product-rank-count">{{ formatGrowthCount(item.count) }}개</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -237,9 +248,12 @@
 </template>
 
 <script setup lang="ts">
+import { Chart, DoughnutController, ArcElement, Tooltip, Legend, BarController, BarElement, CategoryScale, LinearScale } from 'chart.js'
 import { BarChart3, ChevronRight, MoveRight } from 'lucide-vue-next'
 import { fetchGrowthInsights, formatGrowthCount, growthStageBadgeVariant, type GrowthInsightsResult } from '~/composables/useGrowthInsights'
 import { customerStageLabel, type CustomerStageCode } from '~/composables/useGrowthStage'
+
+Chart.register(DoughnutController, ArcElement, Tooltip, Legend, BarController, BarElement, CategoryScale, LinearScale)
 
 interface EmptyInsights extends GrowthInsightsResult {}
 
@@ -261,12 +275,34 @@ const insights = ref<EmptyInsights>({
   realPurchases: 0,
 })
 
+const distributionChartCanvas = ref<HTMLCanvasElement | null>(null)
+const transitionChartCanvas = ref<HTMLCanvasElement | null>(null)
+const behaviorChartCanvas = ref<HTMLCanvasElement | null>(null)
+
+const distributionChartInstance = shallowRef<Chart | null>(null)
+const transitionChartInstance = shallowRef<Chart | null>(null)
+const behaviorChartInstance = shallowRef<Chart | null>(null)
+
 function stageLabel(stage: CustomerStageCode) {
   return customerStageLabel(stage)
 }
 
 function badgeVariant(stage: CustomerStageCode) {
   return growthStageBadgeVariant(stage)
+}
+
+function stageColor(stage: CustomerStageCode) {
+  if (stage === 'Entry') return '#94A3B8'
+  if (stage === 'Growth') return '#2563EB'
+  if (stage === 'Core') return '#16A34A'
+  return '#D97706'
+}
+
+function stageSoftColor(stage: CustomerStageCode) {
+  if (stage === 'Entry') return 'rgba(148, 163, 184, 0.18)'
+  if (stage === 'Growth') return 'rgba(37, 99, 235, 0.18)'
+  if (stage === 'Core') return 'rgba(22, 163, 74, 0.18)'
+  return 'rgba(217, 119, 6, 0.18)'
 }
 
 function maskBuyerId(raw: string): string {
@@ -315,36 +351,30 @@ const behaviorRows = computed(() => {
 
 const signalCards = computed(() => {
   const highestStage = [...insights.value.summaries].sort((a, b) => b.count - a.count)[0]
-  const latestTransition = transitionRows.value.sort((a, b) => b.count - a.count)[0]
+  const latestTransition = [...transitionRows.value].sort((a, b) => b.count - a.count)[0]
   const stuckEntry = insights.value.customers.filter((customer) => customer.stage === 'Entry' && customer.purchaseCount >= 2).length
   const stuckGrowth = insights.value.customers.filter((customer) => customer.stage === 'Growth' && customer.purchaseCount >= 2).length
-  const recentUpgradeCount = insights.value.recentTransitions.length
 
   return [
     {
       label: '고객이 가장 몰린 단계',
       value: highestStage ? `${highestStage.label} ${highestStage.ratio}%` : '-',
-      description: highestStage ? `${highestStage.count.toLocaleString()}명이 현재 이 단계에 머물러 있습니다.` : '데이터가 없습니다.',
+      description: highestStage ? `${highestStage.count.toLocaleString()}명이 현재 이 단계에 있습니다.` : '데이터가 없습니다.',
     },
     {
-      label: '가장 활발한 전환 구간',
+      label: '가장 활발한 전환',
       value: latestTransition ? latestTransition.label : '-',
-      description: latestTransition ? `${latestTransition.count.toLocaleString()}명이 이 구간에서 실제로 승급했습니다.` : '전환 데이터가 없습니다.',
+      description: latestTransition ? `${latestTransition.count.toLocaleString()}명이 이 구간에서 올라갔습니다.` : '전환 데이터가 없습니다.',
     },
     {
       label: '입문 정체 고객',
       value: `${stuckEntry.toLocaleString()}명`,
-      description: '입문 단계에서 2회 이상 구매했지만 아직 성장으로 못 올라간 고객입니다.',
+      description: '반복 구매 중이지만 아직 성장 단계로 올라가지 못한 고객입니다.',
     },
     {
       label: '성장 정체 고객',
       value: `${stuckGrowth.toLocaleString()}명`,
-      description: '성장 단계에서 반복 구매 중이지만 아직 핵심으로 못 올라간 고객입니다.',
-    },
-    {
-      label: '최근 승급 고객',
-      value: `${recentUpgradeCount.toLocaleString()}명`,
-      description: '최근 전환 리스트에 잡힌 고객 수입니다.',
+      description: '성장 단계에서 반복 구매 중이지만 아직 핵심 단계 전환이 없습니다.',
     },
   ]
 })
@@ -354,6 +384,202 @@ function navigateToCustomers(stage?: CustomerStageCode) {
   if (selectedMonth.value !== 'all') query.month = selectedMonth.value
   if (stage) query.stage = stage
   navigateTo({ path: '/customers', query })
+}
+
+function destroyCharts() {
+  if (distributionChartInstance.value) {
+    distributionChartInstance.value.destroy()
+    distributionChartInstance.value = null
+  }
+  if (transitionChartInstance.value) {
+    transitionChartInstance.value.destroy()
+    transitionChartInstance.value = null
+  }
+  if (behaviorChartInstance.value) {
+    behaviorChartInstance.value.destroy()
+    behaviorChartInstance.value = null
+  }
+}
+
+function renderDistributionChart() {
+  if (!distributionChartCanvas.value) return
+  if (distributionChartInstance.value) {
+    distributionChartInstance.value.destroy()
+    distributionChartInstance.value = null
+  }
+
+  const labels = distributionRows.value.map((row) => row.label)
+  const values = distributionRows.value.map((row) => row.count)
+  const hasData = values.some((value) => value > 0)
+
+  distributionChartInstance.value = new Chart(distributionChartCanvas.value, {
+    type: 'doughnut',
+    data: {
+      labels: hasData ? labels : ['데이터 없음'],
+      datasets: [{
+        data: hasData ? values : [1],
+        backgroundColor: hasData
+          ? distributionRows.value.map((row) => stageColor(row.stage))
+          : ['#E5E7EB'],
+        hoverBackgroundColor: hasData
+          ? distributionRows.value.map((row) => stageColor(row.stage))
+          : ['#E5E7EB'],
+        borderWidth: 0,
+        spacing: 3,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '66%',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#111827',
+          padding: 12,
+          displayColors: false,
+          callbacks: {
+            label: (ctx) => {
+              const value = Number(ctx.parsed || 0)
+              const total = values.reduce((sum, item) => sum + item, 0) || 1
+              const ratio = Math.round((value / total) * 100)
+              return `${value.toLocaleString()}명 (${ratio}%)`
+            },
+          },
+        },
+      },
+    },
+  })
+}
+
+function renderTransitionChart() {
+  if (!transitionChartCanvas.value) return
+  if (transitionChartInstance.value) {
+    transitionChartInstance.value.destroy()
+    transitionChartInstance.value = null
+  }
+
+  transitionChartInstance.value = new Chart(transitionChartCanvas.value, {
+    type: 'bar',
+    data: {
+      labels: transitionRows.value.map((item) => item.label),
+      datasets: [{
+        label: '전환 고객',
+        data: transitionRows.value.map((item) => item.count),
+        backgroundColor: transitionRows.value.map((item) => stageSoftColor(item.toStage)),
+        borderColor: transitionRows.value.map((item) => stageColor(item.toStage)),
+        borderWidth: 1.5,
+        borderRadius: 10,
+        maxBarThickness: 48,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#111827',
+          padding: 12,
+          displayColors: false,
+          callbacks: {
+            label: (ctx) => `${Number(ctx.parsed.y || 0).toLocaleString()}명`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            color: '#6B7280',
+            font: { size: 12, weight: '600' as const },
+          },
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: '#EEF2F7' },
+          ticks: {
+            color: '#9CA3AF',
+            font: { size: 11 },
+            callback: (value) => Number(value).toLocaleString(),
+          },
+        },
+      },
+    },
+  })
+}
+
+function renderBehaviorChart() {
+  if (!behaviorChartCanvas.value) return
+  if (behaviorChartInstance.value) {
+    behaviorChartInstance.value.destroy()
+    behaviorChartInstance.value = null
+  }
+
+  behaviorChartInstance.value = new Chart(behaviorChartCanvas.value, {
+    type: 'bar',
+    data: {
+      labels: behaviorRows.value.map((row) => row.label),
+      datasets: [
+        {
+          label: '재구매율',
+          data: behaviorRows.value.map((row) => row.repeatRate),
+          backgroundColor: '#2563EB',
+          borderRadius: 10,
+          maxBarThickness: 30,
+        },
+        {
+          label: '이탈위험 비중',
+          data: behaviorRows.value.map((row) => row.churnRate),
+          backgroundColor: '#F59E0B',
+          borderRadius: 10,
+          maxBarThickness: 30,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            boxWidth: 12,
+            boxHeight: 12,
+            color: '#4B5563',
+            padding: 16,
+            font: { size: 12, weight: '600' as const },
+          },
+        },
+        tooltip: {
+          backgroundColor: '#111827',
+          padding: 12,
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label} ${Number(ctx.parsed.y || 0)}%`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            color: '#6B7280',
+            font: { size: 12, weight: '600' as const },
+          },
+        },
+        y: {
+          beginAtZero: true,
+          suggestedMax: 100,
+          grid: { color: '#EEF2F7' },
+          ticks: {
+            color: '#9CA3AF',
+            font: { size: 11 },
+            callback: (value) => `${value}%`,
+          },
+        },
+      },
+    },
+  })
 }
 
 async function loadInsights() {
@@ -379,6 +605,22 @@ watch(
   },
   { immediate: true },
 )
+
+watch(
+  () => [loading.value, insights.value.summaries, insights.value.transitions],
+  async () => {
+    if (loading.value) return
+    await nextTick()
+    renderDistributionChart()
+    renderTransitionChart()
+    renderBehaviorChart()
+  },
+  { deep: true },
+)
+
+onBeforeUnmount(() => {
+  destroyCharts()
+})
 </script>
 
 <style scoped>
@@ -395,6 +637,10 @@ watch(
   gap: var(--space-lg);
 }
 
+.growth-hero-copy {
+  min-width: 0;
+}
+
 .growth-hero-head {
   display: flex;
   flex-wrap: wrap;
@@ -403,16 +649,16 @@ watch(
 }
 
 .growth-title {
-  font-size: 1.85rem;
-  line-height: 1.2;
-  font-weight: 700;
+  font-size: 2rem;
+  line-height: 1.16;
+  font-weight: 800;
   color: var(--color-text);
 }
 
 .growth-desc {
   margin-top: var(--space-sm);
   max-width: 760px;
-  font-size: 1rem;
+  font-size: 1.02rem;
   line-height: 1.7;
   color: var(--color-text-secondary);
 }
@@ -422,7 +668,7 @@ watch(
 }
 
 .growth-loading {
-  padding: 32px;
+  padding: 36px;
   text-align: center;
   color: var(--color-text-secondary);
 }
@@ -433,208 +679,248 @@ watch(
   gap: var(--space-lg);
 }
 
-.growth-overview-grid,
-.growth-main-grid,
-.growth-detail-grid,
-.growth-product-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-lg);
-}
-
-.stage-summary-card {
+.growth-summary-card {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
 }
 
-.stage-summary-top,
-.distribution-head,
-.funnel-head,
+.growth-summary-top,
+.transition-summary-top,
+.transition-summary-foot,
 .action-block-head,
-.behavior-top {
+.behavior-highlight-top,
+.stage-product-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-md);
+  gap: var(--space-sm);
 }
 
-.stage-summary-ratio,
-.distribution-percent,
-.funnel-count,
-.action-block-count,
-.behavior-count {
-  font-size: 0.95rem;
-  color: var(--color-text-secondary);
-  font-weight: 600;
-}
-
-.stage-summary-count {
-  font-size: 2rem;
-  line-height: 1.05;
+.growth-summary-ratio {
+  font-size: 0.96rem;
   font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.growth-summary-count {
+  font-size: 2rem;
+  line-height: 1;
+  font-weight: 800;
   color: var(--color-text);
 }
 
-.stage-summary-meter,
-.distribution-track,
-.funnel-track,
-.behavior-track {
-  height: 10px;
+.growth-summary-meter,
+.transition-summary-track {
   width: 100%;
+  height: 10px;
   background: #eef2f7;
   border-radius: 999px;
   overflow: hidden;
 }
 
-.stage-summary-meter-fill,
-.distribution-fill,
-.funnel-fill,
-.behavior-fill {
+.growth-summary-meter-fill,
+.transition-summary-fill {
   height: 100%;
   border-radius: 999px;
 }
 
-.stage-fill-entry,
-.distribution-fill-entry {
+.fill-entry {
   background: linear-gradient(90deg, #cbd5e1 0%, #94a3b8 100%);
 }
 
-.stage-fill-growth,
-.distribution-fill-growth,
-.funnel-fill {
+.fill-growth,
+.transition-summary-fill {
   background: linear-gradient(90deg, #60a5fa 0%, #2563eb 100%);
 }
 
-.stage-fill-core,
-.distribution-fill-core {
-  background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%);
+.fill-core {
+  background: linear-gradient(90deg, #4ade80 0%, #16a34a 100%);
 }
 
-.stage-fill-premium,
-.distribution-fill-premium {
-  background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
+.fill-premium {
+  background: linear-gradient(90deg, #fbbf24 0%, #d97706 100%);
 }
 
-.stage-summary-meta {
+.growth-summary-meta {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 4px;
-  font-size: 0.92rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+  font-size: 0.86rem;
   color: var(--color-text-secondary);
 }
 
-.stage-summary-action,
-.transition-action,
-.action-link {
+.growth-summary-action {
   align-self: flex-start;
 }
 
-.growth-card-header.compact {
-  margin-bottom: var(--space-lg);
+.growth-chart-grid,
+.growth-support-grid,
+.growth-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-lg);
 }
 
-.distribution-list,
-.funnel-list,
-.behavior-list,
-.transition-list,
-.candidate-list,
-.product-rank-list,
-.action-board {
+.growth-chart-grid-wide {
+  grid-template-columns: 1fr;
+}
+
+.growth-chart-card {
+  min-height: 430px;
+}
+
+.growth-chart-card-wide {
+  min-height: 480px;
+}
+
+.growth-card-header {
+  align-items: flex-start;
+}
+
+.growth-chart-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.growth-chart-content-split {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: var(--space-xl);
+  align-items: center;
+}
+
+.growth-chart-shell {
+  position: relative;
+  min-height: 260px;
+}
+
+.doughnut-shell {
+  min-height: 280px;
+}
+
+.behavior-shell {
+  min-height: 320px;
+}
+
+.distribution-legend {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
 }
 
-.distribution-item,
-.funnel-item,
-.behavior-item,
-.transition-list-item,
-.candidate-item,
-.product-rank-item,
-.action-block,
-.signal-card {
-  padding: 14px 16px;
-  border: 1px solid var(--color-border-light);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.82);
-}
-
-.distribution-label-wrap {
+.distribution-legend-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-md);
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: #fff;
+  transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.distribution-sub,
-.funnel-foot,
-.behavior-foot,
-.transition-list-id,
-.transition-list-date,
-.candidate-id,
-.candidate-meta,
-.product-rank-option,
-.product-rank-meta,
-.action-block-desc,
-.signal-desc {
-  font-size: 0.92rem;
+.distribution-legend-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(37, 99, 235, 0.24);
+  box-shadow: var(--shadow-sm);
+}
+
+.distribution-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.distribution-legend-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.distribution-legend-text strong {
+  font-size: 0.98rem;
+  color: var(--color-text);
+}
+
+.distribution-legend-text span {
+  font-size: 0.88rem;
   color: var(--color-text-secondary);
+}
+
+.transition-summary-grid,
+.behavior-highlight-grid,
+.signal-grid,
+.action-board,
+.stage-product-stack {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.transition-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.transition-summary-item,
+.behavior-highlight-item,
+.signal-card,
+.action-block,
+.stage-product-block {
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.transition-summary-label,
+.signal-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.transition-summary-count,
+.signal-value {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.transition-summary-foot,
+.signal-desc,
+.behavior-highlight-metrics,
+.action-block-desc {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.behavior-highlight-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.behavior-highlight-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: var(--space-sm);
 }
 
 .signal-grid {
-  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.transition-list,
+.candidate-list,
+.product-rank-list {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-sm);
-}
-
-.signal-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.signal-label {
-  font-size: 0.92rem;
-  color: var(--color-text-secondary);
-  font-weight: 600;
-}
-
-.signal-value {
-  font-size: 1.25rem;
-  color: var(--color-text);
-  line-height: 1.25;
-}
-
-.funnel-foot,
-.behavior-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-md);
-  margin-top: 8px;
-}
-
-.behavior-metric {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.behavior-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-md);
-  font-size: 0.94rem;
-  color: var(--color-text-secondary);
-}
-
-.behavior-fill-repeat {
-  background: linear-gradient(90deg, #60a5fa 0%, #2563eb 100%);
-}
-
-.behavior-fill-churn {
-  background: linear-gradient(90deg, #fca5a5 0%, #ef4444 100%);
 }
 
 .transition-list-item,
@@ -644,23 +930,36 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .transition-list-main,
 .candidate-main,
 .product-rank-info {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  gap: 4px;
 }
 
 .transition-list-name,
 .candidate-name,
 .product-rank-name {
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 0.95rem;
+  font-weight: 700;
   color: var(--color-text);
+}
+
+.transition-list-id,
+.transition-list-date,
+.candidate-id,
+.candidate-meta,
+.product-rank-option {
+  font-size: 0.84rem;
+  color: var(--color-text-secondary);
 }
 
 .transition-list-meta {
@@ -668,94 +967,104 @@ watch(
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 .transition-arrow {
   color: var(--color-text-muted);
 }
 
-.product-rank-index {
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.9rem;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.product-rank-count {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--color-text);
-  flex-shrink: 0;
-}
-
 .candidate-list.compact,
-.candidate-item.compact {
-  gap: 8px;
+.product-rank-list.compact {
+  gap: var(--space-xs);
 }
 
-.candidate-item.compact {
-  padding: 10px 12px;
+.candidate-item.compact,
+.product-rank-item.compact {
+  padding: 12px 14px;
 }
 
 .candidate-meta.compact {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 2px;
+  text-align: right;
 }
 
-.action-board {
-  gap: var(--space-md);
+.product-rank-index {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--liquid-bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
 }
 
+.product-rank-count {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.action-block-count {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.action-link {
+  margin-top: var(--space-sm);
+}
+
+.empty-inline,
 .action-empty {
-  padding: 8px 0 0;
-}
-
-.empty-inline {
-  padding: 18px 0;
-  font-size: 0.96rem;
+  font-size: 0.88rem;
   color: var(--color-text-secondary);
 }
 
 @media (max-width: 1280px) {
-  .growth-summary-grid {
+  .growth-summary-grid,
+  .growth-chart-grid,
+  .growth-support-grid,
+  .growth-detail-grid,
+  .behavior-highlight-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .growth-overview-grid,
-  .growth-main-grid,
-  .growth-detail-grid,
-  .growth-product-grid,
-  .signal-grid {
+  .transition-summary-grid {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 960px) {
   .growth-hero,
-  .transition-list-item,
-  .candidate-item,
-  .product-rank-item,
-  .funnel-foot,
-  .behavior-foot {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .growth-summary-grid {
+  .growth-chart-content-split,
+  .growth-summary-grid,
+  .growth-chart-grid,
+  .growth-support-grid,
+  .growth-detail-grid,
+  .signal-grid,
+  .behavior-highlight-grid {
     grid-template-columns: 1fr;
   }
 
-  .transition-list-meta {
-    justify-content: flex-start;
+  .growth-chart-content-split {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .growth-chart-shell,
+  .doughnut-shell,
+  .behavior-shell {
+    min-height: 240px;
+  }
+
+  .growth-summary-meta {
+    grid-template-columns: 1fr;
   }
 }
 </style>

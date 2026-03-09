@@ -98,6 +98,7 @@
 - 신규 가입 기본값은 `modifier + active`
 - 관리자 승인 절차 없이 즉시 로그인 가능
 - DB 기본값도 `docs/sql/2026-03-09_profiles_auto_approve_modifier_patch.sql` 기준으로 맞추는 것을 전제
+- `POST /api/auth/register`는 service-role 키가 있을 때만 동작한다. 우선순위는 `SUPABASE_SERVICE_KEY` -> `SUPABASE_SERVICE_ROLE_KEY` -> service-role 성격의 `SUPABASE_KEY`다. 이 경로는 `auth.admin.createUser()`로 계정을 만들고 `app_metadata/user_metadata`, `profiles.role/status`를 `modifier + active`로 다시 검증/보정한다. public `auth.signUp()` fallback은 사용하지 않는다.
 
 ### 핵심 페이지
 
@@ -131,6 +132,11 @@
 - `app/composables/useAnalysisPeriod.ts`: 월 선택기
 - `app/composables/useMonthlyWorkflow.ts`: 월별 업로드/필터 상태 복원
 
+주의:
+- 탭 복귀 후 네비게이션이 멈추는 문제를 막기 위해 `app/middleware/auth.global.ts`는 라우팅마다 `profiles`를 직접 조회하지 않는다.
+- 포커스 복귀/페이지 복원 시 세션 재확인은 `app/composables/useCurrentUser.ts`가 `focus`, `pageshow`, `visibilitychange`에서 비동기로 처리한다.
+- 이 부분을 수정할 때 미들웨어에서 프로필 쿼리를 다시 `await`하는 구조로 되돌리면 같은 증상이 재발할 가능성이 높다.
+
 ### 매출 분석
 
 - 업로드:
@@ -151,6 +157,7 @@
 - 고객 성장 단계:
   - `app/pages/growth-stages.vue`
   - `app/composables/useGrowthInsights.ts`
+  - 시각화는 `chart.js` 직접 렌더링 방식이며, 상단 분포/전환/행동 3개 차트가 핵심
 - 상품 관리:
   - `app/pages/products.vue`
 

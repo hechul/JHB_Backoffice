@@ -1,23 +1,7 @@
-export default defineNuxtRouteMiddleware(async (to) => {
-  const user = useSupabaseUser()
-  const supabase = useSupabaseClient()
+export default defineNuxtRouteMiddleware((to) => {
+  const supabaseUser = useSupabaseUser()
+  const { user, profileLoaded, fetchProfile } = useCurrentUser()
 
-  async function resolveSessionUser() {
-    if (user.value?.id) return user.value
-    try {
-      const { data, error } = await supabase.auth.getSession()
-      if (error) {
-        console.error('auth middleware getSession error:', error)
-        return null
-      }
-      return data.session?.user?.id ? data.session.user : null
-    } catch (error) {
-      console.error('auth middleware getSession exception:', error)
-      return null
-    }
-  }
-
-  const sessionUser = await resolveSessionUser()
   const pendingPath = '/pending-approval'
 
   function normalizeStatus(value: unknown) {
@@ -35,63 +19,57 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return 'viewer'
   }
 
-  async function resolveProfileStatus(userId: string) {
-    if (!userId || userId === 'undefined' || userId === 'null') {
-      return 'active'
-    }
+  function hasClientSessionHint() {
+    if (!import.meta.client) return false
+
     try {
-      const primary = await supabase
-        .from('profiles')
-        .select('status, role')
-        .eq('id', userId)
-        .maybeSingle()
+      const url = useRuntimeConfig().public?.supabase?.url || ''
+      const projectRef = String(url).replace(/^https?:\/\//, '').split('.')[0]
+      if (!projectRef) return false
 
-      if (!primary.error) {
-        if (!primary.data) return 'active'
-        const status = normalizeStatus((primary.data as any)?.status)
-        const role = normalizeRole((primary.data as any)?.role)
-        if (role === 'admin' && status === 'pending') return 'active'
-        return status
-      }
-
-      const code = String((primary.error as any)?.code || '').toUpperCase()
-      const message = String((primary.error as any)?.message || '').toLowerCase()
-      const statusMissing = code === '42703' || message.includes('status')
-      if (statusMissing) return 'active'
-
-      console.error('auth middleware profile status query error:', primary.error)
-      return 'active'
-    } catch (error) {
-      console.error('auth middleware profile status exception:', error)
-      return 'active'
+      const storageKey = `sb-${projectRef}-auth-token`
+      const raw = localStorage.getItem(storageKey)
+      return Boolean(raw && raw !== 'null' && raw !== 'undefined')
+    } catch {
+      return false
     }
   }
 
-  // 로그인 페이지는 누구나 접근 가능
+  const sessionUserId = String(supabaseUser.value?.id || user.value.id || '').trim()
+  const status = normalizeStatus(user.value.status)
+  const role = normalizeRole(user.value.role)
+  const isActive = status === 'active' || (role === 'admin' && status === 'pending')
+  const hasSession = Boolean(sessionUserId)
+  const hasSessionHint = hasSession || hasClientSessionHint()
+
+  // Supabase 세션 동기화는 백그라운드에서만 수행한다.
+  // 여기서 getSession()을 await 하면 탭 복귀/다중 탭에서 하이드레이션이 멈출 수 있다.
+  if (hasSession && !profileLoaded.value) {
+    void fetchProfile(sessionUserId)
+  }
+
   if (to.path === '/login') {
-    // 이미 로그인된 상태면 홈으로
-    if (sessionUser) {
-      const profileStatus = await resolveProfileStatus(sessionUser.id)
-      if (profileStatus !== 'active') return navigateTo(pendingPath)
-      return navigateTo('/')
-    }
-    return
+    if (!hasSession) return
+    if (profileLoaded.value && !isActive) return navigateTo(pendingPath)
+    return navigateTo('/')
   }
 
-  // 비로그인 → 로그인 페이지로 리디렉트
-  if (!sessionUser) {
+  if (!hasSessionHint) {
     return navigateTo('/login')
   }
 
-  const profileStatus = await resolveProfileStatus(sessionUser.id)
-  const isActive = profileStatus === 'active'
-
-  if (to.path === pendingPath) {
-    if (isActive) return navigateTo('/')
+  // 저장된 세션 힌트는 있지만 실제 user 동기화가 아직 안 된 상태면
+  // 일단 렌더를 허용하고 composable이 백그라운드에서 세션을 복구하게 둔다.
+  if (!hasSession) {
     return
   }
 
-  if (!isActive) {
+  if (to.path === pendingPath) {
+    if (profileLoaded.value && isActive) return navigateTo('/')
+    return
+  }
+
+  if (profileLoaded.value && !isActive) {
     return navigateTo(pendingPath)
   }
 })

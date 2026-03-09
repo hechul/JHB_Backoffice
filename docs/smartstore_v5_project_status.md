@@ -28,7 +28,10 @@
 - **매출분석 IA 재정리**: 기본 사이드바를 `매출분석(대시보드/고객 성장 단계)`, `고객 관리(고객 분석/데이터 업로드/필터링/실행 이력)`, `상품 관리(상품 목록)` 구조로 재편. 월 선택기는 `/growth-stages`까지 동일하게 적용
 - **고객 성장 단계 전용 화면 추가**: `/growth-stages` 신설. 선택 기간 기준으로 단계 분포, `입문→성장 / 성장→핵심 / 핵심→프리미엄` 전환 수, 최근 승급 고객, 단계별 인기 상품, 승급 후보를 별도 화면에서 확인 가능하도록 구현
 - **회원가입 자동 승인 전환**: `/login` 회원가입을 관리자 승인 대기 흐름에서 분리하고, 서버 API(`/api/auth/register`)를 통해 신규 계정을 즉시 `modifier + active`로 생성하도록 전환. 가입 직후 바로 로그인 가능
+- **회원가입 오류 가시성/자동 승인 보강**: `/login`의 회원가입 실패 문구가 실제 서버 에러를 그대로 보여주도록 수정. `/api/auth/register`는 `SUPABASE_SERVICE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` / service-role 성격의 `SUPABASE_KEY`가 있을 때만 관리자 생성 경로를 사용하고, 가입 후 `auth.users` 메타데이터와 `profiles.role/status`를 `modifier + active`로 재검증/재보정. public `signUp()` fallback은 제거
 - **자동 승인용 SQL 패치 추가**: `docs/sql/2026-03-09_profiles_auto_approve_modifier_patch.sql` 추가 (`profiles.status` 기본값 `active`, `handle_new_user()` 기본 역할 `modifier`로 변경)
+- **탭 복귀 후 네비게이션 먹통 완화(2026-03-09)**: `app/middleware/auth.global.ts`를 비차단형으로 재작성. 라우팅마다 `profiles`를 직접 조회하지 않고, 캐시된 `useCurrentUser()` 상태를 우선 사용하며 프로필 재동기화는 비동기로 분리. `app/composables/useCurrentUser.ts`에는 `focus / pageshow / visibilitychange` 복귀 시 세션/프로필 재동기화를 추가
+- **고객 성장 단계 차트형 재구성(2026-03-09)**: `/growth-stages`를 텍스트 위주 화면에서 차트 중심 화면으로 개편. 성장 단계 분포 도넛, 단계 전환 막대, 단계별 행동 비교 막대 차트를 상단에 배치하고, 승급 후보/최근 승급 고객/단계별 인기 상품은 하단 보조 영역으로 재배치
 - **전역 가독성 상향**: 공통 타이포/버튼/입력/테이블/KPI 크기를 한 단계 상향하고, 사이드바/홈 텍스트도 함께 조정해 운영 화면 읽기성을 개선
 
 ### 2.1 화면/라우팅 골격 확정

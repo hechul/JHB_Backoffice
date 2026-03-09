@@ -26,6 +26,8 @@ export function useCurrentUser() {
   const profileFetching = useState<boolean>('profile_fetching', () => false)
   const authListenerBound = useState<boolean>('current_user_auth_listener_bound', () => false)
   const watcherBound = useState<boolean>('current_user_watcher_bound', () => false)
+  const resumeListenerBound = useState<boolean>('current_user_resume_listener_bound', () => false)
+  const resumeRefreshing = useState<boolean>('current_user_resume_refreshing', () => false)
 
   const isViewer = computed(() => profileLoaded.value && profile.value.role === 'viewer')
   const isAdmin = computed(() => profileLoaded.value && profile.value.role === 'admin')
@@ -145,6 +147,32 @@ export function useCurrentUser() {
     }
   }
 
+  async function refreshProfileFromSession() {
+    if (resumeRefreshing.value) return
+    resumeRefreshing.value = true
+
+    try {
+      const { data, error } = await supabase.auth.getSession()
+      if (error) {
+        console.error('Failed to refresh session on resume:', error)
+        return
+      }
+
+      const uid = data.session?.user?.id
+      if (uid) {
+        await fetchProfile(uid)
+        return
+      }
+
+      clearProfileCache()
+      resetProfile()
+    } catch (error) {
+      console.error('Failed to refresh profile on resume:', error)
+    } finally {
+      resumeRefreshing.value = false
+    }
+  }
+
   function splitEmail(email: string) {
     return String(email || '').split('@')[0] || ''
   }
@@ -197,6 +225,23 @@ export function useCurrentUser() {
         }
       })
     }
+
+    if (!resumeListenerBound.value) {
+      resumeListenerBound.value = true
+
+      const handleWindowResume = () => {
+        void refreshProfileFromSession()
+      }
+
+      const handleVisibilityChange = () => {
+        if (document.visibilityState !== 'visible') return
+        void refreshProfileFromSession()
+      }
+
+      window.addEventListener('focus', handleWindowResume)
+      window.addEventListener('pageshow', handleWindowResume)
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
     // 제거됨: bootstrapAuthProfile 호출
   }
 
@@ -209,6 +254,7 @@ export function useCurrentUser() {
     profileLoaded,
     profileRevision,
     fetchProfile,
+    refreshProfileFromSession,
     logout,
   }
 }

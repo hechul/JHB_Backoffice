@@ -186,8 +186,8 @@ async function handleLogin() {
       navigateTo('/')
     }
   } catch (error: any) {
-    const message = String(error?.data?.message || error?.message || '')
-    errorMsg.value = message ? `회원가입 실패: ${message}` : '회원가입 중 오류가 발생했습니다.'
+    const message = String(error?.data?.message || error?.statusMessage || error?.message || '')
+    errorMsg.value = message ? `로그인 실패: ${message}` : '로그인 중 오류가 발생했습니다.'
   } finally {
     isLoading.value = false
   }
@@ -237,8 +237,9 @@ async function handleSignup() {
     await fetchProfile(signInData.user.id)
     infoMsg.value = '회원가입이 완료되었습니다.'
     await navigateTo('/')
-  } catch {
-    errorMsg.value = '네트워크 오류가 발생했습니다.'
+  } catch (error: any) {
+    const message = String(error?.data?.message || error?.statusMessage || error?.message || '')
+    errorMsg.value = message ? `회원가입 실패: ${message}` : '회원가입 중 오류가 발생했습니다.'
   } finally {
     isLoading.value = false
   }
