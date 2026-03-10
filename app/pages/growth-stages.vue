@@ -1,14 +1,9 @@
 <template>
   <div class="growth-page">
-    <div class="card growth-hero">
+    <div class="growth-hero">
       <div class="growth-hero-copy">
-        <div class="growth-hero-head">
-          <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
-          <StatusBadge :label="`${insights.totalCustomers.toLocaleString()}명 고객`" variant="info" />
-          <StatusBadge :label="`${insights.realPurchases.toLocaleString()}건 실구매`" variant="success" />
-        </div>
+        <span class="growth-period">{{ selectedPeriodLabel }}</span>
         <h1 class="growth-title">고객 성장 단계</h1>
-        <p class="growth-desc">고객이 지금 어디에 몰려 있는지, 어느 단계가 실제로 올라가고 있는지, 어디에서 정체되는지를 차트 중심으로 바로 봅니다.</p>
       </div>
       <NuxtLink to="/dashboard" class="btn btn-secondary btn-sm growth-back-link">
         <BarChart3 :size="14" :stroke-width="2" />
@@ -48,10 +43,7 @@
       <div class="growth-chart-grid">
         <div class="card growth-chart-card">
           <div class="card-header growth-card-header">
-            <div>
-              <h3 class="card-title">성장 단계 분포</h3>
-              <p class="card-caption">현재 고객이 어느 단계에 가장 많이 쌓여 있는지 한 번에 봅니다.</p>
-            </div>
+            <h3 class="card-title">성장 단계 분포</h3>
           </div>
           <div class="growth-chart-content growth-chart-content-split">
             <div class="growth-chart-shell doughnut-shell">
@@ -78,10 +70,7 @@
 
         <div class="card growth-chart-card">
           <div class="card-header growth-card-header">
-            <div>
-              <h3 class="card-title">단계 전환</h3>
-              <p class="card-caption">실제로 입문에서 성장으로, 성장에서 핵심으로 얼마나 넘어가는지 봅니다.</p>
-            </div>
+            <h3 class="card-title">단계 전환</h3>
           </div>
           <div class="growth-chart-content">
             <div class="growth-chart-shell">
@@ -111,10 +100,7 @@
       <div class="growth-chart-grid growth-chart-grid-wide">
         <div class="card growth-chart-card growth-chart-card-wide">
           <div class="card-header growth-card-header">
-            <div>
-              <h3 class="card-title">단계별 행동 비교</h3>
-              <p class="card-caption">각 단계 고객의 재구매율과 이탈위험 비중을 같은 축에서 비교합니다.</p>
-            </div>
+            <h3 class="card-title">단계별 행동 비교</h3>
           </div>
           <div class="growth-chart-content">
             <div class="growth-chart-shell behavior-shell">
@@ -137,65 +123,18 @@
         </div>
       </div>
 
-      <div class="growth-support-grid">
+      <div class="growth-bottom-grid">
         <div class="card">
           <div class="card-header growth-card-header compact">
-            <div>
-              <h3 class="card-title">지금 봐야 할 신호</h3>
-              <p class="card-caption">대표님이 바로 판단할 수 있는 요약 신호입니다.</p>
-            </div>
+            <h3 class="card-title">승급 후보</h3>
           </div>
-          <div class="signal-grid">
-            <div v-for="signal in signalCards" :key="signal.label" class="signal-card">
-              <span class="signal-label">{{ signal.label }}</span>
-              <strong class="signal-value">{{ signal.value }}</strong>
-              <span class="signal-desc">{{ signal.description }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header growth-card-header compact">
-            <div>
-              <h3 class="card-title">최근 승급 고객</h3>
-              <p class="card-caption">최근 실제로 단계가 올라간 고객입니다.</p>
-            </div>
-          </div>
-          <div v-if="insights.recentTransitions.length === 0" class="empty-inline">최근 승급 고객이 없습니다.</div>
-          <div v-else class="transition-list">
-            <div v-for="item in insights.recentTransitions" :key="`${item.customerKey}-${item.date}-${item.toStage}`" class="transition-list-item">
-              <div class="transition-list-main">
-                <span class="transition-list-name">{{ item.name }}</span>
-                <span class="transition-list-id">{{ maskBuyerId(item.id) }}</span>
-                <span class="transition-list-date">{{ item.date }}</span>
-              </div>
-              <div class="transition-list-meta">
-                <StatusBadge :label="stageLabel(item.fromStage)" :variant="badgeVariant(item.fromStage)" />
-                <ChevronRight :size="12" :stroke-width="2" class="transition-arrow" />
-                <StatusBadge :label="stageLabel(item.toStage)" :variant="badgeVariant(item.toStage)" />
-                <span class="transition-list-pet">{{ petLabel(item.petType) }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="growth-detail-grid">
-        <div class="card">
-          <div class="card-header growth-card-header compact">
-            <div>
-              <h3 class="card-title">다음 액션</h3>
-              <p class="card-caption">지금 바로 밀어야 할 고객군입니다.</p>
-            </div>
-          </div>
-          <div class="action-board">
-            <div v-for="group in insights.candidates" :key="group.stage" class="action-block">
-              <div class="action-block-head">
+          <div class="candidate-stage-grid">
+            <div v-for="group in insights.candidates" :key="group.stage" class="candidate-stage-card">
+              <div class="candidate-stage-head">
                 <StatusBadge :label="group.label" :variant="badgeVariant(group.stage)" />
-                <span class="action-block-count">{{ group.customers.length }}명</span>
+                <strong class="candidate-stage-count">{{ group.customers.length }}명</strong>
               </div>
-              <p class="action-block-desc">{{ group.description }}</p>
-              <div v-if="group.customers.length === 0" class="empty-inline action-empty">대상 고객이 없습니다.</div>
+              <div v-if="group.customers.length === 0" class="empty-inline">대상 고객이 없습니다.</div>
               <div v-else class="candidate-list compact">
                 <div v-for="customer in group.customers.slice(0, 4)" :key="`${group.stage}-${customer.customerKey}`" class="candidate-item compact">
                   <div class="candidate-main">
@@ -217,28 +156,75 @@
 
         <div class="card">
           <div class="card-header growth-card-header compact">
-            <div>
-              <h3 class="card-title">단계별 인기 상품</h3>
-              <p class="card-caption">각 단계 고객이 실제로 많이 산 상품입니다.</p>
+            <h3 class="card-title">최근 승급 고객</h3>
+          </div>
+          <div v-if="insights.recentTransitions.length === 0" class="empty-inline">최근 승급 고객이 없습니다.</div>
+          <div v-else class="transition-list">
+            <div v-for="item in insights.recentTransitions" :key="`${item.customerKey}-${item.date}-${item.toStage}`" class="transition-list-item">
+              <div class="transition-list-main">
+                <span class="transition-list-name">{{ item.name }}</span>
+                <span class="transition-list-id">{{ maskBuyerId(item.id) }}</span>
+                <span class="transition-list-date">{{ item.date }}</span>
+              </div>
+              <div class="transition-list-meta">
+                <StatusBadge :label="stageLabel(item.fromStage)" :variant="badgeVariant(item.fromStage)" />
+                <ChevronRight :size="12" :stroke-width="2" class="transition-arrow" />
+                <StatusBadge :label="stageLabel(item.toStage)" :variant="badgeVariant(item.toStage)" />
+                <span class="transition-list-pet">{{ petLabel(item.petType) }}</span>
+              </div>
             </div>
           </div>
-          <div class="stage-product-stack">
-            <div v-for="group in insights.stageProducts" :key="group.stage" class="stage-product-block">
-              <div class="stage-product-head">
-                <StatusBadge :label="group.label" :variant="badgeVariant(group.stage)" />
-                <button class="btn btn-ghost btn-sm" @click="navigateToCustomers(group.stage)">고객 보기</button>
-              </div>
-              <div v-if="group.products.length === 0" class="empty-inline">표시할 상품이 없습니다.</div>
-              <div v-else class="product-rank-list compact">
-                <div v-for="(item, index) in group.products.slice(0, 3)" :key="`${group.stage}-${item.name}-${item.optionInfo}-${index}`" class="product-rank-item compact">
-                  <span class="product-rank-index">{{ index + 1 }}</span>
-                  <div class="product-rank-info">
-                    <span class="product-rank-name">{{ item.name }}</span>
-                    <span class="product-rank-option">옵션 {{ item.optionInfo }}</span>
-                  </div>
-                  <span class="product-rank-count">{{ formatGrowthCount(item.count) }}개</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header growth-card-header compact">
+          <h3 class="card-title">단계별 인기 상품</h3>
+        </div>
+        <div class="stage-product-grid">
+          <div v-for="group in insights.stageProducts" :key="group.stage" class="stage-product-block">
+            <div class="stage-product-head">
+              <StatusBadge :label="group.label" :variant="badgeVariant(group.stage)" />
+              <button class="btn btn-ghost btn-sm" @click="navigateToCustomers(group.stage)">고객 보기</button>
+            </div>
+            <div v-if="group.products.length === 0" class="empty-inline">표시할 상품이 없습니다.</div>
+            <div v-else class="product-rank-list compact">
+              <div v-for="(item, index) in group.products.slice(0, 3)" :key="`${group.stage}-${item.name}-${item.optionInfo}-${index}`" class="product-rank-item compact">
+                <span class="product-rank-index">{{ index + 1 }}</span>
+                <div class="product-rank-info">
+                  <span class="product-rank-name">{{ item.name }}</span>
+                  <span class="product-rank-option">옵션 {{ item.optionInfo }}</span>
                 </div>
+                <span class="product-rank-count">{{ formatGrowthCount(item.count) }}개</span>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="growth-detail-grid">
+        <div class="card">
+          <div class="card-header growth-card-header compact">
+            <h3 class="card-title">요약</h3>
+          </div>
+          <div class="summary-note-grid">
+            <div v-for="summary in insights.summaries" :key="`summary-note-${summary.stage}`" class="summary-note-card">
+              <StatusBadge :label="summary.label" :variant="badgeVariant(summary.stage)" />
+              <strong>{{ summary.count.toLocaleString() }}명</strong>
+              <span>{{ summary.ratio }}%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header growth-card-header compact">
+            <h3 class="card-title">전환 요약</h3>
+          </div>
+          <div class="summary-note-grid">
+            <div v-for="item in transitionRows" :key="item.key" class="summary-note-card">
+              <strong>{{ item.label }}</strong>
+              <span>{{ item.count.toLocaleString() }}명</span>
+              <span>{{ item.rate }}%</span>
             </div>
           </div>
         </div>
@@ -347,36 +333,6 @@ const behaviorRows = computed(() => {
       churnRate,
     }
   })
-})
-
-const signalCards = computed(() => {
-  const highestStage = [...insights.value.summaries].sort((a, b) => b.count - a.count)[0]
-  const latestTransition = [...transitionRows.value].sort((a, b) => b.count - a.count)[0]
-  const stuckEntry = insights.value.customers.filter((customer) => customer.stage === 'Entry' && customer.purchaseCount >= 2).length
-  const stuckGrowth = insights.value.customers.filter((customer) => customer.stage === 'Growth' && customer.purchaseCount >= 2).length
-
-  return [
-    {
-      label: '고객이 가장 몰린 단계',
-      value: highestStage ? `${highestStage.label} ${highestStage.ratio}%` : '-',
-      description: highestStage ? `${highestStage.count.toLocaleString()}명이 현재 이 단계에 있습니다.` : '데이터가 없습니다.',
-    },
-    {
-      label: '가장 활발한 전환',
-      value: latestTransition ? latestTransition.label : '-',
-      description: latestTransition ? `${latestTransition.count.toLocaleString()}명이 이 구간에서 올라갔습니다.` : '전환 데이터가 없습니다.',
-    },
-    {
-      label: '입문 정체 고객',
-      value: `${stuckEntry.toLocaleString()}명`,
-      description: '반복 구매 중이지만 아직 성장 단계로 올라가지 못한 고객입니다.',
-    },
-    {
-      label: '성장 정체 고객',
-      value: `${stuckGrowth.toLocaleString()}명`,
-      description: '성장 단계에서 반복 구매 중이지만 아직 핵심 단계 전환이 없습니다.',
-    },
-  ]
 })
 
 function navigateToCustomers(stage?: CustomerStageCode) {
@@ -641,11 +597,12 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.growth-hero-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-md);
+.growth-period {
+  display: inline-block;
+  margin-bottom: var(--space-sm);
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 .growth-title {
@@ -653,14 +610,6 @@ onBeforeUnmount(() => {
   line-height: 1.16;
   font-weight: 800;
   color: var(--color-text);
-}
-
-.growth-desc {
-  margin-top: var(--space-sm);
-  max-width: 760px;
-  font-size: 1.02rem;
-  line-height: 1.7;
-  color: var(--color-text-secondary);
 }
 
 .growth-back-link {
@@ -755,7 +704,7 @@ onBeforeUnmount(() => {
 }
 
 .growth-chart-grid,
-.growth-support-grid,
+.growth-bottom-grid,
 .growth-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -855,9 +804,9 @@ onBeforeUnmount(() => {
 
 .transition-summary-grid,
 .behavior-highlight-grid,
-.signal-grid,
-.action-board,
-.stage-product-stack {
+.candidate-stage-grid,
+.stage-product-grid,
+.summary-note-grid {
   display: grid;
   gap: var(--space-md);
 }
@@ -868,33 +817,29 @@ onBeforeUnmount(() => {
 
 .transition-summary-item,
 .behavior-highlight-item,
-.signal-card,
-.action-block,
-.stage-product-block {
+.candidate-stage-card,
+.stage-product-block,
+.summary-note-card {
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-lg);
   padding: 16px;
   background: rgba(255, 255, 255, 0.9);
 }
 
-.transition-summary-label,
-.signal-label {
+.transition-summary-label {
   font-size: 0.9rem;
   font-weight: 700;
   color: var(--color-text);
 }
 
-.transition-summary-count,
-.signal-value {
+.transition-summary-count {
   font-size: 1.2rem;
   font-weight: 800;
   color: var(--color-text);
 }
 
 .transition-summary-foot,
-.signal-desc,
-.behavior-highlight-metrics,
-.action-block-desc {
+.behavior-highlight-metrics {
   font-size: 0.88rem;
   line-height: 1.55;
   color: var(--color-text-secondary);
@@ -909,10 +854,6 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 4px;
   margin-top: var(--space-sm);
-}
-
-.signal-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .transition-list,
@@ -978,6 +919,49 @@ onBeforeUnmount(() => {
   gap: var(--space-xs);
 }
 
+.candidate-stage-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.candidate-stage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.candidate-stage-count {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.stage-product-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.summary-note-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.summary-note-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.summary-note-card strong {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.summary-note-card span {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
 .candidate-item.compact,
 .product-rank-item.compact {
   padding: 12px 14px;
@@ -1010,12 +994,6 @@ onBeforeUnmount(() => {
   color: var(--color-text);
 }
 
-.action-block-count {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--color-text-secondary);
-}
-
 .action-link {
   margin-top: var(--space-sm);
 }
@@ -1029,9 +1007,11 @@ onBeforeUnmount(() => {
 @media (max-width: 1280px) {
   .growth-summary-grid,
   .growth-chart-grid,
-  .growth-support-grid,
+  .growth-bottom-grid,
   .growth-detail-grid,
-  .behavior-highlight-grid {
+  .behavior-highlight-grid,
+  .candidate-stage-grid,
+  .stage-product-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1045,10 +1025,12 @@ onBeforeUnmount(() => {
   .growth-chart-content-split,
   .growth-summary-grid,
   .growth-chart-grid,
-  .growth-support-grid,
+  .growth-bottom-grid,
   .growth-detail-grid,
-  .signal-grid,
-  .behavior-highlight-grid {
+  .behavior-highlight-grid,
+  .candidate-stage-grid,
+  .stage-product-grid,
+  .summary-note-grid {
     grid-template-columns: 1fr;
   }
 
