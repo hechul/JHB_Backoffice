@@ -2,7 +2,7 @@
   <div class="records-page">
     <div class="records-header">
       <h1 class="records-title">출퇴근 기록</h1>
-      <span class="records-subtitle">본인 근태 기록, 휴가 신청, 월별 이력을 함께 확인합니다.</span>
+      <span class="records-subtitle">오늘 근무 상태와 휴가 신청, 월간 근태 이력을 한 화면에서 확인합니다.</span>
     </div>
 
     <div class="card today-card">
@@ -63,11 +63,11 @@
       </div>
 
       <div v-if="!sessionsTableMissing" class="session-list-wrap">
-        <div class="section-label">오늘 ON/OFF 기록</div>
-        <div v-if="todaySessionsSorted.length === 0" class="history-empty">아직 ON/OFF 기록이 없습니다.</div>
+        <div class="section-label">오늘 근무 전환 기록</div>
+        <div v-if="todaySessionsSorted.length === 0" class="history-empty">아직 근무 기록이 없습니다.</div>
         <div v-else class="session-list">
           <div v-for="(session, index) in todaySessionsSorted" :key="session.id" class="session-item">
-            <span class="session-index">{{ index + 1 }}회차</span>
+            <span class="session-index">기록 {{ index + 1 }}</span>
             <span>ON {{ formatTime(session.started_at) }}</span>
             <span>OFF {{ formatTime(session.ended_at) }}</span>
           </div>
@@ -79,7 +79,7 @@
         `docs/sql/2026-03-05_attendance_phase1.sql` 실행이 필요합니다.
       </div>
       <div v-if="sessionsTableMissing" class="today-warning neutral">
-        `attendance_work_sessions` 테이블이 없어 ON/OFF 기록은 비활성화되고, 기존 단일 출근/퇴근 방식으로 동작합니다.
+        `attendance_work_sessions` 테이블이 없어 근무 전환 기록은 사용할 수 없고, 기존 출근/퇴근 방식으로 동작합니다.
         `docs/sql/2026-03-10_attendance_work_sessions_patch.sql` 실행이 필요합니다.
       </div>
       <div v-if="settingsTableMissing" class="today-warning neutral">
@@ -129,7 +129,7 @@
         </div>
 
         <div class="leave-request-list">
-          <div class="section-label">내 신청 내역</div>
+          <div class="section-label">이번 달 신청 내역</div>
           <div v-if="visibleLeaveRequests.length === 0" class="history-empty">해당 월 신청 내역이 없습니다.</div>
           <div v-else class="history-table-wrap">
             <table class="history-table leave-table">
@@ -159,7 +159,7 @@
 
     <div class="card history-card">
       <div class="history-head">
-        <h2>월별 내 기록</h2>
+        <h2>월간 근태 이력</h2>
         <input v-model="selectedMonth" type="month" class="input month-input" />
       </div>
 
@@ -170,11 +170,11 @@
           <thead>
             <tr>
               <th>날짜</th>
-              <th>출근</th>
-              <th>퇴근</th>
-              <th>근무시간</th>
-              <th>상태</th>
-              <th>비고</th>
+                <th>출근 시각</th>
+                <th>퇴근 시각</th>
+                <th>총 근무시간</th>
+                <th>상태</th>
+                <th>메모</th>
             </tr>
           </thead>
           <tbody>
@@ -291,9 +291,9 @@ const todayComputedStatus = computed(() => {
 const todayDisplayStatus = computed(() => {
   if (todayApprovedLeave.value) return todayComputedStatus.value
   if (sessionsTableMissing.value) return todayComputedStatus.value
-  if (workToggleMode.value === 'on') return { code: 'working', label: '근무 ON', className: 'status-working' }
+  if (workToggleMode.value === 'on') return { code: 'working', label: '근무 중', className: 'status-working' }
   if (workToggleMode.value === 'off' && todayRecord.value?.check_in_at && !todayRecord.value?.check_out_at) {
-    return { code: 'working', label: '휴식 OFF', className: 'status-paused' }
+    return { code: 'working', label: '휴식 중', className: 'status-paused' }
   }
   return todayComputedStatus.value
 })
@@ -305,9 +305,9 @@ const workToggleLabel = computed(() => {
 })
 
 const workToggleDescription = computed(() => {
-  if (workToggleMode.value === 'before_start') return '출근할 때 ON을 누르고, 최종 퇴근은 별도 버튼으로 기록합니다.'
-  if (workToggleMode.value === 'on') return '현재 근무 ON 상태입니다. 잠시 멈출 때 OFF를 누릅니다.'
-  if (workToggleMode.value === 'off') return '현재 휴식 OFF 상태입니다. 다시 근무할 때 ON을 누릅니다.'
+  if (workToggleMode.value === 'before_start') return '근무를 시작할 때 ON을 누르고, 잠시 멈출 때는 OFF를 누른 뒤 마지막에 퇴근을 기록합니다.'
+  if (workToggleMode.value === 'on') return '현재 근무 중입니다. 잠시 멈출 때 OFF를 누릅니다.'
+  if (workToggleMode.value === 'off') return '현재 휴식 중입니다. 다시 근무할 때 ON을 누릅니다.'
   return '오늘 퇴근까지 기록이 완료되었습니다.'
 })
 
@@ -321,8 +321,8 @@ const currentModeLabel = computed(() => {
   if (todayApprovedLeave.value) return getLeaveTypeLabel(todayApprovedLeave.value.leave_type)
   if (sessionsTableMissing.value) return todayComputedStatus.value.label
   if (workToggleMode.value === 'before_start') return '대기'
-  if (workToggleMode.value === 'on') return '근무 ON'
-  if (workToggleMode.value === 'off') return '휴식 OFF'
+  if (workToggleMode.value === 'on') return '근무 중'
+  if (workToggleMode.value === 'off') return '휴식 중'
   return '퇴근 완료'
 })
 
@@ -376,7 +376,7 @@ const historyRows = computed(() => {
         : calcWorkMinutes(record?.check_in_at, record?.check_out_at)
       const noteParts: string[] = []
       if (leave) noteParts.push(getLeaveTypeLabel(leave.leave_type))
-      if (sessions.length) noteParts.push(`세션 ${sessions.length}회`)
+      if (sessions.length) noteParts.push(`근무 전환 ${sessions.length}회`)
 
       return {
         key: `${workDate}-${record?.id || 'leave'}`,
@@ -726,20 +726,20 @@ async function handleToggleWork() {
           started_at: sessionStartAt,
         })
       if (error) throw error
-      toast.success(workToggleMode.value === 'before_start' ? '출근 ON 기록이 저장되었습니다.' : '근무 ON 기록이 저장되었습니다.')
+      toast.success(workToggleMode.value === 'before_start' ? '근무 시작 기록이 저장되었습니다.' : '근무 재개 기록이 저장되었습니다.')
     } else if (workToggleMode.value === 'on' && openTodaySession.value) {
       const { error } = await supabase
         .from('attendance_work_sessions')
         .update({ ended_at: nowIso })
         .eq('id', openTodaySession.value.id)
       if (error) throw error
-      toast.success('근무 OFF 기록이 저장되었습니다.')
+      toast.success('휴식 시작 기록이 저장되었습니다.')
     }
 
     await refreshRecords()
   } catch (error: any) {
     console.error('Failed to toggle work session:', error)
-    toast.error(`ON/OFF 기록 실패: ${error?.message || '알 수 없는 오류'}`)
+    toast.error(`근무 기록 저장 실패: ${error?.message || '알 수 없는 오류'}`)
   } finally {
     saving.value = false
   }
