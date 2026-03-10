@@ -1,0 +1,1120 @@
+<template>
+  <div class="calendar-page">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">월별 근태 캘린더</h1>
+        <div class="page-subtitle">{{ isAdmin ? '직원 전체의 월간 근태 분포를 확인합니다.' : '이번 달 내 근태 기록을 달력으로 확인합니다.' }}</div>
+      </div>
+      <div class="page-actions">
+        <input v-model="selectedMonth" type="month" class="input month-input" />
+        <input v-if="isAdmin" v-model.trim="searchText" type="text" class="input search-input" placeholder="이름/아이디 검색" />
+      </div>
+    </div>
+
+    <div v-if="tableMissing" class="card notice-error">
+      `attendance_records` 테이블이 없어 월별 근태 캘린더를 사용할 수 없습니다.
+      `docs/sql/2026-03-05_attendance_phase1.sql` 실행이 필요합니다.
+    </div>
+    <div v-if="sessionsTableMissing" class="card notice-neutral">
+      `attendance_work_sessions` 테이블이 없어 근무 시작/중단 기록 구분 없이 기존 출퇴근 기록만 표시합니다.
+      `docs/sql/2026-03-10_attendance_work_sessions_patch.sql` 실행이 필요합니다.
+    </div>
+    <div v-if="settingsTableMissing" class="card notice-neutral">
+      `attendance_settings` 최신 설정이 없어 기본 근무 기준(09:00~18:00, 조퇴 20분)으로 상태를 계산 중입니다.
+    </div>
+    <div v-if="leaveTableMissing" class="card notice-neutral">
+      `leave_requests` 테이블이 없어 휴가/반차 정보는 표시되지 않습니다.
+      `docs/sql/2026-03-10_attendance_phase2.sql` 실행이 필요합니다.
+    </div>
+
+    <div class="summary-grid">
+      <div v-for="item in monthlySummaryCards" :key="item.label" class="card summary-card" :class="item.tone">
+        <span class="summary-label">{{ item.label }}</span>
+        <strong class="summary-value">{{ item.value }}</strong>
+      </div>
+    </div>
+
+    <div class="card calendar-card">
+      <div class="section-head">
+        <h2>{{ selectedMonthLabel }}</h2>
+        <span class="section-caption">{{ isAdmin ? '전체 근태 분포' : '내 근태 달력' }}</span>
+      </div>
+
+      <div class="calendar-tools">
+        <button type="button" class="btn btn-ghost btn-sm" @click="jumpToCurrentMonth">이번 달</button>
+        <button v-if="selectedCalendarDate" type="button" class="btn btn-ghost btn-sm" @click="openDateModal(selectedCalendarDate)">선택한 날짜 다시 보기</button>
+      </div>
+
+      <div class="calendar-legend">
+        <span class="legend-item"><span class="legend-dot legend-working"></span>근무</span>
+        <span class="legend-item"><span class="legend-dot legend-late"></span>지각</span>
+        <span class="legend-item"><span class="legend-dot legend-leave"></span>휴가</span>
+        <span class="legend-item"><span class="legend-dot legend-absent"></span>결근</span>
+      </div>
+
+      <div class="calendar-grid">
+        <div v-for="weekday in calendarWeekdayLabels" :key="weekday" class="calendar-weekday">{{ weekday }}</div>
+        <button
+          v-for="cell in calendarCells"
+          :key="cell.date"
+          type="button"
+          class="calendar-day"
+          :class="{ outside: !cell.inMonth, selected: cell.date === selectedCalendarDate, today: cell.date === todayDate }"
+          :disabled="!cell.inMonth"
+          @click="openDateModal(cell.date)"
+        >
+          <div class="calendar-day-head">
+            <span class="calendar-day-number">{{ cell.dayNumber }}</span>
+            <span v-if="cell.totalCount > 0" class="calendar-day-total">{{ cell.totalCount }}</span>
+          </div>
+          <template v-if="isAdmin">
+            <div class="calendar-day-stats">
+              <span class="calendar-stat present">근무 {{ cell.presentCount }}</span>
+              <span class="calendar-stat late">지각 {{ cell.lateCount }}</span>
+              <span class="calendar-stat leave">휴가 {{ cell.leaveCount }}</span>
+              <span class="calendar-stat absent">결근 {{ cell.absentCount }}</span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="calendar-day-single">
+              <span class="status-chip" :class="cell.status.className">{{ cell.status.label }}</span>
+              <span class="calendar-single-note">{{ cell.timeLabel }}</span>
+            </div>
+          </template>
+        </button>
+      </div>
+    </div>
+
+    <div v-if="dateModalOpen" class="detail-modal" @click.self="closeDateModal">
+      <div class="detail-dialog">
+        <div class="detail-head">
+          <div>
+            <h2>{{ selectedCalendarDateLabel }}</h2>
+            <span class="section-caption">{{ isAdmin ? '선택한 날짜의 전체 근태 기록' : '선택한 날짜의 내 근태 기록' }}</span>
+          </div>
+          <button type="button" class="detail-close" @click="closeDateModal">닫기</button>
+        </div>
+
+        <div class="detail-summary">
+          <div class="detail-metric">
+            <span>근태 기록</span>
+            <strong>{{ selectedDateRows.length }}건</strong>
+          </div>
+          <div class="detail-metric">
+            <span>휴가/반차</span>
+            <strong>{{ selectedDateLeaveRows.length }}건</strong>
+          </div>
+        </div>
+
+        <div v-if="selectedDateLeaveRows.length > 0" class="selected-leave-list">
+          <div v-for="leave in selectedDateLeaveRows" :key="`leave-${leave.id}`" class="selected-leave-item">
+            <span class="selected-leave-user">{{ leave.user_name }} · {{ leave.user_login_id }}</span>
+            <span class="status-chip" :class="getLeaveStatusClass(leave.status)">{{ getLeaveTypeLabel(leave.leave_type) }} {{ getLeaveStatusLabel(leave.status) }}</span>
+            <span class="selected-leave-reason">{{ leave.reason || '-' }}</span>
+          </div>
+        </div>
+
+        <div v-if="selectedDateRows.length === 0" class="table-empty">선택한 날짜의 근태 기록이 없습니다.</div>
+        <div v-else class="table-wrap detail-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>아이디</th>
+                <th>출근</th>
+                <th>퇴근</th>
+                <th>근무시간</th>
+                <th>상태</th>
+                <th v-if="isAdmin">관리</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in selectedDateRows" :key="row.id">
+                <td>{{ row.user_name }}</td>
+                <td>{{ row.user_login_id }}</td>
+
+                <template v-if="isAdmin && editingRowId === row.id">
+                  <td>
+                    <input v-model="editCheckIn" type="datetime-local" class="input dt-input" />
+                  </td>
+                  <td>
+                    <input v-model="editCheckOut" type="datetime-local" class="input dt-input" />
+                  </td>
+                  <td>{{ editDuration }}</td>
+                  <td>
+                    <span class="status-chip" :class="statusClassFromValues(editCheckIn, editCheckOut)">{{ statusLabelFromValues(editCheckIn, editCheckOut) }}</span>
+                  </td>
+                  <td>
+                    <div class="row-actions">
+                      <button class="btn btn-primary btn-sm" :disabled="saving" @click="saveEdit(row)">저장</button>
+                      <button class="btn btn-ghost btn-sm" :disabled="saving" @click="cancelEdit">취소</button>
+                    </div>
+                  </td>
+                </template>
+
+                <template v-else>
+                  <td>{{ formatTime(row.check_in_at) }}</td>
+                  <td>{{ formatTime(row.check_out_at) }}</td>
+                  <td>{{ formatWorkDuration(rowWorkMinutes(row)) }}</td>
+                  <td>
+                    <span class="status-chip" :class="statusForRow(row).className">{{ statusForRow(row).label }}</span>
+                  </td>
+                  <td v-if="isAdmin">
+                    <div class="row-actions">
+                      <button class="btn btn-ghost btn-sm" :disabled="saving" @click="startEdit(row)">수정</button>
+                      <button class="btn btn-ghost btn-sm btn-danger" :disabled="saving" @click="removeRow(row)">삭제</button>
+                    </div>
+                  </td>
+                </template>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import type { AttendanceRecord, AttendanceSettings, AttendanceWorkSession, LeaveRequest } from '~/composables/useAttendance'
+
+definePageMeta({ layout: 'attendance' })
+
+type ProfileRow = {
+  profile_id: string
+  user_name: string
+  user_email: string
+  user_login_id: string
+}
+
+type CalendarAttendanceRow = AttendanceRecord & ProfileRow
+
+type CalendarLeaveRow = LeaveRequest & ProfileRow
+
+const calendarWeekdayLabels = ['월', '화', '수', '목', '금', '토', '일']
+
+const supabase = useSupabaseClient()
+const toast = useToast()
+const { user, isAdmin, profileLoaded } = useCurrentUser()
+const {
+  DEFAULT_ATTENDANCE_SETTINGS,
+  getKstDateKey,
+  getKstMonthKey,
+  getMonthRange,
+  formatTime,
+  calcWorkMinutes,
+  calcWorkSessionMinutes,
+  formatWorkDuration,
+  toDateTimeLocalValue,
+  parseDateTimeLocalToIso,
+  normalizeAttendanceSettings,
+  getLeaveTypeLabel,
+  getLeaveStatusLabel,
+  getLeaveStatusClass,
+  createLeaveDateMap,
+  computeAttendanceStatus,
+} = useAttendance()
+
+const todayDate = ref(getKstDateKey())
+const selectedMonth = ref(getKstMonthKey())
+const selectedCalendarDate = ref('')
+const searchText = ref('')
+const saving = ref(false)
+const tableMissing = ref(false)
+const sessionsTableMissing = ref(false)
+const settingsTableMissing = ref(false)
+const leaveTableMissing = ref(false)
+const rows = ref<CalendarAttendanceRow[]>([])
+const sessions = ref<AttendanceWorkSession[]>([])
+const leaves = ref<LeaveRequest[]>([])
+const profiles = ref<ProfileRow[]>([])
+const settings = ref<AttendanceSettings>(normalizeAttendanceSettings(DEFAULT_ATTENDANCE_SETTINGS))
+const liveNowIso = ref(new Date().toISOString())
+let liveTimer: ReturnType<typeof setInterval> | null = null
+const dateModalOpen = ref(false)
+
+const editingRowId = ref<number | null>(null)
+const editCheckIn = ref('')
+const editCheckOut = ref('')
+
+function splitEmailLoginId(email: string) {
+  const [idPart = ''] = String(email || '').split('@')
+  return idPart || '-'
+}
+
+function parseDateKey(dateKey: string) {
+  return new Date(`${dateKey}T00:00:00+09:00`)
+}
+
+function addDateKeyDays(dateKey: string, days: number) {
+  const next = parseDateKey(dateKey)
+  next.setDate(next.getDate() + days)
+  return getKstDateKey(next)
+}
+
+function getWeekStart(dateKey: string) {
+  const date = parseDateKey(dateKey)
+  const shift = (date.getDay() + 6) % 7
+  date.setDate(date.getDate() - shift)
+  return getKstDateKey(date)
+}
+
+function formatMonthLabel(monthKey: string) {
+  const [year, month] = String(monthKey || '').split('-')
+  return `${year}년 ${Number(month || 0)}월`
+}
+
+function isMissingTableError(error: any, tableName: string) {
+  const code = String(error?.code || '').toUpperCase()
+  const msg = String(error?.message || '').toLowerCase()
+  return code === '42P01' || msg.includes(tableName)
+}
+
+function isMissingSettingsColumnError(error: any) {
+  const code = String(error?.code || '').toUpperCase()
+  const msg = String(error?.message || '').toLowerCase()
+  return code === '42703' || msg.includes('early_leave_grace_minutes')
+}
+
+const filteredProfiles = computed(() => {
+  if (!isAdmin.value) return profiles.value
+  const q = searchText.value.trim().toLowerCase()
+  if (!q) return profiles.value
+  return profiles.value.filter((profile) => [profile.user_name, profile.user_email, profile.user_login_id]
+    .some((value) => String(value || '').toLowerCase().includes(q)))
+})
+
+const rowMapByUserDate = computed(() => {
+  return new Map(rows.value.map((row) => [`${row.user_id}:${row.work_date}`, row]))
+})
+
+const sessionMapByRecord = computed(() => {
+  const map = new Map<number, AttendanceWorkSession[]>()
+  for (const session of sessions.value) {
+    const bucket = map.get(session.record_id) || []
+    bucket.push(session)
+    map.set(session.record_id, bucket)
+  }
+  for (const bucket of map.values()) {
+    bucket.sort((a, b) => a.started_at.localeCompare(b.started_at))
+  }
+  return map
+})
+
+const approvedLeaveMapByUserDate = computed(() => {
+  const map = new Map<string, LeaveRequest>()
+  for (const leave of leaves.value) {
+    if (leave.status !== 'approved') continue
+    for (const date of createLeaveDateMap([leave]).keys()) {
+      map.set(`${leave.user_id}:${date}`, leave)
+    }
+  }
+  return map
+})
+
+const selectedMonthLabel = computed(() => formatMonthLabel(selectedMonth.value))
+
+const monthlySummaryCards = computed(() => {
+  if (isAdmin.value) {
+    const totalPeople = filteredProfiles.value.length
+    const totalPresent = calendarCells.value.reduce((sum, cell) => sum + (cell.presentCount || 0), 0)
+    const totalLate = calendarCells.value.reduce((sum, cell) => sum + (cell.lateCount || 0), 0)
+    const totalLeave = calendarCells.value.reduce((sum, cell) => sum + (cell.leaveCount || 0), 0)
+    return [
+      { label: '조회 인원', value: `${totalPeople}명`, tone: 'tone-blue' },
+      { label: '근무 기록', value: `${totalPresent}건`, tone: 'tone-green' },
+      { label: '지각 표시', value: `${totalLate}건`, tone: 'tone-amber' },
+      { label: '휴가/반차', value: `${totalLeave}건`, tone: 'tone-purple' },
+    ]
+  }
+
+  const ownCells = calendarCells.value.filter((cell) => cell.inMonth)
+  const counts = ownCells.reduce((acc, cell) => {
+    const code = cell.status?.code || 'empty'
+    if (code === 'leave') acc.leave += 1
+    else if (code === 'late' || code === 'late_early') acc.late += 1
+    else if (code === 'done' || code === 'early_leave') acc.done += 1
+    else if (code === 'working') acc.working += 1
+    return acc
+  }, { working: 0, done: 0, late: 0, leave: 0 })
+
+  return [
+    { label: '근무 중', value: `${counts.working}일`, tone: 'tone-blue' },
+    { label: '근무 완료', value: `${counts.done}일`, tone: 'tone-green' },
+    { label: '지각/조퇴', value: `${counts.late}일`, tone: 'tone-amber' },
+    { label: '휴가/반차', value: `${counts.leave}일`, tone: 'tone-purple' },
+  ]
+})
+
+const calendarCells = computed(() => {
+  const { start, end } = getMonthRange(selectedMonth.value)
+  const first = getWeekStart(start)
+  const lastWeekStart = getWeekStart(end)
+  const last = addDateKeyDays(lastWeekStart, 6)
+  const cells: Array<any> = []
+
+  for (let cursor = first; cursor <= last; cursor = addDateKeyDays(cursor, 1)) {
+    const inMonth = cursor.startsWith(selectedMonth.value)
+
+    if (isAdmin.value) {
+      let presentCount = 0
+      let lateCount = 0
+      let leaveCount = 0
+      let absentCount = 0
+
+      if (inMonth) {
+        for (const profile of filteredProfiles.value) {
+          const row = rowMapByUserDate.value.get(`${profile.profile_id}:${cursor}`) || null
+          const leave = approvedLeaveMapByUserDate.value.get(`${profile.profile_id}:${cursor}`) || null
+          const status = computeAttendanceStatus({
+            workDate: cursor,
+            checkInAt: row?.check_in_at,
+            checkOutAt: row?.check_out_at,
+            settings: settings.value,
+            approvedLeave: leave,
+            todayDate: todayDate.value,
+          })
+          if (leave) leaveCount += 1
+          else if (row?.check_in_at) presentCount += 1
+          if (status.code === 'late' || status.code === 'late_early') lateCount += 1
+          if (status.code === 'absent') absentCount += 1
+        }
+      }
+
+      cells.push({
+        date: cursor,
+        inMonth,
+        dayNumber: Number(cursor.slice(-2)),
+        presentCount,
+        lateCount,
+        leaveCount,
+        absentCount,
+        totalCount: presentCount + leaveCount + absentCount,
+      })
+      continue
+    }
+
+    const me = filteredProfiles.value[0]
+    const row = me ? rowMapByUserDate.value.get(`${me.profile_id}:${cursor}`) || null : null
+    const leave = me ? approvedLeaveMapByUserDate.value.get(`${me.profile_id}:${cursor}`) || null : null
+    const status = computeAttendanceStatus({
+      workDate: cursor,
+      checkInAt: row?.check_in_at,
+      checkOutAt: row?.check_out_at,
+      settings: settings.value,
+      approvedLeave: leave,
+      todayDate: todayDate.value,
+    })
+    const timeLabel = leave
+      ? getLeaveTypeLabel(leave.leave_type)
+      : row?.check_in_at
+        ? `${formatTime(row.check_in_at)}${row.check_out_at ? ` · ${formatTime(row.check_out_at)}` : ''}`
+        : '-'
+
+    cells.push({
+      date: cursor,
+      inMonth,
+      dayNumber: Number(cursor.slice(-2)),
+      status,
+      timeLabel,
+      totalCount: row || leave ? 1 : 0,
+    })
+  }
+
+  return cells
+})
+
+const selectedCalendarDateLabel = computed(() => {
+  if (!selectedCalendarDate.value) return '날짜 선택'
+  const date = parseDateKey(selectedCalendarDate.value)
+  const weekday = calendarWeekdayLabels[(date.getDay() + 6) % 7]
+  return `${selectedCalendarDate.value} (${weekday})`
+})
+
+const selectedDateRows = computed(() => {
+  return rows.value.filter((row) => row.work_date === selectedCalendarDate.value)
+})
+
+const selectedDateLeaveRows = computed<CalendarLeaveRow[]>(() => {
+  const q = searchText.value.trim().toLowerCase()
+  return leaves.value
+    .filter((row) => row.start_date <= selectedCalendarDate.value && row.end_date >= selectedCalendarDate.value)
+    .map((row) => ({
+      ...row,
+      ...(profiles.value.find((profile) => profile.profile_id === row.user_id) || {
+        profile_id: row.user_id,
+        user_name: '-',
+        user_email: '',
+        user_login_id: '-',
+      }),
+    }))
+    .filter((row) => {
+      if (!q) return true
+      return [row.user_name, row.user_email, row.user_login_id, row.reason, row.start_date, row.end_date]
+        .some((value) => String(value || '').toLowerCase().includes(q))
+    })
+    .sort((a, b) => a.user_name.localeCompare(b.user_name, 'ko'))
+})
+
+function rowWorkMinutes(row: CalendarAttendanceRow) {
+  const daySessions = sessionMapByRecord.value.get(row.id) || []
+  if (daySessions.length) {
+    return calcWorkSessionMinutes(daySessions, row.work_date === todayDate.value ? liveNowIso.value : null)
+  }
+  return calcWorkMinutes(row.check_in_at, row.check_out_at)
+}
+
+function statusForRow(row: CalendarAttendanceRow) {
+  const leave = approvedLeaveMapByUserDate.value.get(`${row.user_id}:${row.work_date}`) || null
+  return computeAttendanceStatus({
+    workDate: row.work_date,
+    checkInAt: row.check_in_at,
+    checkOutAt: row.check_out_at,
+    settings: settings.value,
+    approvedLeave: leave,
+    todayDate: todayDate.value,
+  })
+}
+
+const editDuration = computed(() => {
+  const inIso = parseDateTimeLocalToIso(editCheckIn.value)
+  const outIso = parseDateTimeLocalToIso(editCheckOut.value)
+  return formatWorkDuration(calcWorkMinutes(inIso, outIso))
+})
+
+function statusLabelFromValues(checkIn: string, checkOut: string) {
+  if (!checkIn) return '미출근'
+  if (!checkOut) return '근무중'
+  return '퇴근 완료'
+}
+
+function statusClassFromValues(checkIn: string, checkOut: string) {
+  if (!checkIn) return 'status-empty'
+  if (!checkOut) return 'status-working'
+  return 'status-done'
+}
+
+function openDateModal(date: string) {
+  selectedCalendarDate.value = date
+  dateModalOpen.value = true
+}
+
+function closeDateModal() {
+  dateModalOpen.value = false
+  cancelEdit()
+}
+
+function jumpToCurrentMonth() {
+  selectedMonth.value = getKstMonthKey()
+}
+
+async function fetchSettings() {
+  const { data, error } = await supabase
+    .from('attendance_settings')
+    .select('id, work_start_time, work_end_time, late_grace_minutes, early_leave_grace_minutes, lunch_break_minutes, standard_work_minutes, created_at, updated_at')
+    .order('id', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    if (isMissingTableError(error, 'attendance_settings') || isMissingSettingsColumnError(error)) {
+      settingsTableMissing.value = true
+      settings.value = normalizeAttendanceSettings(DEFAULT_ATTENDANCE_SETTINGS)
+      return
+    }
+    throw error
+  }
+
+  settingsTableMissing.value = false
+  settings.value = normalizeAttendanceSettings((data as any) || DEFAULT_ATTENDANCE_SETTINGS)
+}
+
+async function fetchProfiles() {
+  if (!profileLoaded.value) return
+  if (isAdmin.value) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, role, status')
+      .eq('status', 'active')
+      .order('full_name', { ascending: true })
+    if (error) throw error
+    profiles.value = (data || []).map((row: any) => {
+      const email = String(row.email || '')
+      return {
+        profile_id: String(row.id || ''),
+        user_name: String(row.full_name || splitEmailLoginId(email) || '-'),
+        user_email: email,
+        user_login_id: splitEmailLoginId(email),
+      }
+    })
+    return
+  }
+
+  const email = String(user.value.email || '')
+  profiles.value = [{
+    profile_id: String(user.value.id || ''),
+    user_name: String(user.value.name || splitEmailLoginId(email) || '-'),
+    user_email: email,
+    user_login_id: splitEmailLoginId(email),
+  }]
+}
+
+async function fetchRows() {
+  const { start, end } = getMonthRange(selectedMonth.value)
+  let query = supabase
+    .from('attendance_records')
+    .select('id, user_id, work_date, check_in_at, check_out_at, check_in_note, check_out_note, updated_by, created_at, updated_at')
+    .gte('work_date', start)
+    .lte('work_date', end)
+    .order('work_date', { ascending: false })
+    .order('id', { ascending: false })
+
+  if (!isAdmin.value) query = query.eq('user_id', user.value.id)
+
+  const { data, error } = await query
+
+  if (error) {
+    if (isMissingTableError(error, 'attendance_records')) {
+      tableMissing.value = true
+      rows.value = []
+      return
+    }
+    throw error
+  }
+
+  tableMissing.value = false
+  const profileMap = new Map(profiles.value.map((profile) => [profile.profile_id, profile]))
+  rows.value = ((data || []) as AttendanceRecord[]).map((row) => ({
+    ...row,
+    ...(profileMap.get(row.user_id) || {
+      profile_id: row.user_id,
+      user_name: '-',
+      user_email: '',
+      user_login_id: '-',
+    }),
+  }))
+}
+
+async function fetchSessions() {
+  const { start, end } = getMonthRange(selectedMonth.value)
+  let query = supabase
+    .from('attendance_work_sessions')
+    .select('id, record_id, user_id, work_date, started_at, ended_at, created_at, updated_at')
+    .gte('work_date', start)
+    .lte('work_date', end)
+    .order('started_at', { ascending: true })
+
+  if (!isAdmin.value) query = query.eq('user_id', user.value.id)
+
+  const { data, error } = await query
+
+  if (error) {
+    if (isMissingTableError(error, 'attendance_work_sessions')) {
+      sessionsTableMissing.value = true
+      sessions.value = []
+      return
+    }
+    throw error
+  }
+
+  sessionsTableMissing.value = false
+  sessions.value = (data || []) as AttendanceWorkSession[]
+}
+
+async function fetchLeaves() {
+  const { start, end } = getMonthRange(selectedMonth.value)
+  let query = supabase
+    .from('leave_requests')
+    .select('id, user_id, leave_type, start_date, end_date, status, reason, approved_by, approved_at, created_at, updated_at')
+    .lte('start_date', end)
+    .gte('end_date', start)
+    .order('start_date', { ascending: false })
+    .order('id', { ascending: false })
+
+  if (!isAdmin.value) query = query.eq('user_id', user.value.id)
+
+  const { data, error } = await query
+
+  if (error) {
+    if (isMissingTableError(error, 'leave_requests')) {
+      leaveTableMissing.value = true
+      leaves.value = []
+      return
+    }
+    throw error
+  }
+
+  leaveTableMissing.value = false
+  leaves.value = (data || []) as LeaveRequest[]
+}
+
+async function refreshCalendar() {
+  if (!profileLoaded.value || !user.value.id) return
+  try {
+    todayDate.value = getKstDateKey()
+    const { start, end } = getMonthRange(selectedMonth.value)
+    if (!selectedCalendarDate.value || selectedCalendarDate.value < start || selectedCalendarDate.value > end) {
+      selectedCalendarDate.value = todayDate.value >= start && todayDate.value <= end ? todayDate.value : start
+    }
+    await fetchSettings()
+    await fetchProfiles()
+    await Promise.all([fetchRows(), fetchSessions(), fetchLeaves()])
+  } catch (error: any) {
+    console.error('Failed to fetch attendance calendar:', error)
+    toast.error(`월별 근태 조회 실패: ${error?.message || '알 수 없는 오류'}`)
+  }
+}
+
+function startEdit(row: CalendarAttendanceRow) {
+  editingRowId.value = row.id
+  editCheckIn.value = toDateTimeLocalValue(row.check_in_at)
+  editCheckOut.value = toDateTimeLocalValue(row.check_out_at)
+}
+
+function cancelEdit() {
+  editingRowId.value = null
+  editCheckIn.value = ''
+  editCheckOut.value = ''
+}
+
+async function saveEdit(row: CalendarAttendanceRow) {
+  if (!editingRowId.value) return
+  const checkInIso = parseDateTimeLocalToIso(editCheckIn.value)
+  const checkOutIso = parseDateTimeLocalToIso(editCheckOut.value)
+
+  if (checkOutIso && !checkInIso) {
+    toast.error('퇴근 시간만 단독 저장할 수 없습니다.')
+    return
+  }
+  if (checkInIso && checkOutIso && new Date(checkOutIso).getTime() < new Date(checkInIso).getTime()) {
+    toast.error('퇴근 시간은 출근 시간보다 빠를 수 없습니다.')
+    return
+  }
+
+  saving.value = true
+  try {
+    const { error } = await supabase
+      .from('attendance_records')
+      .update({
+        check_in_at: checkInIso,
+        check_out_at: checkOutIso,
+        updated_by: user.value.id || null,
+      })
+      .eq('id', row.id)
+
+    if (error) throw error
+    toast.success('근태 기록이 수정되었습니다.')
+    cancelEdit()
+    await refreshCalendar()
+  } catch (error: any) {
+    console.error('Failed to save attendance edit:', error)
+    toast.error(`수정 실패: ${error?.message || '알 수 없는 오류'}`)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function removeRow(row: CalendarAttendanceRow) {
+  if (!confirm(`${row.user_name}님의 ${row.work_date} 근태 기록을 삭제할까요?`)) return
+  saving.value = true
+  try {
+    const { error } = await supabase
+      .from('attendance_records')
+      .delete()
+      .eq('id', row.id)
+    if (error) throw error
+    toast.success('근태 기록이 삭제되었습니다.')
+    await refreshCalendar()
+  } catch (error: any) {
+    console.error('Failed to delete attendance row:', error)
+    toast.error(`삭제 실패: ${error?.message || '알 수 없는 오류'}`)
+  } finally {
+    saving.value = false
+  }
+}
+
+watch(
+  () => [profileLoaded.value, user.value.id, isAdmin.value],
+  async ([loaded, uid]) => {
+    if (!loaded || !uid) return
+    await refreshCalendar()
+  },
+  { immediate: true },
+)
+
+watch(selectedMonth, async () => {
+  if (!profileLoaded.value || !user.value.id) return
+  await refreshCalendar()
+})
+
+onMounted(() => {
+  liveTimer = setInterval(() => {
+    liveNowIso.value = new Date().toISOString()
+  }, 30000)
+  if (import.meta.client) {
+    window.addEventListener('keydown', handleEscape)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (liveTimer) clearInterval(liveTimer)
+  if (import.meta.client) {
+    window.removeEventListener('keydown', handleEscape)
+  }
+})
+
+function handleEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape' && dateModalOpen.value) {
+    closeDateModal()
+  }
+}
+</script>
+
+<style scoped>
+.calendar-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.page-header,
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.page-title {
+  font-size: 1.18rem;
+  font-weight: 700;
+}
+
+.page-subtitle {
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-size: 0.94rem;
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.search-input {
+  min-width: 220px;
+}
+
+.notice-error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.notice-neutral {
+  color: var(--color-text-secondary);
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summary-label {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.summary-value {
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.tone-blue {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.tone-green {
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.tone-amber {
+  background: rgba(245, 158, 11, 0.09);
+}
+
+.tone-purple {
+  background: rgba(139, 92, 246, 0.09);
+}
+
+.calendar-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.section-caption,
+.table-empty {
+  color: var(--color-text-secondary);
+}
+
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.calendar-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.legend-working {
+  background: #0f766e;
+}
+
+.legend-late {
+  background: #d97706;
+}
+
+.legend-leave {
+  background: #2563eb;
+}
+
+.legend-absent {
+  background: #dc2626;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.calendar-weekday {
+  text-align: center;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.calendar-day {
+  min-height: 128px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid var(--color-border-light);
+  background: rgba(255, 255, 255, 0.82);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+
+.calendar-day.outside {
+  opacity: 0.42;
+}
+
+.calendar-day.selected {
+  border-color: rgba(37, 99, 235, 0.45);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.08);
+}
+
+.calendar-day.today {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.calendar-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.calendar-day-number {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.calendar-day-total {
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.08);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.calendar-day-stats,
+.calendar-day-single {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.calendar-stat,
+.calendar-single-note {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.selected-leave-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.selected-leave-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--color-border-light);
+}
+
+.selected-leave-user {
+  font-weight: 700;
+}
+
+.selected-leave-reason {
+  color: var(--color-text-secondary);
+}
+
+.detail-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  padding: 28px;
+  background: rgba(15, 23, 42, 0.48);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.detail-dialog {
+  width: min(1040px, 100%);
+  max-height: calc(100vh - 56px);
+  overflow: auto;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.detail-close {
+  border: 1px solid var(--color-border-light);
+  background: #fff;
+  color: var(--color-text-secondary);
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-weight: 700;
+}
+
+.detail-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.detail-metric {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid var(--color-border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-metric span {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.detail-metric strong {
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.detail-table-wrap {
+  max-height: 420px;
+}
+
+@media (max-width: 960px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .calendar-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .page-header,
+  .section-head,
+  .page-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .detail-modal {
+    padding: 12px;
+  }
+
+  .detail-head,
+  .detail-summary {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-input {
+    min-width: 0;
+  }
+
+  .calendar-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
