@@ -75,6 +75,7 @@
             <span v-show="!sidebarCollapsed">상품 목록</span>
           </NuxtLink>
         </div>
+
       </nav>
 
       <!-- Collapse Toggle -->
@@ -251,20 +252,17 @@ const allMenuItems = computed(() => {
     { path: '/growth-stages', label: '고객 성장 단계', group: '매출분석' },
     { path: '/customers', label: '고객 분석', group: '고객 관리' },
     { path: '/logs', label: '실행 이력', group: '고객 관리' },
-    { path: '/attendance', label: '근태 관리', group: '근태 관리' },
   ]
   if (isViewer.value) return items
-  const result = [
+  return [
     { path: '/dashboard', label: '대시보드', group: '매출분석' },
     { path: '/growth-stages', label: '고객 성장 단계', group: '매출분석' },
     { path: '/customers', label: '고객 분석', group: '고객 관리' },
     { path: '/upload', label: '데이터 업로드', group: '고객 관리' },
     { path: '/filter', label: '필터링', group: '고객 관리' },
     { path: '/logs', label: '실행 이력', group: '고객 관리' },
-    { path: '/attendance', label: '근태 관리', group: '근태 관리' },
     { path: '/products', label: '상품 목록', group: '상품 관리' },
   ]
-  return result
 })
 
 const isActive = (path: string) => route.path === path || route.path.startsWith(`${path}/`)

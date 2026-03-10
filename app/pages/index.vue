@@ -13,7 +13,7 @@
         <span class="feature-name">굿포펫</span>
       </NuxtLink>
 
-      <NuxtLink to="/attendance" class="feature-card active">
+      <NuxtLink to="/attendance/records" class="feature-card active">
         <div class="feature-icon">
           <Clock3 :size="22" :stroke-width="1.8" />
         </div>
