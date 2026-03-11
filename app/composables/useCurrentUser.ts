@@ -178,10 +178,13 @@ export function useCurrentUser() {
   }
 
   async function logout() {
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
     clearProfileCache()
     resetProfile()
-    navigateTo('/login')
+    await navigateTo('/login', { replace: true })
+    if (error) {
+      console.error('Failed to sign out:', error)
+    }
   }
 
   function resetProfile() {
@@ -190,16 +193,37 @@ export function useCurrentUser() {
     profileRevision.value += 1
   }
 
-  // 제거됨: async function bootstrapAuthProfile()
+  async function bootstrapAuthProfile() {
+    if (!import.meta.client) return
+    if (profileLoaded.value) return
+    if (supabaseUser.value?.id) {
+      await fetchProfile(supabaseUser.value.id)
+      return
+    }
+
+    try {
+      const { data, error } = await supabase.auth.getSession()
+      if (error) {
+        console.error('Failed to bootstrap auth session:', error)
+        return
+      }
+
+      const uid = data.session?.user?.id
+      if (uid) {
+        await fetchProfile(uid)
+        return
+      }
+    } catch (error) {
+      console.error('Failed to bootstrap auth profile:', error)
+    }
+  }
 
   // Auto-fetch profile when auth user/session changes
   if (import.meta.client) {
-    // 캐시는 UI 표시용 힌트로만 사용한다.
-    // profileLoaded를 true로 먼저 올리면 세션 확정 전 DB 조회가 선행되어 빈 결과가 고정될 수 있다.
     if (!profileLoaded.value) {
       const cached = readProfileCache(supabaseUser.value?.id)
       if (cached) {
-        profile.value = cached
+        setProfileLoaded(cached, false)
       }
     }
 
@@ -216,11 +240,12 @@ export function useCurrentUser() {
 
     if (!authListenerBound.value) {
       authListenerBound.value = true
-      supabase.auth.onAuthStateChange(async (_event, session) => {
+      supabase.auth.onAuthStateChange((_event, session) => {
         const uid = session?.user?.id
         if (uid) {
-          await fetchProfile(uid)
+          void fetchProfile(uid)
         } else {
+          clearProfileCache()
           resetProfile()
         }
       })
@@ -242,7 +267,8 @@ export function useCurrentUser() {
       window.addEventListener('pageshow', handleWindowResume)
       document.addEventListener('visibilitychange', handleVisibilityChange)
     }
-    // 제거됨: bootstrapAuthProfile 호출
+
+    void bootstrapAuthProfile()
   }
 
   return {

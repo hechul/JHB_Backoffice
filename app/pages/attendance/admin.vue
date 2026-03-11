@@ -73,33 +73,41 @@
           </button>
         </div>
         <div v-if="filteredTodayRows.length === 0" class="table-empty">표시할 오늘 근태가 없습니다.</div>
-        <div v-else class="table-wrap">
-          <table class="admin-table today-table">
-            <thead>
-              <tr>
-                <th>이름</th>
-                <th>아이디</th>
-                <th>출근</th>
-                <th>퇴근</th>
-                <th>근무시간</th>
-                <th>상태</th>
-                <th>메모</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in filteredTodayRows" :key="`today-${row.user_id}`">
-                <td>{{ row.user_name }}</td>
-                <td>{{ row.user_login_id }}</td>
-                <td>{{ formatTime(row.record?.check_in_at) }}</td>
-                <td>{{ formatTime(row.record?.check_out_at) }}</td>
-                <td>{{ formatWorkDuration(row.workMinutes) }}</td>
-                <td>
-                  <span class="status-chip" :class="row.displayStatus.className">{{ row.displayStatus.label }}</span>
-                </td>
-                <td>{{ row.note }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-else class="today-card-grid">
+          <article
+            v-for="row in filteredTodayRows"
+            :key="`today-${row.user_id}`"
+            class="today-person-card"
+            :class="row.displayStatus.className"
+          >
+            <div class="today-person-head">
+              <div>
+                <div class="today-person-name">{{ row.user_name }}</div>
+                <div class="today-person-id">{{ row.user_login_id }}</div>
+              </div>
+              <span class="status-chip" :class="row.displayStatus.className">{{ row.displayStatus.label }}</span>
+            </div>
+
+            <div class="today-metric-grid">
+              <div class="today-metric">
+                <span class="today-metric-label">출근 시각</span>
+                <strong class="today-metric-value">{{ formatTime(row.record?.check_in_at) }}</strong>
+              </div>
+              <div class="today-metric">
+                <span class="today-metric-label">퇴근 시각</span>
+                <strong class="today-metric-value">{{ formatTime(row.record?.check_out_at) }}</strong>
+              </div>
+              <div class="today-metric">
+                <span class="today-metric-label">총 근무시간</span>
+                <strong class="today-metric-value">{{ formatWorkDuration(row.workMinutes) }}</strong>
+              </div>
+            </div>
+
+            <div class="today-note-row">
+              <span class="today-note-label">메모</span>
+              <span class="today-note-value">{{ row.note }}</span>
+            </div>
+          </article>
         </div>
       </div>
     </template>
@@ -554,6 +562,97 @@ onBeforeUnmount(() => {
   gap: var(--space-lg);
 }
 
+.today-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.today-person-card {
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.88);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.today-person-card.status-working {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(255, 255, 255, 0.92));
+}
+
+.today-person-card.status-paused {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.08), rgba(255, 255, 255, 0.92));
+}
+
+.today-person-card.status-leave {
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.08), rgba(255, 255, 255, 0.92));
+}
+
+.today-person-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.today-person-name {
+  font-size: 1.04rem;
+  font-weight: 800;
+}
+
+.today-person-id {
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-size: 0.88rem;
+}
+
+.today-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.today-metric {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.today-metric-label {
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+}
+
+.today-metric-value {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.today-note-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.22);
+}
+
+.today-note-label {
+  color: var(--color-text-secondary);
+  font-size: 0.88rem;
+}
+
+.today-note-value {
+  text-align: right;
+  font-weight: 600;
+}
+
 .status-filter-row {
   display: flex;
   flex-wrap: wrap;
@@ -585,6 +684,11 @@ onBeforeUnmount(() => {
 @media (max-width: 960px) {
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .today-card-grid,
+  .today-metric-grid {
+    grid-template-columns: 1fr;
   }
 }
 

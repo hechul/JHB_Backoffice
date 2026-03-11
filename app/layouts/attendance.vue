@@ -102,17 +102,20 @@
 
 <script setup lang="ts">
 import {
+  CalendarRange,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   Clock3,
   Home,
+  ListChecks,
   LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
   Settings2,
+  Umbrella,
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -125,24 +128,34 @@ const attendanceMenuItems = computed(() => {
   if (isAdmin.value) {
     return [
       { path: '/attendance/records', label: '출퇴근 기록', icon: Clock3 },
-      { path: '/attendance/admin', label: '근태 전체 관리', icon: ClipboardCheck },
+      { path: '/attendance/admin', label: '금일 근태 이력', icon: ClipboardCheck },
+      { path: '/attendance/leave-approvals', label: '휴가 승인', icon: Umbrella },
+      { path: '/attendance/weekly', label: '주별 근태 기록', icon: ListChecks },
+      { path: '/attendance/calendar', label: '월별 근태 캘린더', icon: CalendarRange },
       { path: '/attendance/settings', label: '근무 기준 설정', icon: Settings2 },
     ]
   }
 
   return [
     { path: '/attendance/records', label: '출퇴근 기록', icon: Clock3 },
+    { path: '/attendance/leave', label: '휴가 · 반차 신청', icon: Umbrella },
+    { path: '/attendance/weekly', label: '주별 근태 기록', icon: ListChecks },
+    { path: '/attendance/calendar', label: '월별 근태 캘린더', icon: CalendarRange },
   ]
 })
 
 const pageTitles = computed(() => {
   const items = [
     { path: '/attendance/records', label: '출퇴근 기록' },
+    { path: '/attendance/leave', label: '휴가 · 반차 신청' },
+    { path: '/attendance/weekly', label: '주별 근태 기록' },
+    { path: '/attendance/calendar', label: '월별 근태 캘린더' },
   ]
 
   if (isAdmin.value) {
     items.push(
-      { path: '/attendance/admin', label: '근태 전체 관리' },
+      { path: '/attendance/admin', label: '금일 근태 이력' },
+      { path: '/attendance/leave-approvals', label: '휴가 승인' },
       { path: '/attendance/settings', label: '근무 기준 설정' },
     )
   }
@@ -172,8 +185,8 @@ const today = computed(() => {
 
 const showHeaderNavButtons = computed(() => route.path !== '/attendance/records')
 
-function handleLogout() {
-  logout()
+async function handleLogout() {
+  await logout()
 }
 
 function handlePageRefresh() {

@@ -29,7 +29,8 @@ export default defineNuxtRouteMiddleware((to) => {
 
       const storageKey = `sb-${projectRef}-auth-token`
       const raw = localStorage.getItem(storageKey)
-      return Boolean(raw && raw !== 'null' && raw !== 'undefined')
+      if (raw && raw !== 'null' && raw !== 'undefined') return true
+      return document.cookie.includes(`${storageKey}=`)
     } catch {
       return false
     }

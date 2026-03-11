@@ -88,33 +88,51 @@
           </div>
         </article>
       </div>
-      <div v-else-if="filteredWeeklyBoardRows.length > 0" class="table-wrap weekly-wrap">
-        <table class="admin-table weekly-table">
-          <thead>
-            <tr>
-              <th class="sticky-col">이름</th>
-              <th v-for="day in currentWeekDays" :key="day.date" class="week-col-head">
-                <div>{{ day.label }}</div>
-                <span>{{ day.shortDate }}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in filteredWeeklyBoardRows" :key="`week-${row.profile_id}`">
-              <td class="sticky-col">
-                <div class="week-user-name">{{ row.user_name }}</div>
-                <div class="week-user-id">{{ row.user_login_id }}</div>
-              </td>
-              <td v-for="cell in row.days" :key="`${row.profile_id}-${cell.date}`">
-                <div class="week-cell" :class="{ muted: !cell.inMonth }">
-                  <span class="status-chip" :class="cell.status.className">{{ cell.status.label }}</span>
-                  <span class="week-cell-time">{{ cell.timeLabel }}</span>
-                  <span class="week-cell-note">{{ cell.note }}</span>
+      <div v-else-if="filteredWeeklyBoardRows.length > 0" class="weekly-person-grid">
+        <article
+          v-for="row in filteredWeeklyBoardRows"
+          :key="`week-${row.profile_id}`"
+          class="weekly-person-card"
+        >
+          <div class="weekly-person-head">
+            <div>
+              <div class="week-user-name">{{ row.user_name }}</div>
+              <div class="week-user-id">{{ row.user_login_id }}</div>
+            </div>
+            <div class="weekly-person-summary">
+              <span class="weekly-summary-chip">
+                근무 {{ countWeeklyStatuses(row.days, ['done', 'early_leave', 'working']) }}일
+              </span>
+              <span class="weekly-summary-chip tone-amber">
+                지각·조퇴 {{ countWeeklyStatuses(row.days, ['late', 'late_early']) }}일
+              </span>
+              <span class="weekly-summary-chip tone-purple">
+                휴가 {{ countWeeklyStatuses(row.days, ['leave']) }}일
+              </span>
+            </div>
+          </div>
+
+          <div class="weekly-day-grid">
+            <article
+              v-for="cell in row.days"
+              :key="`${row.profile_id}-${cell.date}`"
+              class="weekly-day-card"
+              :class="[dayCardTone(cell), { muted: !cell.inMonth, today: cell.date === todayDate }]"
+            >
+              <div class="weekly-day-head">
+                <div>
+                  <div class="day-card-weekday">{{ getWeekdayLabel(cell.date) }}</div>
+                  <strong class="day-card-date">{{ formatCardDate(cell.date) }}</strong>
                 </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                <span class="status-chip" :class="cell.status.className">{{ cell.status.label }}</span>
+              </div>
+              <div class="weekly-day-body">
+                <span class="weekly-day-time">{{ cell.timeLabel }}</span>
+                <span class="weekly-day-note">{{ cell.note }}</span>
+              </div>
+            </article>
+          </div>
+        </article>
       </div>
       <div v-else class="table-empty">선택한 조건에 맞는 주간 근태가 없습니다.</div>
     </div>
@@ -584,6 +602,10 @@ function matchesStatusFilter(code?: string) {
   return true
 }
 
+function countWeeklyStatuses(days: Array<{ inMonth: boolean, status: { code?: string } }>, codes: string[]) {
+  return days.filter((day) => day.inMonth && codes.includes(String(day.status.code || ''))).length
+}
+
 watch(
   () => [profileLoaded.value, user.value.id, isAdmin.value],
   async ([loaded, uid]) => {
@@ -799,56 +821,109 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
 }
 
-.weekly-wrap {
-  overflow-x: auto;
+.weekly-person-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-md);
 }
 
-.weekly-table {
-  min-width: 920px;
+.weekly-person-card {
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.88);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.sticky-col {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  background: rgba(255, 255, 255, 0.98);
+.weekly-person-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.week-col-head {
-  min-width: 124px;
+.weekly-person-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
-.week-col-head span {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.82rem;
-  color: var(--color-text-secondary);
+.weekly-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.weekly-summary-chip.tone-amber {
+  background: rgba(245, 158, 11, 0.1);
+  color: #b45309;
+}
+
+.weekly-summary-chip.tone-purple {
+  background: rgba(139, 92, 246, 0.1);
+  color: #6d28d9;
 }
 
 .week-user-name {
   font-weight: 700;
+  font-size: 1.04rem;
 }
 
 .week-user-id {
-  margin-top: 2px;
-  font-size: 0.82rem;
+  margin-top: 4px;
+  font-size: 0.86rem;
   color: var(--color-text-secondary);
 }
 
-.week-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 94px;
-  padding: 8px 0;
+.weekly-day-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
 }
 
-.week-cell.muted {
+.weekly-day-card {
+  min-height: 144px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(248, 250, 252, 0.8);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.weekly-day-card.today {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.weekly-day-card.muted {
   opacity: 0.58;
 }
 
-.week-cell-time,
-.week-cell-note {
+.weekly-day-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.weekly-day-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.weekly-day-time,
+.weekly-day-note {
   font-size: 0.84rem;
   color: var(--color-text-secondary);
   line-height: 1.35;
@@ -868,6 +943,16 @@ onBeforeUnmount(() => {
 
   .day-card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .weekly-person-head,
+  .weekly-person-summary {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .weekly-day-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .search-input {

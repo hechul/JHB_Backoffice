@@ -186,7 +186,12 @@
 - `app/pages/attendance/index.vue`
 - `app/pages/attendance/records.vue`
 - `app/pages/attendance/admin.vue`
+- `app/pages/attendance/leave.vue`
+- `app/pages/attendance/leave-approvals.vue`
+- `app/pages/attendance/weekly.vue`
+- `app/pages/attendance/calendar.vue`
 - `app/pages/attendance/settings.vue`
+- `app/layouts/attendance.vue`
 
 ### 테스트
 
@@ -367,16 +372,16 @@
 - 신규 가입 기본 상태는 승인 대기 흐름을 전제로 설계됨
 - 승인된 계정만 일반 서비스 접근 가능
 - 개인:
-  - 출근/퇴근 기록
-  - 월별 본인 기록 조회
+  - 출퇴근 기록
   - 휴가/반차 신청
+  - 주별 근태 기록(본인)
+  - 월별 근태 캘린더(본인)
   - 승인된 부재 반영 상태 자동 판정
 - 관리자:
-  - 전체 기록 조회
-  - 검색
-  - 시간 수정/삭제
-  - 오늘 현황 카드/상태 테이블
-  - 휴가 신청 승인
+  - 금일 근태 이력
+  - 휴가 승인
+  - 주별 근태 기록(전체)
+  - 월별 근태 캘린더(전체)
   - 근무 기준 설정
 
 주의:

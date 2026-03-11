@@ -87,8 +87,8 @@ async function handleGoBack() {
   await goHomeWithFallback()
 }
 
-function handleLogout() {
-  logout()
+async function handleLogout() {
+  await logout()
 }
 </script>
 

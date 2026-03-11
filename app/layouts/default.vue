@@ -299,8 +299,8 @@ const today = computed(() => {
 })
 
 const showPeriodMenu = ref(false)
-function handleLogout() {
-  logout()
+async function handleLogout() {
+  await logout()
 }
 
 function handlePageRefresh() {

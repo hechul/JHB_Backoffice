@@ -13,7 +13,7 @@
           <div v-if="todayApprovedLeave" class="today-note">
             승인된 부재: {{ getLeaveTypeLabel(todayApprovedLeave.leave_type) }}
           </div>
-          <div v-else class="today-note">{{ todayActionDescription }}</div>
+          <div v-else class="today-note">오늘 근무 상태를 확인하고 바로 기록합니다.</div>
         </div>
         <div class="today-pill">{{ currentModeLabel }}</div>
       </div>
@@ -34,16 +34,6 @@
         <div class="today-item">
           <span>현재 상태</span>
           <strong>{{ currentModeLabel }}</strong>
-        </div>
-      </div>
-
-      <div class="flow-strip">
-        <div v-for="step in actionSteps" :key="step.label" class="flow-step" :class="{ active: step.active, done: step.done }">
-          <span class="flow-step-index">{{ step.index }}</span>
-          <div>
-            <strong>{{ step.label }}</strong>
-            <span>{{ step.desc }}</span>
-          </div>
         </div>
       </div>
 
@@ -201,46 +191,12 @@ const currentModeLabel = computed(() => {
   return '퇴근 완료'
 })
 
-const todayActionDescription = computed(() => {
-  if (workToggleMode.value === 'before_start') return '출근할 때 출근하기를 누르면 근무가 시작됩니다.'
-  if (workToggleMode.value === 'on') return '잠시 비울 때 일시중단을 누르고, 업무를 마치면 퇴근하기를 누릅니다.'
-  if (workToggleMode.value === 'off') return '업무를 다시 시작할 때 재시작을 누르거나, 그대로 퇴근할 수 있습니다.'
-  return '오늘 근무 기록이 모두 저장되었습니다.'
-})
-
 const todayWorkDuration = computed(() => {
   if (!todayRecord.value) return '-'
   const minutes = todaySessions.value.length
     ? calcWorkSessionMinutes(todaySessions.value, liveNowIso.value)
     : calcWorkMinutes(todayRecord.value.check_in_at, todayRecord.value.check_out_at)
   return formatWorkDuration(minutes)
-})
-
-const actionSteps = computed(() => {
-  const mode = workToggleMode.value
-  return [
-    {
-      index: '1',
-      label: '출근',
-      desc: '근무 시작',
-      active: mode === 'before_start',
-      done: mode !== 'before_start',
-    },
-    {
-      index: '2',
-      label: '중단/재시작',
-      desc: '쉬는 시간 기록',
-      active: mode === 'on' || mode === 'off',
-      done: mode === 'done',
-    },
-    {
-      index: '3',
-      label: '퇴근',
-      desc: '오늘 기록 마감',
-      active: mode === 'done',
-      done: mode === 'done',
-    },
-  ]
 })
 
 const canLegacyCheckIn = computed(() => {

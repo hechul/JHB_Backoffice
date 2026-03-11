@@ -7,6 +7,8 @@ export default defineNuxtConfig({
   modules: ['@nuxtjs/supabase'],
 
   supabase: {
+    url: process.env.NUXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
+    key: process.env.NUXT_PUBLIC_SUPABASE_KEY || process.env.SUPABASE_KEY || '',
     redirect: false, // 커스텀 미들웨어로 처리
   },
 
