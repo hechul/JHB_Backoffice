@@ -1,8 +1,17 @@
 <template>
   <div class="records-page">
     <div class="records-header">
-      <h1 class="records-title">출퇴근 기록</h1>
-      <span class="records-subtitle">오늘 근무 상태를 확인하고 바로 기록합니다.</span>
+      <div>
+        <h1 class="records-title">출퇴근 기록</h1>
+      </div>
+      <button
+        v-if="!leaveTableMissing"
+        type="button"
+        class="btn btn-ghost records-header-btn"
+        @click="isLeaveModalOpen = true"
+      >
+        휴가 신청
+      </button>
     </div>
 
     <div class="card today-card">
@@ -13,7 +22,7 @@
           <div v-if="todayApprovedLeave" class="today-note">
             승인된 부재: {{ getLeaveTypeLabel(todayApprovedLeave.leave_type) }}
           </div>
-          <div v-else class="today-note">오늘 근무 상태를 확인하고 바로 기록합니다.</div>
+          <div v-else class="today-note">{{ todayActionDescription }}</div>
         </div>
         <div class="today-pill">{{ currentModeLabel }}</div>
       </div>
@@ -30,10 +39,6 @@
         <div class="today-item">
           <span>총 근무시간</span>
           <strong>{{ todayWorkDuration }}</strong>
-        </div>
-        <div class="today-item">
-          <span>현재 상태</span>
-          <strong>{{ currentModeLabel }}</strong>
         </div>
       </div>
 
@@ -76,7 +81,10 @@
         </div>
       </div>
 
-      <div v-if="!sessionsTableMissing" class="session-list-wrap">
+      <div
+        v-if="!sessionsTableMissing && (todaySessionsSorted.length > 0 || workToggleMode !== 'before_start')"
+        class="session-list-wrap"
+      >
         <div class="section-label">오늘 근무 전환 기록</div>
         <div v-if="todaySessionsSorted.length === 0" class="history-empty">아직 근무 전환 기록이 없습니다.</div>
         <div v-else class="session-list">
@@ -85,6 +93,25 @@
             <span>시작 {{ formatTime(session.started_at) }}</span>
             <span>중단 {{ formatTime(session.ended_at) }}</span>
           </div>
+        </div>
+      </div>
+
+      <div class="mini-week-wrap">
+        <div class="mini-week-head">
+          <div class="section-label">이번 주 한눈에 보기</div>
+          <NuxtLink to="/attendance/weekly" class="mini-week-link">자세히 보기</NuxtLink>
+        </div>
+        <div class="mini-week-grid">
+          <article
+            v-for="day in weekMiniDays"
+            :key="day.date"
+            class="mini-week-item"
+            :class="[day.tone, { today: day.isToday }]"
+          >
+            <span class="mini-week-weekday">{{ day.weekday }}</span>
+            <strong class="mini-week-date">{{ day.shortDate }}</strong>
+            <span class="status-chip" :class="day.status.className">{{ day.status.label }}</span>
+          </article>
         </div>
       </div>
 
@@ -104,11 +131,61 @@
         `docs/sql/2026-03-10_attendance_phase2.sql` 실행이 필요합니다.
       </div>
     </div>
+
+    <div v-if="isLeaveModalOpen" class="modal-backdrop" @click.self="closeLeaveModal">
+      <div class="leave-modal">
+        <div class="leave-modal-head">
+          <div>
+            <h2>휴가 · 반차 신청</h2>
+          </div>
+          <button type="button" class="modal-close-btn" @click="closeLeaveModal">닫기</button>
+        </div>
+
+        <div class="leave-form-grid">
+          <label class="field">
+            <span>유형</span>
+            <select v-model="leaveForm.leave_type" class="input select-input" :disabled="savingLeave">
+              <option value="annual">연차</option>
+              <option value="half_am">오전 반차</option>
+              <option value="half_pm">오후 반차</option>
+              <option value="sick">병가</option>
+              <option value="official">공가</option>
+              <option value="other">기타</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>시작일</span>
+            <input v-model="leaveForm.start_date" type="date" class="input" :disabled="savingLeave" />
+          </label>
+
+          <label class="field">
+            <span>종료일</span>
+            <input
+              v-model="leaveForm.end_date"
+              type="date"
+              class="input"
+              :disabled="savingLeave || isHalfDayType(leaveForm.leave_type)"
+            />
+          </label>
+
+          <label class="field field-wide">
+            <span>사유</span>
+            <textarea v-model.trim="leaveForm.reason" class="input textarea-input" rows="3" :disabled="savingLeave" />
+          </label>
+        </div>
+
+        <div class="leave-modal-actions">
+          <button type="button" class="btn btn-ghost" :disabled="savingLeave" @click="closeLeaveModal">취소</button>
+          <button type="button" class="btn btn-primary" :disabled="savingLeave" @click="submitLeaveRequest">신청하기</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { AttendanceRecord, AttendanceSettings, AttendanceWorkSession, LeaveRequest } from '~/composables/useAttendance'
+import type { AttendanceRecord, AttendanceSettings, AttendanceWorkSession, LeaveRequest, LeaveType } from '~/composables/useAttendance'
 
 definePageMeta({ layout: 'attendance' })
 
@@ -125,6 +202,7 @@ const {
   calcWorkSessionMinutes,
   formatWorkDuration,
   normalizeAttendanceSettings,
+  createLeaveDateMap,
   getLeaveTypeLabel,
   computeAttendanceStatus,
 } = useAttendance()
@@ -133,14 +211,25 @@ const todayDate = ref(getKstDateKey())
 const todayRecord = ref<AttendanceRecord | null>(null)
 const todaySessions = ref<AttendanceWorkSession[]>([])
 const todayApprovedLeave = ref<LeaveRequest | null>(null)
+const weekRecords = ref<AttendanceRecord[]>([])
+const weekLeaves = ref<LeaveRequest[]>([])
 const settings = ref<AttendanceSettings>(normalizeAttendanceSettings(DEFAULT_ATTENDANCE_SETTINGS))
 const saving = ref(false)
+const savingLeave = ref(false)
 const tableMissing = ref(false)
 const sessionsTableMissing = ref(false)
 const settingsTableMissing = ref(false)
 const leaveTableMissing = ref(false)
 const liveNowIso = ref(new Date().toISOString())
+const isLeaveModalOpen = ref(false)
 let liveTimer: ReturnType<typeof setInterval> | null = null
+
+const leaveForm = reactive({
+  leave_type: 'annual' as LeaveType,
+  start_date: getKstDateKey(),
+  end_date: getKstDateKey(),
+  reason: '',
+})
 
 const todaySessionsSorted = computed(() => {
   return [...todaySessions.value].sort((a, b) => a.started_at.localeCompare(b.started_at))
@@ -191,6 +280,14 @@ const currentModeLabel = computed(() => {
   return '퇴근 완료'
 })
 
+const todayActionDescription = computed(() => {
+  if (todayApprovedLeave.value) return `승인된 부재: ${getLeaveTypeLabel(todayApprovedLeave.value.leave_type)}`
+  if (workToggleMode.value === 'before_start') return '출근하기를 눌러 근무를 시작하세요.'
+  if (workToggleMode.value === 'on') return '잠시 자리를 비울 때 일시중단, 업무가 끝나면 퇴근하기를 누르세요.'
+  if (workToggleMode.value === 'off') return '자리로 돌아왔으면 재시작, 업무를 마쳤으면 퇴근하기를 누르세요.'
+  return '오늘 근무 기록이 모두 저장되었습니다.'
+})
+
 const todayWorkDuration = computed(() => {
   if (!todayRecord.value) return '-'
   const minutes = todaySessions.value.length
@@ -232,6 +329,42 @@ const canFinalCheckOut = computed(() => {
     && !tableMissing.value
   })
 
+const weekStartDate = computed(() => getWeekStart(todayDate.value))
+const weekDates = computed(() => Array.from({ length: 7 }, (_, index) => addDateKeyDays(weekStartDate.value, index)))
+
+const weekRecordMap = computed(() => {
+  return new Map(weekRecords.value.map((row) => [row.work_date, row]))
+})
+
+const weekLeaveMap = computed(() => createLeaveDateMap(weekLeaves.value))
+
+const weekMiniDays = computed(() => {
+  return weekDates.value.map((dateKey) => {
+    const record = weekRecordMap.value.get(dateKey) || null
+    const leave = weekLeaveMap.value.get(dateKey) || null
+    const isToday = dateKey === todayDate.value
+    const baseStatus = isToday
+      ? todayDisplayStatus.value
+      : computeAttendanceStatus({
+          workDate: dateKey,
+          checkInAt: record?.check_in_at,
+          checkOutAt: record?.check_out_at,
+          settings: settings.value,
+          approvedLeave: leave,
+          todayDate: todayDate.value,
+        })
+
+    return {
+      date: dateKey,
+      isToday,
+      weekday: getWeekdayLabel(dateKey),
+      shortDate: formatCardDate(dateKey),
+      status: baseStatus,
+      tone: dayCardTone(baseStatus.code),
+    }
+  })
+})
+
 function isMissingTableError(error: any, tableName: string) {
   const code = String(error?.code || '').toUpperCase()
   const msg = String(error?.message || '').toLowerCase()
@@ -242,6 +375,49 @@ function isMissingSettingsColumnError(error: any) {
   const code = String(error?.code || '').toUpperCase()
   const msg = String(error?.message || '').toLowerCase()
   return code === '42703' || msg.includes('early_leave_grace_minutes')
+}
+
+function parseDateKey(dateKey: string) {
+  return new Date(`${dateKey}T00:00:00+09:00`)
+}
+
+function addDateKeyDays(dateKey: string, days: number) {
+  const next = parseDateKey(dateKey)
+  next.setDate(next.getDate() + days)
+  return getKstDateKey(next)
+}
+
+function getWeekStart(dateKey: string) {
+  const date = parseDateKey(dateKey)
+  const shift = (date.getDay() + 6) % 7
+  date.setDate(date.getDate() - shift)
+  return getKstDateKey(date)
+}
+
+function getWeekdayLabel(dateKey: string) {
+  const date = parseDateKey(dateKey)
+  return ['월', '화', '수', '목', '금', '토', '일'][(date.getDay() + 6) % 7]
+}
+
+function formatCardDate(dateKey: string) {
+  const [, month = '', day = ''] = String(dateKey).split('-')
+  return `${month}.${day}`
+}
+
+function dayCardTone(code?: string) {
+  if (String(code).includes('leave')) return 'tone-purple'
+  if (code === 'late' || code === 'late_early' || code === 'early_leave') return 'tone-amber'
+  if (code === 'absent') return 'tone-red'
+  if (code === 'done' || code === 'working') return 'tone-blue'
+  return 'tone-slate'
+}
+
+function isHalfDayType(type: LeaveType) {
+  return type === 'half_am' || type === 'half_pm'
+}
+
+function closeLeaveModal() {
+  isLeaveModalOpen.value = false
 }
 
 async function fetchSettings() {
@@ -335,6 +511,55 @@ async function fetchTodayLeave() {
   todayApprovedLeave.value = (data as LeaveRequest | null) || null
 }
 
+async function fetchWeekRecords() {
+  if (!user.value.id) return
+  const endDate = addDateKeyDays(weekStartDate.value, 6)
+  const { data, error } = await supabase
+    .from('attendance_records')
+    .select('id, user_id, work_date, check_in_at, check_out_at, check_in_note, check_out_note, updated_by, created_at, updated_at')
+    .eq('user_id', user.value.id)
+    .gte('work_date', weekStartDate.value)
+    .lte('work_date', endDate)
+    .order('work_date', { ascending: true })
+
+  if (error) {
+    if (isMissingTableError(error, 'attendance_records')) {
+      tableMissing.value = true
+      weekRecords.value = []
+      return
+    }
+    throw error
+  }
+
+  tableMissing.value = false
+  weekRecords.value = (data || []) as AttendanceRecord[]
+}
+
+async function fetchWeekLeaves() {
+  if (!user.value.id) return
+  const endDate = addDateKeyDays(weekStartDate.value, 6)
+  const { data, error } = await supabase
+    .from('leave_requests')
+    .select('id, user_id, leave_type, start_date, end_date, status, reason, approved_by, approved_at, created_at, updated_at')
+    .eq('user_id', user.value.id)
+    .eq('status', 'approved')
+    .lte('start_date', endDate)
+    .gte('end_date', weekStartDate.value)
+    .order('start_date', { ascending: true })
+
+  if (error) {
+    if (isMissingTableError(error, 'leave_requests')) {
+      leaveTableMissing.value = true
+      weekLeaves.value = []
+      return
+    }
+    throw error
+  }
+
+  leaveTableMissing.value = false
+  weekLeaves.value = (data || []) as LeaveRequest[]
+}
+
 async function refreshToday() {
   if (!profileLoaded.value || !user.value.id) return
   try {
@@ -344,10 +569,51 @@ async function refreshToday() {
       fetchTodayRecord(),
       fetchTodaySessions(),
       fetchTodayLeave(),
+      fetchWeekRecords(),
+      fetchWeekLeaves(),
     ])
   } catch (error: any) {
     console.error('Failed to fetch attendance records:', error)
     toast.error(`근태 기록을 불러오지 못했습니다: ${error?.message || '알 수 없는 오류'}`)
+  }
+}
+
+async function submitLeaveRequest() {
+  if (leaveTableMissing.value || !user.value.id) return
+  if (!leaveForm.start_date || !leaveForm.end_date) {
+    toast.error('휴가 기간을 입력해야 합니다.')
+    return
+  }
+  if (isHalfDayType(leaveForm.leave_type)) {
+    leaveForm.end_date = leaveForm.start_date
+  }
+  if (leaveForm.end_date < leaveForm.start_date) {
+    toast.error('종료일은 시작일보다 빠를 수 없습니다.')
+    return
+  }
+
+  savingLeave.value = true
+  try {
+    const { error } = await supabase
+      .from('leave_requests')
+      .insert({
+        user_id: user.value.id,
+        leave_type: leaveForm.leave_type,
+        start_date: leaveForm.start_date,
+        end_date: leaveForm.end_date,
+        reason: leaveForm.reason || null,
+      })
+
+    if (error) throw error
+    toast.success('휴가 신청이 저장되었습니다.')
+    leaveForm.reason = ''
+    closeLeaveModal()
+    await refreshToday()
+  } catch (error: any) {
+    console.error('Failed to submit leave request:', error)
+    toast.error(`휴가 신청 실패: ${error?.message || '알 수 없는 오류'}`)
+  } finally {
+    savingLeave.value = false
   }
 }
 
@@ -522,6 +788,20 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => leaveForm.leave_type,
+  (type) => {
+    if (isHalfDayType(type)) leaveForm.end_date = leaveForm.start_date
+  },
+)
+
+watch(
+  () => leaveForm.start_date,
+  (value) => {
+    if (isHalfDayType(leaveForm.leave_type)) leaveForm.end_date = value
+  },
+)
+
 onMounted(() => {
   liveTimer = setInterval(() => {
     liveNowIso.value = new Date().toISOString()
@@ -542,8 +822,9 @@ onBeforeUnmount(() => {
 
 .records-header {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
 }
 
 .records-title {
@@ -554,6 +835,11 @@ onBeforeUnmount(() => {
 .records-subtitle {
   color: var(--color-text-secondary);
   font-size: 0.94rem;
+}
+
+.records-header-btn {
+  min-height: 40px;
+  white-space: nowrap;
 }
 
 .today-card {
@@ -592,19 +878,70 @@ onBeforeUnmount(() => {
   min-height: 42px;
   padding: 0 16px;
   border-radius: 999px;
-  background: rgba(37, 99, 235, 0.08);
-  border: 1px solid rgba(37, 99, 235, 0.14);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.18);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  color: #1d4ed8;
+  color: var(--color-text-primary);
 }
 
 .today-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-md);
+}
+
+.mini-week-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mini-week-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mini-week-link {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.mini-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mini-week-item {
+  padding: 12px 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.94);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.mini-week-item.today {
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.18);
+}
+
+.mini-week-weekday {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.mini-week-date {
+  font-size: 0.92rem;
+  font-weight: 800;
 }
 
 .today-item {
@@ -625,57 +962,6 @@ onBeforeUnmount(() => {
 .today-item strong {
   font-size: 1.05rem;
   font-weight: 700;
-}
-
-.flow-strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-md);
-}
-
-.flow-step {
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid var(--color-border-light);
-  background: rgba(255, 255, 255, 0.76);
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.flow-step.active {
-  border-color: rgba(37, 99, 235, 0.24);
-  background: rgba(37, 99, 235, 0.06);
-}
-
-.flow-step.done {
-  border-color: rgba(16, 185, 129, 0.22);
-  background: rgba(16, 185, 129, 0.08);
-}
-
-.flow-step-index {
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.08);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.84rem;
-  font-weight: 800;
-}
-
-.flow-step strong {
-  display: block;
-  font-size: 0.95rem;
-}
-
-.flow-step span:last-child {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.85rem;
-  line-height: 1.35;
-  color: var(--color-text-secondary);
 }
 
 .action-panel {
@@ -707,8 +993,8 @@ onBeforeUnmount(() => {
 .action-complete {
   min-height: 92px;
   border-radius: 20px;
-  background: rgba(37, 99, 235, 0.08);
-  border: 1px solid rgba(37, 99, 235, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.18);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -727,8 +1013,7 @@ onBeforeUnmount(() => {
 }
 
 .leave-complete {
-  background: rgba(16, 185, 129, 0.08);
-  border-color: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.22);
 }
 
 .session-list-wrap {
@@ -783,22 +1068,122 @@ onBeforeUnmount(() => {
   border-color: rgba(148, 163, 184, 0.2);
 }
 
+.tone-slate {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+.tone-blue {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(37, 99, 235, 0.22);
+}
+
+.tone-amber {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(245, 158, 11, 0.24);
+}
+
+.tone-purple {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(139, 92, 246, 0.22);
+}
+
+.tone-red {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(239, 68, 68, 0.22);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.44);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.leave-modal {
+  width: min(640px, 100%);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.leave-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-close-btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border-light);
+  background: #fff;
+  color: var(--color-text-secondary);
+  font-weight: 700;
+}
+
+.leave-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field span {
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+.textarea-input {
+  min-height: 108px;
+  resize: vertical;
+}
+
+.leave-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 @media (max-width: 960px) {
   .today-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .flow-strip {
-    grid-template-columns: 1fr;
+  .mini-week-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 768px) {
   .action-row,
-  .today-grid,
   .session-item,
-  .today-head {
+  .leave-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .today-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .action-main,
@@ -807,9 +1192,19 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  .today-head {
+  .today-head,
+  .records-header,
+  .mini-week-head {
     display: flex;
     flex-direction: column;
+  }
+
+  .mini-week-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .modal-backdrop {
+    padding: 16px;
   }
 }
 </style>

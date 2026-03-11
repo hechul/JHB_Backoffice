@@ -3,7 +3,6 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">휴가 · 반차 신청</h1>
-        <div class="page-subtitle">휴가와 반차를 신청하고 내 신청 상태를 확인합니다.</div>
       </div>
       <input v-model="selectedMonth" type="month" class="input month-input" />
     </div>
@@ -15,8 +14,13 @@
 
     <template v-else>
       <div class="summary-grid">
-        <div v-for="item in leaveSummaryCards" :key="item.label" class="card summary-card" :class="item.tone">
-          <span class="summary-label">{{ item.label }}</span>
+        <div v-for="item in leaveSummaryCards" :key="item.label" class="card summary-card">
+          <div class="summary-head">
+            <span class="summary-label">{{ item.label }}</span>
+            <div class="summary-icon-wrap" :class="item.tone">
+              <component :is="item.icon" :size="16" :stroke-width="1.9" />
+            </div>
+          </div>
           <strong class="summary-value">{{ item.value }}</strong>
         </div>
       </div>
@@ -93,6 +97,7 @@
 </template>
 
 <script setup lang="ts">
+import { CheckCircle2, Clock3, Send, XCircle } from 'lucide-vue-next'
 import type { LeaveRequest, LeaveType } from '~/composables/useAttendance'
 
 definePageMeta({ layout: 'attendance' })
@@ -125,10 +130,10 @@ const leaveSummaryCards = computed(() => {
   const visible = visibleLeaveRequests.value
   const countBy = (status: LeaveRequest['status']) => visible.filter((row) => row.status === status).length
   return [
-    { label: '신청 건수', value: `${visible.length}건`, tone: 'tone-slate' },
-    { label: '승인 대기', value: `${countBy('pending')}건`, tone: 'tone-amber' },
-    { label: '승인 완료', value: `${countBy('approved')}건`, tone: 'tone-green' },
-    { label: '반려', value: `${countBy('rejected')}건`, tone: 'tone-red' },
+    { label: '신청 건수', value: `${visible.length}건`, tone: 'summary-tone-slate', icon: Send },
+    { label: '승인 대기', value: `${countBy('pending')}건`, tone: 'summary-tone-amber', icon: Clock3 },
+    { label: '승인 완료', value: `${countBy('approved')}건`, tone: 'summary-tone-green', icon: CheckCircle2 },
+    { label: '반려', value: `${countBy('rejected')}건`, tone: 'summary-tone-red', icon: XCircle },
   ]
 })
 
@@ -292,7 +297,17 @@ watch(selectedMonth, async () => {
 .summary-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+.summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .summary-label {
@@ -305,20 +320,33 @@ watch(selectedMonth, async () => {
   font-weight: 800;
 }
 
-.tone-slate {
-  background: rgba(148, 163, 184, 0.08);
+.summary-icon-wrap {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.tone-amber {
-  background: rgba(245, 158, 11, 0.08);
+.summary-tone-slate {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.12);
 }
 
-.tone-green {
-  background: rgba(16, 185, 129, 0.08);
+.summary-tone-amber {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.14);
 }
 
-.tone-red {
-  background: rgba(239, 68, 68, 0.08);
+.summary-tone-green {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.14);
+}
+
+.summary-tone-red {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.14);
 }
 
 .form-grid {

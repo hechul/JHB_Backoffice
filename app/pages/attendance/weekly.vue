@@ -3,7 +3,6 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">주별 근태 기록</h1>
-        <div class="page-subtitle">{{ isAdmin ? '직원 전체의 주간 근태 상태를 확인합니다.' : '이번 주 내 근태 상태를 확인합니다.' }}</div>
       </div>
       <div class="page-actions">
         <input v-model="selectedMonth" type="month" class="input month-input" />
@@ -27,66 +26,87 @@
       `docs/sql/2026-03-10_attendance_phase2.sql` 실행이 필요합니다.
     </div>
 
-    <div class="summary-grid">
-      <div v-for="item in weekSummaryCards" :key="item.label" class="card summary-card" :class="item.tone">
-        <span class="summary-label">{{ item.label }}</span>
-        <strong class="summary-value">{{ item.value }}</strong>
+      <div class="summary-grid">
+        <div v-for="item in weekSummaryCards" :key="item.label" class="card summary-card">
+          <div class="summary-head">
+            <span class="summary-label">{{ item.label }}</span>
+            <div class="summary-icon-wrap" :class="item.tone">
+              <component :is="item.icon" :size="16" :stroke-width="1.9" />
+            </div>
+          </div>
+          <strong class="summary-value">{{ item.value }}</strong>
+        </div>
       </div>
-    </div>
 
     <div class="card board-card">
-      <div class="section-head">
-        <div>
-          <h2>{{ currentWeekLabel }}</h2>
-          <span class="section-caption">{{ isAdmin ? '직원 전체 주간 보드' : '내 주간 보드' }}</span>
+      <template v-if="isAdmin">
+        <div class="section-head">
+          <div>
+            <h2>{{ currentWeekLabel }}</h2>
+          </div>
+          <div class="week-nav">
+            <button class="btn btn-ghost btn-sm" @click="jumpToCurrentWeek">이번 주</button>
+            <button class="btn btn-ghost btn-sm" :disabled="!hasPrevWeek" @click="moveWeek(-1)">이전 주</button>
+            <button class="btn btn-ghost btn-sm" :disabled="!hasNextWeek" @click="moveWeek(1)">다음 주</button>
+          </div>
         </div>
-        <div class="week-nav">
-          <button class="btn btn-ghost btn-sm" @click="jumpToCurrentWeek">이번 주</button>
-          <button class="btn btn-ghost btn-sm" :disabled="!hasPrevWeek" @click="moveWeek(-1)">이전 주</button>
-          <button class="btn btn-ghost btn-sm" :disabled="!hasNextWeek" @click="moveWeek(1)">다음 주</button>
-        </div>
-      </div>
 
-      <div class="status-filter-row">
-        <button
-          v-for="filter in statusFilters"
-          :key="filter.value"
-          type="button"
-          class="status-filter-chip"
-          :class="{ active: selectedStatusFilter === filter.value }"
-          @click="selectedStatusFilter = filter.value"
-        >
-          {{ filter.label }}
-        </button>
-      </div>
+        <div class="status-filter-row">
+          <button
+            v-for="filter in statusFilters"
+            :key="filter.value"
+            type="button"
+            class="status-filter-chip"
+            :class="{ active: selectedStatusFilter === filter.value }"
+            @click="selectedStatusFilter = filter.value"
+          >
+            {{ filter.label }}
+          </button>
+        </div>
+      </template>
 
       <div v-if="weeklyBoardRows.length === 0" class="table-empty">표시할 주간 근태가 없습니다.</div>
-      <div v-else-if="!isAdmin && myWeeklyRow" class="day-card-grid">
-        <article
-          v-for="cell in filteredMyWeekDays"
-          :key="`week-card-${cell.date}`"
-          class="day-card"
-          :class="[dayCardTone(cell), { muted: !cell.inMonth, today: cell.date === todayDate }]"
-        >
-          <div class="day-card-head">
-            <div>
-              <div class="day-card-weekday">{{ getWeekdayLabel(cell.date) }}</div>
-              <strong class="day-card-date">{{ formatCardDate(cell.date) }}</strong>
-            </div>
-            <span class="status-chip" :class="cell.status.className">{{ cell.status.label }}</span>
+      <div v-else-if="!isAdmin" class="monthly-log-list">
+        <div class="section-head compact-head">
+          <div>
+            <h2>{{ formatMonthLabel(selectedMonth) }} 내 기록</h2>
           </div>
+        </div>
 
-          <div class="day-card-body">
-            <div class="day-card-row">
-              <span>기록</span>
-              <strong>{{ cell.timeLabel }}</strong>
+        <div v-if="personalMonthlyEntries.length === 0" class="table-empty">해당 월 근태 기록이 없습니다.</div>
+        <div v-else class="monthly-log-cards">
+          <article
+            v-for="entry in personalMonthlyEntries"
+            :key="`month-entry-${entry.date}`"
+            class="monthly-log-card"
+            :class="dayCardTone(entry.status)"
+          >
+            <div class="monthly-log-head">
+              <div>
+                <div class="day-card-weekday">{{ getWeekdayLabel(entry.date) }}</div>
+                <strong class="day-card-date">{{ entry.date }}</strong>
+              </div>
+              <span class="status-chip" :class="entry.className">{{ entry.label }}</span>
             </div>
-            <div class="day-card-row">
-              <span>요약</span>
-              <strong>{{ cell.note }}</strong>
+
+            <div class="monthly-log-grid">
+              <div class="monthly-log-item">
+                <span>출근</span>
+                <strong>{{ entry.checkIn }}</strong>
+              </div>
+              <div class="monthly-log-item">
+                <span>퇴근</span>
+                <strong>{{ entry.checkOut }}</strong>
+              </div>
+              <div class="monthly-log-item">
+                <span>근무시간</span>
+                <strong>{{ entry.duration }}</strong>
+              </div>
             </div>
-          </div>
-        </article>
+
+            <div class="monthly-log-note">{{ entry.note }}</div>
+          </article>
+        </div>
       </div>
       <div v-else-if="filteredWeeklyBoardRows.length > 0" class="weekly-person-grid">
         <article
@@ -140,6 +160,7 @@
 </template>
 
 <script setup lang="ts">
+import { BriefcaseBusiness, CalendarRange, CircleAlert, Plane, Users } from 'lucide-vue-next'
 import type { AttendanceRecord, AttendanceSettings, AttendanceWorkSession, LeaveRequest } from '~/composables/useAttendance'
 
 definePageMeta({ layout: 'attendance' })
@@ -325,7 +346,6 @@ const currentWeekLabel = computed(() => {
   return `${formatMonthLabel(selectedMonth.value)} ${weekNo}주차 · ${first.shortDate} ~ ${last.shortDate}`
 })
 
-const myWeeklyRow = computed(() => weeklyBoardRows.value[0] || null)
 const statusFilters = [
   { label: '전체', value: 'all' },
   { label: '근무', value: 'working' },
@@ -335,6 +355,17 @@ const statusFilters = [
 ] as const
 
 const weekSummaryCards = computed(() => {
+  if (!isAdmin.value) {
+    const countBy = (predicate: (entry: typeof personalMonthlyEntries.value[number]) => boolean) => personalMonthlyEntries.value.filter(predicate).length
+    return [
+      { label: '기록 일수', value: `${personalMonthlyEntries.value.length}일`, tone: 'summary-tone-slate', icon: CalendarRange },
+      { label: '정상/근무', value: `${countBy((entry) => ['done', 'working'].includes(entry.status))}일`, tone: 'summary-tone-blue', icon: BriefcaseBusiness },
+      { label: '지각/조퇴', value: `${countBy((entry) => ['late', 'late_early', 'early_leave'].includes(entry.status))}일`, tone: 'summary-tone-amber', icon: CircleAlert },
+      { label: '휴가/반차', value: `${countBy((entry) => entry.status.includes('leave'))}일`, tone: 'summary-tone-purple', icon: Plane },
+      { label: '결근', value: `${countBy((entry) => entry.status === 'absent')}일`, tone: 'summary-tone-red', icon: Users },
+    ]
+  }
+
   const statusCounts = { working: 0, late: 0, leave: 0, absent: 0 }
   for (const row of weeklyBoardRows.value) {
     for (const day of row.days) {
@@ -347,12 +378,68 @@ const weekSummaryCards = computed(() => {
     }
   }
   return [
-    { label: isAdmin.value ? '조회 직원' : '조회 기간', value: isAdmin.value ? `${scopedProfiles.value.length}명` : `${currentWeekDays.value.length}일`, tone: 'tone-slate' },
-    { label: '근무 표시', value: `${statusCounts.working}건`, tone: 'tone-blue' },
-    { label: '지각/조퇴', value: `${statusCounts.late}건`, tone: 'tone-amber' },
-    { label: '휴가/반차', value: `${statusCounts.leave}건`, tone: 'tone-purple' },
-    { label: '결근', value: `${statusCounts.absent}건`, tone: 'tone-red' },
+    { label: isAdmin.value ? '조회 직원' : '조회 기간', value: isAdmin.value ? `${scopedProfiles.value.length}명` : `${currentWeekDays.value.length}일`, tone: 'summary-tone-slate', icon: Users },
+    { label: '근무 표시', value: `${statusCounts.working}건`, tone: 'summary-tone-blue', icon: BriefcaseBusiness },
+    { label: '지각/조퇴', value: `${statusCounts.late}건`, tone: 'summary-tone-amber', icon: CircleAlert },
+    { label: '휴가/반차', value: `${statusCounts.leave}건`, tone: 'summary-tone-purple', icon: Plane },
+    { label: '결근', value: `${statusCounts.absent}건`, tone: 'summary-tone-red', icon: CalendarRange },
   ]
+})
+
+const personalMonthlyEntries = computed(() => {
+  if (isAdmin.value) return []
+  const profile = profiles.value[0]
+  if (!profile) return []
+  const { start, end } = getMonthRange(selectedMonth.value)
+  const recordMap = new Map(
+    rows.value
+      .filter((row) => row.user_id === profile.profile_id)
+      .map((row) => [row.work_date, row]),
+  )
+  const dates = new Set<string>()
+
+  for (const row of rows.value) {
+    if (row.user_id === profile.profile_id && row.work_date >= start && row.work_date <= end) {
+      dates.add(row.work_date)
+    }
+  }
+
+  for (const [key, leave] of approvedLeaveMapByUserDate.value.entries()) {
+    const [userId, dateKey] = key.split(':')
+    if (userId === profile.profile_id && leave.status === 'approved' && dateKey >= start && dateKey <= end) {
+      dates.add(dateKey)
+    }
+  }
+
+  return [...dates]
+    .sort((a, b) => b.localeCompare(a))
+    .map((dateKey) => {
+      const row = recordMap.get(dateKey) || null
+      const leave = approvedLeaveMapByUserDate.value.get(`${profile.profile_id}:${dateKey}`) || null
+      const daySessions = sessionMapByUserDate.value.get(`${profile.profile_id}:${dateKey}`) || []
+      const status = computeAttendanceStatus({
+        workDate: dateKey,
+        checkInAt: row?.check_in_at,
+        checkOutAt: row?.check_out_at,
+        settings: settings.value,
+        approvedLeave: leave,
+        todayDate: todayDate.value,
+      })
+      const workMinutes = daySessions.length
+        ? calcWorkSessionMinutes(daySessions, dateKey === todayDate.value ? liveNowIso.value : null)
+        : calcWorkMinutes(row?.check_in_at, row?.check_out_at)
+
+      return {
+        date: dateKey,
+        status: status.code,
+        label: status.label,
+        className: status.className,
+        checkIn: leave ? '-' : formatTime(row?.check_in_at),
+        checkOut: leave ? '-' : formatTime(row?.check_out_at),
+        duration: leave ? getLeaveTypeLabel(leave.leave_type) : formatWorkDuration(workMinutes),
+        note: leave ? `${getLeaveTypeLabel(leave.leave_type)} · ${getLeaveStatusLabel(leave.status)}` : (workMinutes > 0 ? formatWorkDuration(workMinutes) : '-'),
+      }
+    })
 })
 
 const weeklyBoardRows = computed(() => {
@@ -396,12 +483,6 @@ const weeklyBoardRows = computed(() => {
       days,
     }
   })
-})
-
-const filteredMyWeekDays = computed(() => {
-  const row = myWeeklyRow.value
-  if (!row) return []
-  return row.days.filter((cell) => matchesStatusFilter(cell.status.code))
 })
 
 const filteredWeeklyBoardRows = computed(() => {
@@ -691,7 +772,27 @@ onBeforeUnmount(() => {
 .summary-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(226, 232, 240, 0.88);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+}
+
+.summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-icon-wrap {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .summary-label {
@@ -704,24 +805,37 @@ onBeforeUnmount(() => {
   font-weight: 800;
 }
 
-.tone-slate {
-  background: rgba(148, 163, 184, 0.08);
+.summary-tone-slate {
+  background: rgba(148, 163, 184, 0.12);
+  color: #475569;
 }
 
-.tone-blue {
-  background: rgba(37, 99, 235, 0.08);
+.summary-tone-blue {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
 }
 
-.tone-amber {
-  background: rgba(245, 158, 11, 0.08);
+.summary-tone-amber {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
 }
 
-.tone-purple {
-  background: rgba(139, 92, 246, 0.09);
+.summary-tone-purple {
+  background: rgba(139, 92, 246, 0.12);
+  color: #6d28d9;
 }
 
+.summary-tone-red {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+}
+
+.tone-slate,
+.tone-blue,
+.tone-amber,
+.tone-purple,
 .tone-red {
-  background: rgba(239, 68, 68, 0.08);
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .board-card {
@@ -753,10 +867,60 @@ onBeforeUnmount(() => {
   color: #1d4ed8;
 }
 
-.day-card-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.monthly-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.monthly-log-cards {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-md);
+}
+
+.monthly-log-card {
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.86);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.monthly-log-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.monthly-log-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.monthly-log-item {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.monthly-log-item span,
+.monthly-log-note {
+  font-size: 0.88rem;
+  color: var(--color-text-secondary);
+}
+
+.monthly-log-item strong {
+  font-size: 0.98rem;
+  font-weight: 800;
 }
 
 .day-card {
@@ -857,19 +1021,22 @@ onBeforeUnmount(() => {
   min-height: 34px;
   padding: 0 12px;
   border-radius: 999px;
-  background: rgba(37, 99, 235, 0.08);
-  color: #1d4ed8;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  color: var(--color-text);
   font-size: 0.86rem;
   font-weight: 700;
 }
 
 .weekly-summary-chip.tone-amber {
-  background: rgba(245, 158, 11, 0.1);
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(245, 158, 11, 0.22);
   color: #b45309;
 }
 
 .weekly-summary-chip.tone-purple {
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(139, 92, 246, 0.22);
   color: #6d28d9;
 }
 
@@ -894,11 +1061,31 @@ onBeforeUnmount(() => {
   min-height: 144px;
   padding: 14px;
   border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(248, 250, 252, 0.8);
+  border: 1px solid rgba(226, 232, 240, 0.88);
+  background: rgba(255, 255, 255, 0.94);
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.weekly-day-card.tone-blue,
+.monthly-log-card.tone-blue {
+  border-color: rgba(37, 99, 235, 0.16);
+}
+
+.weekly-day-card.tone-amber,
+.monthly-log-card.tone-amber {
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.weekly-day-card.tone-purple,
+.monthly-log-card.tone-purple {
+  border-color: rgba(139, 92, 246, 0.18);
+}
+
+.weekly-day-card.tone-red,
+.monthly-log-card.tone-red {
+  border-color: rgba(239, 68, 68, 0.16);
 }
 
 .weekly-day-card.today {
@@ -941,7 +1128,7 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .day-card-grid {
+  .monthly-log-grid {
     grid-template-columns: 1fr;
   }
 

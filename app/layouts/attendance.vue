@@ -27,7 +27,8 @@
             @click="mobileMenuOpen = false"
           >
             <component :is="item.icon" :size="18" :stroke-width="1.8" />
-            <span v-show="!sidebarCollapsed">{{ item.label }}</span>
+            <span v-show="!sidebarCollapsed" class="nav-item-label">{{ item.label }}</span>
+            <span v-if="!sidebarCollapsed && item.badge" class="nav-badge">{{ item.badge }}</span>
           </NuxtLink>
         </div>
       </nav>
@@ -119,17 +120,26 @@ import {
 } from 'lucide-vue-next'
 
 const route = useRoute()
+const supabase = useSupabaseClient()
 const { user, isAdmin, profileLoaded, logout } = useCurrentUser()
 
 const sidebarCollapsed = ref(false)
 const mobileMenuOpen = ref(false)
+const pendingLeaveApprovalCount = ref(0)
+const leaveApprovalTableMissing = ref(false)
+let pendingBadgeTimer: ReturnType<typeof setInterval> | null = null
 
 const attendanceMenuItems = computed(() => {
   if (isAdmin.value) {
     return [
       { path: '/attendance/records', label: '출퇴근 기록', icon: Clock3 },
       { path: '/attendance/admin', label: '금일 근태 이력', icon: ClipboardCheck },
-      { path: '/attendance/leave-approvals', label: '휴가 승인', icon: Umbrella },
+      {
+        path: '/attendance/leave-approvals',
+        label: '휴가 승인',
+        icon: Umbrella,
+        badge: pendingLeaveApprovalCount.value > 0 ? String(pendingLeaveApprovalCount.value) : '',
+      },
       { path: '/attendance/weekly', label: '주별 근태 기록', icon: ListChecks },
       { path: '/attendance/calendar', label: '월별 근태 캘린더', icon: CalendarRange },
       { path: '/attendance/settings', label: '근무 기준 설정', icon: Settings2 },
@@ -185,8 +195,38 @@ const today = computed(() => {
 
 const showHeaderNavButtons = computed(() => route.path !== '/attendance/records')
 
+function isMissingLeaveTableError(error: any) {
+  const code = String(error?.code || '').toUpperCase()
+  const msg = String(error?.message || '').toLowerCase()
+  return code === '42P01' || msg.includes('leave_requests')
+}
+
 async function handleLogout() {
   await logout()
+}
+
+async function fetchPendingLeaveApprovalCount() {
+  if (!isAdmin.value || !profileLoaded.value) {
+    pendingLeaveApprovalCount.value = 0
+    return
+  }
+
+  const { count, error } = await supabase
+    .from('leave_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending')
+
+  if (error) {
+    if (isMissingLeaveTableError(error)) {
+      leaveApprovalTableMissing.value = true
+      pendingLeaveApprovalCount.value = 0
+      return
+    }
+    throw error
+  }
+
+  leaveApprovalTableMissing.value = false
+  pendingLeaveApprovalCount.value = Number(count || 0)
 }
 
 function handlePageRefresh() {
@@ -222,6 +262,33 @@ async function handleGoBack() {
 
 watch(() => route.path, () => {
   mobileMenuOpen.value = false
+})
+
+watch(
+  () => [profileLoaded.value, isAdmin.value, route.path],
+  async ([loaded, admin]) => {
+    if (!loaded || !admin) {
+      pendingLeaveApprovalCount.value = 0
+      return
+    }
+    if (leaveApprovalTableMissing.value && route.path !== '/attendance/leave-approvals') return
+    try {
+      await fetchPendingLeaveApprovalCount()
+    } catch (error) {
+      console.error('Failed to fetch pending leave approval count:', error)
+    }
+  },
+  { immediate: true },
+)
+
+onMounted(() => {
+  pendingBadgeTimer = setInterval(() => {
+    void fetchPendingLeaveApprovalCount()
+  }, 60 * 1000)
+})
+
+onBeforeUnmount(() => {
+  if (pendingBadgeTimer) clearInterval(pendingBadgeTimer)
 })
 </script>
 
@@ -316,6 +383,25 @@ watch(() => route.path, () => {
   font-size: 0.94rem;
   font-weight: 500;
   transition: all var(--transition-fast);
+}
+
+.nav-item-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-badge {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.76rem;
+  font-weight: 800;
 }
 
 .nav-item:hover {

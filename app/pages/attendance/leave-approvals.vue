@@ -13,7 +13,6 @@
       <div class="page-header">
         <div>
           <h1 class="page-title">휴가 승인</h1>
-          <div class="page-subtitle">휴가와 반차 신청을 검토하고 승인 또는 반려합니다.</div>
         </div>
         <div class="page-actions">
           <input v-model="selectedMonth" type="month" class="input month-input" />

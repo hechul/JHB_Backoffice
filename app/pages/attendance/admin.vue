@@ -13,22 +13,11 @@
       <div class="admin-header">
         <div>
           <h1 class="admin-title">금일 근태 이력</h1>
-          <div class="admin-subtitle">오늘 출근, 중단, 퇴근 상태만 간단히 확인합니다.</div>
+          <div class="admin-subtitle">{{ todayDate }}</div>
         </div>
         <div class="admin-actions">
           <input v-model.trim="searchText" type="text" class="input search-input" placeholder="이름/아이디 검색" />
           <NuxtLink to="/attendance/settings" class="btn btn-ghost btn-sm">근무 기준 설정</NuxtLink>
-        </div>
-      </div>
-
-      <div class="card admin-hero">
-        <div>
-          <div class="hero-label">오늘 근태 현황</div>
-          <strong class="hero-value">{{ todayDate }}</strong>
-          <div class="hero-note">지금 바로 확인해야 할 상태만 모아 보여줍니다.</div>
-        </div>
-        <div class="hero-side">
-          <span class="hero-chip">{{ summaryHeadline }}</span>
         </div>
       </div>
 
@@ -49,8 +38,13 @@
       </div>
 
       <div class="summary-grid">
-        <div v-for="card in summaryCards" :key="card.label" class="card summary-card" :class="card.tone">
-          <span class="summary-label">{{ card.label }}</span>
+        <div v-for="card in summaryCards" :key="card.label" class="card summary-card">
+          <div class="summary-head">
+            <span class="summary-label">{{ card.label }}</span>
+            <div class="summary-icon-wrap" :class="card.tone">
+              <component :is="card.icon" :size="16" :stroke-width="1.9" />
+            </div>
+          </div>
           <strong class="summary-value">{{ card.value }}</strong>
         </div>
       </div>
@@ -58,7 +52,6 @@
       <div class="card table-card">
         <div class="section-head">
           <h2>오늘 근태 현황</h2>
-          <span class="section-caption">{{ todayDate }}</span>
         </div>
         <div class="status-filter-row">
           <button
@@ -103,7 +96,7 @@
               </div>
             </div>
 
-            <div class="today-note-row">
+            <div v-if="row.note !== '-'" class="today-note-row">
               <span class="today-note-label">메모</span>
               <span class="today-note-value">{{ row.note }}</span>
             </div>
@@ -115,6 +108,7 @@
 </template>
 
 <script setup lang="ts">
+import { CalendarCheck2, PauseCircle, PlayCircle, Users, UserRoundX } from 'lucide-vue-next'
 import type { AttendanceRecord, AttendanceSettings, AttendanceWorkSession, LeaveRequest } from '~/composables/useAttendance'
 
 definePageMeta({ layout: 'attendance' })
@@ -166,6 +160,7 @@ const todayLeaves = ref<LeaveRequest[]>([])
 const settings = ref<AttendanceSettings>(normalizeAttendanceSettings(DEFAULT_ATTENDANCE_SETTINGS))
 const liveNowIso = ref(new Date().toISOString())
 let liveTimer: ReturnType<typeof setInterval> | null = null
+let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 const todaySessionMap = computed(() => {
   const map = new Map<string, AttendanceWorkSession[]>()
@@ -245,18 +240,12 @@ const summaryCards = computed(() => {
   const list = todayRows.value
   const countBy = (predicate: (row: TodayAttendanceRow) => boolean) => list.filter(predicate).length
   return [
-    { label: '전체 인원', value: `${list.length}명`, tone: 'tone-slate' },
-    { label: '근무 중', value: `${countBy((row) => row.displayStatus.label === '근무 중')}명`, tone: 'tone-blue' },
-    { label: '중단 중', value: `${countBy((row) => row.displayStatus.label === '중단 중')}명`, tone: 'tone-amber' },
-    { label: '퇴근 완료', value: `${countBy((row) => row.record?.check_out_at != null)}명`, tone: 'tone-green' },
-    { label: '휴가/반차', value: `${countBy((row) => row.displayStatus.className === 'status-leave')}명`, tone: 'tone-purple' },
+    { label: '전체 인원', value: `${list.length}명`, tone: 'summary-tone-slate', icon: Users },
+    { label: '근무 중', value: `${countBy((row) => row.displayStatus.label === '근무 중')}명`, tone: 'summary-tone-blue', icon: PlayCircle },
+    { label: '중단 중', value: `${countBy((row) => row.displayStatus.label === '중단 중')}명`, tone: 'summary-tone-amber', icon: PauseCircle },
+    { label: '퇴근 완료', value: `${countBy((row) => row.record?.check_out_at != null)}명`, tone: 'summary-tone-green', icon: CalendarCheck2 },
+    { label: '휴가/반차', value: `${countBy((row) => row.displayStatus.className === 'status-leave')}명`, tone: 'summary-tone-purple', icon: UserRoundX },
   ]
-})
-
-const summaryHeadline = computed(() => {
-  const working = summaryCards.value.find((card) => card.label === '근무 중')?.value || '0명'
-  const leave = summaryCards.value.find((card) => card.label === '휴가/반차')?.value || '0명'
-  return `근무 중 ${working} · 휴가 ${leave}`
 })
 
 function matchesAdminStatus(row: TodayAttendanceRow) {
@@ -421,10 +410,16 @@ onMounted(() => {
   liveTimer = setInterval(() => {
     liveNowIso.value = new Date().toISOString()
   }, 30000)
+
+  autoRefreshTimer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return
+    void refreshTodayRows()
+  }, 10 * 60 * 1000)
 })
 
 onBeforeUnmount(() => {
   if (liveTimer) clearInterval(liveTimer)
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer)
 })
 </script>
 
@@ -460,44 +455,6 @@ onBeforeUnmount(() => {
   gap: var(--space-sm);
 }
 
-.admin-hero {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-md);
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(16, 185, 129, 0.06));
-}
-
-.hero-label {
-  color: var(--color-text-secondary);
-  font-size: 0.9rem;
-}
-
-.hero-value {
-  display: block;
-  margin-top: 6px;
-  font-size: 1.5rem;
-  font-weight: 800;
-}
-
-.hero-note {
-  margin-top: 8px;
-  color: var(--color-text-secondary);
-  font-size: 0.94rem;
-}
-
-.hero-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 0 18px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(37, 99, 235, 0.14);
-  font-weight: 700;
-}
-
 .search-input {
   min-width: 220px;
 }
@@ -523,27 +480,52 @@ onBeforeUnmount(() => {
 .summary-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(226, 232, 240, 0.88);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
 }
 
-.tone-slate {
-  background: rgba(148, 163, 184, 0.08);
+.summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.tone-blue {
-  background: rgba(37, 99, 235, 0.08);
+.summary-icon-wrap {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.tone-amber {
-  background: rgba(245, 158, 11, 0.08);
+.summary-tone-slate {
+  background: rgba(148, 163, 184, 0.12);
+  color: #475569;
 }
 
-.tone-green {
-  background: rgba(16, 185, 129, 0.08);
+.summary-tone-blue {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
 }
 
-.tone-purple {
-  background: rgba(139, 92, 246, 0.09);
+.summary-tone-amber {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.summary-tone-green {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+}
+
+.summary-tone-purple {
+  background: rgba(139, 92, 246, 0.12);
+  color: #6d28d9;
 }
 
 .summary-label {
@@ -572,22 +554,23 @@ onBeforeUnmount(() => {
   padding: 18px;
   border-radius: 22px;
   border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
 .today-person-card.status-working {
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(255, 255, 255, 0.92));
+  border-color: rgba(37, 99, 235, 0.16);
 }
 
 .today-person-card.status-paused {
-  background: linear-gradient(180deg, rgba(245, 158, 11, 0.08), rgba(255, 255, 255, 0.92));
+  border-color: rgba(245, 158, 11, 0.18);
 }
 
 .today-person-card.status-leave {
-  background: linear-gradient(180deg, rgba(139, 92, 246, 0.08), rgba(255, 255, 255, 0.92));
+  border-color: rgba(139, 92, 246, 0.18);
 }
 
 .today-person-head {
@@ -676,7 +659,6 @@ onBeforeUnmount(() => {
   color: #1d4ed8;
 }
 
-.section-caption,
 .table-empty {
   color: var(--color-text-secondary);
 }
@@ -695,8 +677,7 @@ onBeforeUnmount(() => {
 @media (max-width: 768px) {
   .admin-header,
   .section-head,
-  .admin-actions,
-  .admin-hero {
+  .admin-actions {
     flex-direction: column;
     align-items: stretch;
   }

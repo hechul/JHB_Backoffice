@@ -3,7 +3,6 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">월별 근태 캘린더</h1>
-        <div class="page-subtitle">{{ isAdmin ? '직원 전체의 월간 근태 분포를 확인합니다.' : '이번 달 내 근태 기록을 달력으로 확인합니다.' }}</div>
       </div>
       <div class="page-actions">
         <input v-model="selectedMonth" type="month" class="input month-input" />
@@ -28,8 +27,13 @@
     </div>
 
     <div class="summary-grid">
-      <div v-for="item in monthlySummaryCards" :key="item.label" class="card summary-card" :class="item.tone">
-        <span class="summary-label">{{ item.label }}</span>
+      <div v-for="item in monthlySummaryCards" :key="item.label" class="card summary-card">
+        <div class="summary-head">
+          <span class="summary-label">{{ item.label }}</span>
+          <div class="summary-icon-wrap" :class="item.tone">
+            <component :is="item.icon" :size="16" :stroke-width="1.9" />
+          </div>
+        </div>
         <strong class="summary-value">{{ item.value }}</strong>
       </div>
     </div>
@@ -37,7 +41,6 @@
     <div class="card calendar-card">
       <div class="section-head">
         <h2>{{ selectedMonthLabel }}</h2>
-        <span class="section-caption">{{ isAdmin ? '전체 근태 분포' : '내 근태 달력' }}</span>
       </div>
 
       <div class="calendar-tools">
@@ -87,13 +90,12 @@
 
     <div v-if="dateModalOpen" class="detail-modal" @click.self="closeDateModal">
       <div class="detail-dialog">
-        <div class="detail-head">
-          <div>
-            <h2>{{ selectedCalendarDateLabel }}</h2>
-            <span class="section-caption">{{ isAdmin ? '선택한 날짜의 전체 근태 기록' : '선택한 날짜의 내 근태 기록' }}</span>
-          </div>
-          <button type="button" class="detail-close" @click="closeDateModal">닫기</button>
+      <div class="detail-head">
+        <div>
+          <h2>{{ selectedCalendarDateLabel }}</h2>
         </div>
+        <button type="button" class="detail-close" @click="closeDateModal">닫기</button>
+      </div>
 
         <div class="detail-summary">
           <div class="detail-metric">
@@ -108,67 +110,83 @@
 
         <div v-if="selectedDateLeaveRows.length > 0" class="selected-leave-list">
           <div v-for="leave in selectedDateLeaveRows" :key="`leave-${leave.id}`" class="selected-leave-item">
-            <span class="selected-leave-user">{{ leave.user_name }} · {{ leave.user_login_id }}</span>
-            <span class="status-chip" :class="getLeaveStatusClass(leave.status)">{{ getLeaveTypeLabel(leave.leave_type) }} {{ getLeaveStatusLabel(leave.status) }}</span>
-            <span class="selected-leave-reason">{{ leave.reason || '-' }}</span>
+            <div class="selected-leave-head">
+              <span class="selected-leave-user">{{ leave.user_name }} · {{ leave.user_login_id }}</span>
+              <span class="status-chip" :class="getLeaveStatusClass(leave.status)">{{ getLeaveTypeLabel(leave.leave_type) }} {{ getLeaveStatusLabel(leave.status) }}</span>
+            </div>
+            <div class="selected-leave-meta">
+              <span>{{ leave.start_date }}<span v-if="leave.end_date !== leave.start_date"> ~ {{ leave.end_date }}</span></span>
+              <span class="selected-leave-reason">{{ leave.reason || '사유 없음' }}</span>
+            </div>
           </div>
         </div>
 
         <div v-if="selectedDateRows.length === 0" class="table-empty">선택한 날짜의 근태 기록이 없습니다.</div>
-        <div v-else class="table-wrap detail-table-wrap">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>이름</th>
-                <th>아이디</th>
-                <th>출근</th>
-                <th>퇴근</th>
-                <th>근무시간</th>
-                <th>상태</th>
-                <th v-if="isAdmin">관리</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in selectedDateRows" :key="row.id">
-                <td>{{ row.user_name }}</td>
-                <td>{{ row.user_login_id }}</td>
+        <div v-else class="detail-record-grid">
+          <article v-for="row in selectedDateRows" :key="row.id" class="detail-record-card">
+            <div class="detail-record-head">
+              <div>
+                <div class="detail-record-name">{{ row.user_name }}</div>
+                <div class="detail-record-id">{{ row.user_login_id }}</div>
+              </div>
+              <span
+                v-if="!(isAdmin && editingRowId === row.id)"
+                class="status-chip"
+                :class="statusForRow(row).className"
+              >
+                {{ statusForRow(row).label }}
+              </span>
+              <span
+                v-else
+                class="status-chip"
+                :class="statusClassFromValues(editCheckIn, editCheckOut)"
+              >
+                {{ statusLabelFromValues(editCheckIn, editCheckOut) }}
+              </span>
+            </div>
 
-                <template v-if="isAdmin && editingRowId === row.id">
-                  <td>
-                    <input v-model="editCheckIn" type="datetime-local" class="input dt-input" />
-                  </td>
-                  <td>
-                    <input v-model="editCheckOut" type="datetime-local" class="input dt-input" />
-                  </td>
-                  <td>{{ editDuration }}</td>
-                  <td>
-                    <span class="status-chip" :class="statusClassFromValues(editCheckIn, editCheckOut)">{{ statusLabelFromValues(editCheckIn, editCheckOut) }}</span>
-                  </td>
-                  <td>
-                    <div class="row-actions">
-                      <button class="btn btn-primary btn-sm" :disabled="saving" @click="saveEdit(row)">저장</button>
-                      <button class="btn btn-ghost btn-sm" :disabled="saving" @click="cancelEdit">취소</button>
-                    </div>
-                  </td>
-                </template>
+            <template v-if="isAdmin && editingRowId === row.id">
+              <div class="detail-record-edit-grid">
+                <label class="detail-field">
+                  <span>출근</span>
+                  <input v-model="editCheckIn" type="datetime-local" class="input dt-input" />
+                </label>
+                <label class="detail-field">
+                  <span>퇴근</span>
+                  <input v-model="editCheckOut" type="datetime-local" class="input dt-input" />
+                </label>
+                <div class="detail-field">
+                  <span>근무시간</span>
+                  <strong>{{ editDuration }}</strong>
+                </div>
+              </div>
+              <div class="row-actions">
+                <button class="btn btn-primary btn-sm" :disabled="saving" @click="saveEdit(row)">저장</button>
+                <button class="btn btn-ghost btn-sm" :disabled="saving" @click="cancelEdit">취소</button>
+              </div>
+            </template>
 
-                <template v-else>
-                  <td>{{ formatTime(row.check_in_at) }}</td>
-                  <td>{{ formatTime(row.check_out_at) }}</td>
-                  <td>{{ formatWorkDuration(rowWorkMinutes(row)) }}</td>
-                  <td>
-                    <span class="status-chip" :class="statusForRow(row).className">{{ statusForRow(row).label }}</span>
-                  </td>
-                  <td v-if="isAdmin">
-                    <div class="row-actions">
-                      <button class="btn btn-ghost btn-sm" :disabled="saving" @click="startEdit(row)">수정</button>
-                      <button class="btn btn-ghost btn-sm btn-danger" :disabled="saving" @click="removeRow(row)">삭제</button>
-                    </div>
-                  </td>
-                </template>
-              </tr>
-            </tbody>
-          </table>
+            <template v-else>
+              <div class="detail-record-metrics">
+                <div class="detail-record-metric">
+                  <span>출근</span>
+                  <strong>{{ formatTime(row.check_in_at) }}</strong>
+                </div>
+                <div class="detail-record-metric">
+                  <span>퇴근</span>
+                  <strong>{{ formatTime(row.check_out_at) }}</strong>
+                </div>
+                <div class="detail-record-metric">
+                  <span>근무시간</span>
+                  <strong>{{ formatWorkDuration(rowWorkMinutes(row)) }}</strong>
+                </div>
+              </div>
+              <div v-if="isAdmin" class="row-actions">
+                <button class="btn btn-ghost btn-sm" :disabled="saving" @click="startEdit(row)">수정</button>
+                <button class="btn btn-ghost btn-sm btn-danger" :disabled="saving" @click="removeRow(row)">삭제</button>
+              </div>
+            </template>
+          </article>
         </div>
       </div>
     </div>
@@ -176,6 +194,7 @@
 </template>
 
 <script setup lang="ts">
+import { BriefcaseBusiness, CalendarRange, CircleAlert, Plane, Users } from 'lucide-vue-next'
 import type { AttendanceRecord, AttendanceSettings, AttendanceWorkSession, LeaveRequest } from '~/composables/useAttendance'
 
 definePageMeta({ layout: 'attendance' })
@@ -321,10 +340,10 @@ const monthlySummaryCards = computed(() => {
     const totalLate = calendarCells.value.reduce((sum, cell) => sum + (cell.lateCount || 0), 0)
     const totalLeave = calendarCells.value.reduce((sum, cell) => sum + (cell.leaveCount || 0), 0)
     return [
-      { label: '조회 인원', value: `${totalPeople}명`, tone: 'tone-blue' },
-      { label: '근무 기록', value: `${totalPresent}건`, tone: 'tone-green' },
-      { label: '지각 표시', value: `${totalLate}건`, tone: 'tone-amber' },
-      { label: '휴가/반차', value: `${totalLeave}건`, tone: 'tone-purple' },
+      { label: '조회 인원', value: `${totalPeople}명`, tone: 'summary-tone-slate', icon: Users },
+      { label: '근무 기록', value: `${totalPresent}건`, tone: 'summary-tone-blue', icon: BriefcaseBusiness },
+      { label: '지각 표시', value: `${totalLate}건`, tone: 'summary-tone-amber', icon: CircleAlert },
+      { label: '휴가/반차', value: `${totalLeave}건`, tone: 'summary-tone-purple', icon: Plane },
     ]
   }
 
@@ -339,10 +358,10 @@ const monthlySummaryCards = computed(() => {
   }, { working: 0, done: 0, late: 0, leave: 0 })
 
   return [
-    { label: '근무 중', value: `${counts.working}일`, tone: 'tone-blue' },
-    { label: '근무 완료', value: `${counts.done}일`, tone: 'tone-green' },
-    { label: '지각/조퇴', value: `${counts.late}일`, tone: 'tone-amber' },
-    { label: '휴가/반차', value: `${counts.leave}일`, tone: 'tone-purple' },
+    { label: '근무 중', value: `${counts.working}일`, tone: 'summary-tone-blue', icon: BriefcaseBusiness },
+    { label: '근무 완료', value: `${counts.done}일`, tone: 'summary-tone-slate', icon: CalendarRange },
+    { label: '지각/조퇴', value: `${counts.late}일`, tone: 'summary-tone-amber', icon: CircleAlert },
+    { label: '휴가/반차', value: `${counts.leave}일`, tone: 'summary-tone-purple', icon: Plane },
   ]
 })
 
@@ -827,7 +846,17 @@ function handleEscape(event: KeyboardEvent) {
 .summary-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+.summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .summary-label {
@@ -840,20 +869,33 @@ function handleEscape(event: KeyboardEvent) {
   font-weight: 800;
 }
 
-.tone-blue {
-  background: rgba(37, 99, 235, 0.06);
+.summary-icon-wrap {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.tone-green {
-  background: rgba(16, 185, 129, 0.08);
+.summary-tone-slate {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.12);
 }
 
-.tone-amber {
-  background: rgba(245, 158, 11, 0.09);
+.summary-tone-blue {
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.12);
 }
 
-.tone-purple {
-  background: rgba(139, 92, 246, 0.09);
+.summary-tone-amber {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.summary-tone-purple {
+  color: #7c3aed;
+  background: rgba(139, 92, 246, 0.14);
 }
 
 .calendar-card {
@@ -992,13 +1034,21 @@ function handleEscape(event: KeyboardEvent) {
 
 .selected-leave-item {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 10px;
-  align-items: center;
   padding: 12px 14px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.94);
   border: 1px solid var(--color-border-light);
+}
+
+.selected-leave-head,
+.selected-leave-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .selected-leave-user {
@@ -1076,8 +1126,68 @@ function handleEscape(event: KeyboardEvent) {
   font-weight: 800;
 }
 
-.detail-table-wrap {
-  max-height: 420px;
+.detail-record-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.detail-record-card {
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.detail-record-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail-record-name {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.detail-record-id {
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  font-size: 0.88rem;
+}
+
+.detail-record-metrics,
+.detail-record-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.detail-record-metric,
+.detail-field {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-record-metric span,
+.detail-field span {
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+}
+
+.detail-record-metric strong,
+.detail-field strong {
+  font-size: 1rem;
+  font-weight: 800;
 }
 
 @media (max-width: 960px) {
@@ -1107,6 +1217,12 @@ function handleEscape(event: KeyboardEvent) {
     grid-template-columns: 1fr;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .detail-record-grid,
+  .detail-record-metrics,
+  .detail-record-edit-grid {
+    grid-template-columns: 1fr;
   }
 
   .search-input {
