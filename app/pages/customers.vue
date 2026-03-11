@@ -41,6 +41,8 @@
           <option v-for="week in weekOptions" :key="week.value" :value="week.value">{{ week.label }}</option>
         </select>
 
+        <input v-model="filterOrderDate" type="date" class="input date-input" />
+
       </div>
 
       <!-- Active filters -->
@@ -187,7 +189,7 @@
         </div>
 
         <div class="detail-section">
-          <div class="detail-section-title">구매 이력</div>
+          <div class="detail-section-title">구매 타임라인</div>
           <table class="data-table">
             <thead>
               <tr>
@@ -240,6 +242,7 @@ interface CustomerProductStat {
   key: string
   name: string
   purchaseCount: number
+  totalQuantity: number
   lastOrder: string
 }
 
@@ -257,6 +260,7 @@ interface CustomerRow {
   churnRisk: boolean
   productStats: CustomerProductStat[]
   purchaseWeeks: string[]
+  purchaseDates: string[]
 }
 
 interface CustomerOrderRow {
@@ -300,6 +304,7 @@ const filterChurn = ref('')
 const filterPurchaseCount = ref('')
 const filterProductName = ref('')
 const filterWeek = ref('')
+const filterOrderDate = ref('')
 const syncingFromQuery = ref(false)
 const showCustomerDetail = ref(false)
 const selectedCustomer = ref<CustomerRow | null>(null)
@@ -309,6 +314,7 @@ const customerOrdersFetchSeq = ref(0)
 
 const customers = ref<CustomerRow[]>([])
 const customerOrders = ref<CustomerOrderRow[]>([])
+const customerPurchaseRows = ref<PurchaseRow[]>([])
 const productMetaById = ref<Record<string, ProductMeta>>({})
 const productMetaByName = ref<Record<string, ProductMeta>>({})
 const PAGE_SIZE = 10
@@ -448,23 +454,26 @@ function productGroupKey(row: Pick<PurchaseRow, 'product_id' | 'product_name'>):
 }
 
 function buildCustomerProductStats(rows: PurchaseRow[]): CustomerProductStat[] {
-  const statMap = new Map<string, { name: string; dates: Set<string>; lastOrder: string }>()
+  const statMap = new Map<string, { name: string; dates: Set<string>; totalQuantity: number; lastOrder: string }>()
 
   for (const row of rows) {
     const key = productGroupKey(row)
     const displayName = normalizeMissionProductName(String(row.product_name || '').trim()) || String(row.product_name || '').trim() || '-'
     const date = purchaseDateKey(row)
+    const totalQuantity = computePurchaseQuantity(purchaseQuantityInput(row)).totalCount
 
     if (!statMap.has(key)) {
       statMap.set(key, {
         name: displayName,
         dates: new Set<string>(),
+        totalQuantity: 0,
         lastOrder: date,
       })
     }
 
     const stat = statMap.get(key)!
     if (date) stat.dates.add(date)
+    stat.totalQuantity += totalQuantity
     if (parseOrderDate(date).getTime() > parseOrderDate(stat.lastOrder).getTime()) {
       stat.lastOrder = date
     }
@@ -476,9 +485,23 @@ function buildCustomerProductStats(rows: PurchaseRow[]): CustomerProductStat[] {
       key,
       name: stat.name || '-',
       purchaseCount: stat.dates.size,
+      totalQuantity: stat.totalQuantity,
       lastOrder: stat.lastOrder,
     }))
     .sort((a, b) => parseOrderDate(b.lastOrder).getTime() - parseOrderDate(a.lastOrder).getTime())
+}
+
+function purchaseDisplayProductName(
+  row: Pick<PurchaseRow, 'product_name' | 'source_product_name'>,
+): string {
+  const rawName = String(row.source_product_name || row.product_name || '').trim()
+  return normalizeMissionProductName(rawName) || rawName || '-'
+}
+
+function purchaseDisplayOptionInfo(
+  row: Pick<PurchaseRow, 'option_info' | 'source_option_info'>,
+): string {
+  return String(row.source_option_info || row.option_info || '').trim() || '-'
 }
 
 async function loadProductMeta() {
@@ -557,6 +580,9 @@ async function fetchCustomers() {
     }
 
     const rows = collected as PurchaseRow[]
+    if (requestSeq === customersFetchSeq.value) {
+      customerPurchaseRows.value = rows
+    }
     const grouped = new Map<string, PurchaseRow[]>()
     for (const row of rows) {
       const key = row.customer_key || `${row.buyer_id}_${row.buyer_name}`
@@ -593,6 +619,7 @@ async function fetchCustomers() {
         churnRisk: daysFromNow(lastOrder) > 90,
         productStats,
         purchaseWeeks: Array.from(new Set(customerRows.map((row) => weekCodeFromDate(row.order_date)).filter(Boolean))).sort(),
+        purchaseDates: Array.from(new Set(customerRows.map((row) => purchaseDateKey(row)).filter(Boolean))).sort(),
       })
     }
 
@@ -609,14 +636,15 @@ async function fetchCustomerOrders(customer: CustomerRow) {
   const requestSeq = ++customerOrdersFetchSeq.value
   const monthSnapshot = selectedMonth.value
   const weekSnapshot = filterWeek.value
+  const orderDateSnapshot = filterOrderDate.value
   const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
   const baseColumns = 'order_date, product_name, option_info, quantity, target_month'
   let query = supabase
     .from('purchases')
     .select(purchaseSelectColumns(baseColumns, includeSourceColumns))
-    .not('filter_ver', 'is', null)
-    .eq('is_fake', false)
-    .eq('needs_review', false)
+        .not('filter_ver', 'is', null)
+        .eq('is_fake', false)
+        .eq('needs_review', false)
     .order('order_date', { ascending: false })
     .limit(100)
 
@@ -656,9 +684,15 @@ async function fetchCustomerOrders(customer: CustomerRow) {
 
   if (requestSeq !== customerOrdersFetchSeq.value) return
 
-  customerOrders.value = monthSnapshot !== 'all' && weekSnapshot
-    ? orders.filter((order) => weekCodeFromDate(order.date) === weekSnapshot)
-    : orders
+  let filteredOrders = orders
+  if (monthSnapshot !== 'all' && weekSnapshot) {
+    filteredOrders = filteredOrders.filter((order) => weekCodeFromDate(order.date) === weekSnapshot)
+  }
+  if (orderDateSnapshot) {
+    filteredOrders = filteredOrders.filter((order) => order.date === orderDateSnapshot)
+  }
+
+  customerOrders.value = filteredOrders
 }
 
 const hasProductFilter = computed(() => Boolean(filterProductName.value.trim()))
@@ -688,6 +722,7 @@ const filteredCustomers = computed(() => {
       if (Number.isFinite(minCount) && c.purchaseCount < minCount) return false
     }
     if (filterWeek.value && !c.purchaseWeeks.includes(filterWeek.value)) return false
+    if (filterOrderDate.value && !c.purchaseDates.includes(filterOrderDate.value)) return false
     return true
   })
 })
@@ -763,6 +798,9 @@ const activeFilters = computed(() => {
   if (filterWeek.value && selectedMonth.value !== 'all') {
     filters.push({ key: 'week', label: `주차: ${weekLabelFromCode(selectedMonth.value, filterWeek.value)}` })
   }
+  if (filterOrderDate.value) {
+    filters.push({ key: 'orderDate', label: `구매일: ${filterOrderDate.value}` })
+  }
   return filters
 })
 
@@ -775,6 +813,7 @@ function clearFilter(key: string) {
     churn: filterChurn,
     purchaseCount: filterPurchaseCount,
     week: filterWeek,
+    orderDate: filterOrderDate,
   }
   if (map[key]) map[key].value = ''
 }
@@ -787,6 +826,7 @@ function clearAllFilters() {
   filterChurn.value = ''
   filterPurchaseCount.value = ''
   filterWeek.value = ''
+  filterOrderDate.value = ''
 }
 
 function stageLabel(stage: string) {
@@ -822,6 +862,9 @@ function applyFiltersFromQuery(query: LocationQuery) {
   const week = asSingleQueryValue(query.week)
   filterWeek.value = /^W[1-5]$/.test(week) ? week : ''
 
+  const orderDate = asSingleQueryValue(query.orderDate)
+  filterOrderDate.value = /^\d{4}-\d{2}-\d{2}$/.test(orderDate) ? orderDate : ''
+
   nextTick(() => {
     syncingFromQuery.value = false
   })
@@ -851,6 +894,7 @@ const managedKeys = new Set([
   'purchaseCount',
   'purchase_count',
   'week',
+  'orderDate',
 ])
 
 function syncFiltersToQuery() {
@@ -869,6 +913,7 @@ function syncFiltersToQuery() {
   if (selectedMonth.value !== 'all') next.month = selectedMonth.value
   if (filterPurchaseCount.value) next.purchaseCount = filterPurchaseCount.value
   if (selectedMonth.value !== 'all' && filterWeek.value) next.week = filterWeek.value
+  if (filterOrderDate.value) next.orderDate = filterOrderDate.value
 
   const currentCanonical = { ...current }
   delete currentCanonical.search
@@ -902,12 +947,15 @@ watch(
     if (!prevMonth || month === prevMonth) return
     if (syncingFromQuery.value) return
     if (filterWeek.value) filterWeek.value = ''
+    if (month !== 'all' && filterOrderDate.value && filterOrderDate.value.slice(0, 7) !== month) {
+      filterOrderDate.value = ''
+    }
   },
   { flush: 'sync' },
 )
 
 watch(
-  [searchQuery, filterProductName, filterPetType, filterStage, filterChurn, filterPurchaseCount, filterWeek, selectedMonth],
+  [searchQuery, filterProductName, filterPetType, filterStage, filterChurn, filterPurchaseCount, filterWeek, filterOrderDate, selectedMonth],
   () => {
     currentPage.value = 1
     syncFiltersToQuery()
@@ -950,7 +998,7 @@ watch(
 )
 
 watch(
-  () => filterWeek.value,
+  () => [filterWeek.value, filterOrderDate.value],
   async () => {
     if (selectedCustomer.value) {
       await fetchCustomerOrders(selectedCustomer.value)
@@ -971,22 +1019,64 @@ async function openCustomerDetail(customer: CustomerRow) {
 function downloadFilteredCustomers() {
   const header = ['이름', 'ID', '펫타입', '성장단계', '구매횟수', '구매상품수']
   if (hasProductFilter.value) header.push('검색상품 구매횟수')
-  header.push('최근주문', '이탈위험')
-  const rows = filteredCustomers.value.map((c) => [
-    c.name,
-    c.id,
-    c.petType === 'DOG' ? '강아지' : c.petType === 'CAT' ? '고양이' : '모두',
-    stageLabel(c.stage),
-    c.purchaseCount,
-    c.productCount,
-    ...(hasProductFilter.value ? [matchingProductPurchaseCount(c)] : []),
-    c.lastOrder,
-    c.churnRisk ? '위험' : '정상',
-  ])
+  header.push('구매일', '상품명', '옵션', '상품 개수', '최근주문', '이탈위험')
+
+  const customerMap = new Map(filteredCustomers.value.map((customer) => [customer.customerKey, customer]))
+  const productQuery = filterProductName.value.trim()
+  const exportRows = customerPurchaseRows.value
+    .filter((row) => {
+      const customerKey = row.customer_key || `${row.buyer_id}_${row.buyer_name}`
+      if (!customerMap.has(customerKey)) return false
+      if (filterWeek.value && weekCodeFromDate(row.order_date) !== filterWeek.value) return false
+      if (filterOrderDate.value && purchaseDateKey(row) !== filterOrderDate.value) return false
+      if (productQuery && !matchesSearchQuery(productQuery, purchaseDisplayProductName(row), row.product_name, row.source_product_name)) return false
+      return true
+    })
+    .sort((a, b) => {
+      const customerA = customerMap.get(a.customer_key || `${a.buyer_id}_${a.buyer_name}`)
+      const customerB = customerMap.get(b.customer_key || `${b.buyer_id}_${b.buyer_name}`)
+      const nameCompare = String(customerA?.name || a.buyer_name || '').localeCompare(
+        String(customerB?.name || b.buyer_name || ''),
+        'ko',
+      )
+      if (nameCompare !== 0) return nameCompare
+
+      const idCompare = String(customerA?.id || a.buyer_id || '').localeCompare(
+        String(customerB?.id || b.buyer_id || ''),
+        'ko',
+      )
+      if (idCompare !== 0) return idCompare
+
+      const dateCompare = parseOrderDate(b.order_date).getTime() - parseOrderDate(a.order_date).getTime()
+      if (dateCompare !== 0) return dateCompare
+
+      return String(a.purchase_id || '').localeCompare(String(b.purchase_id || ''), 'ko')
+    })
+
+  const rows = exportRows.map((row) => {
+    const customer = customerMap.get(row.customer_key || `${row.buyer_id}_${row.buyer_name}`)
+    const quantity = computePurchaseQuantity(purchaseQuantityInput(row)).totalCount
+    return [
+      customer?.name || row.buyer_name || '-',
+      customer?.id || row.buyer_id || '-',
+      customer?.petType === 'DOG' ? '강아지' : customer?.petType === 'CAT' ? '고양이' : '모두',
+      stageLabel(customer?.stage || 'Other'),
+      customer?.purchaseCount || 0,
+      customer?.productCount || 0,
+      ...(hasProductFilter.value ? [customer ? matchingProductPurchaseCount(customer) : 0] : []),
+      purchaseDateKey(row),
+      purchaseDisplayProductName(row),
+      purchaseDisplayOptionInfo(row),
+      quantity,
+      customer?.lastOrder || purchaseDateKey(row),
+      customer?.churnRisk ? '위험' : '정상',
+    ]
+  })
+
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
   XLSX.utils.book_append_sheet(wb, ws, '고객분석')
-  XLSX.writeFile(wb, `고객분석_${selectedMonth.value === 'all' ? 'all' : selectedMonth.value}.xlsx`)
+  XLSX.writeFile(wb, `고객분석_구매이력_${selectedMonth.value === 'all' ? 'all' : selectedMonth.value}.xlsx`)
 }
 
 onMounted(async () => {
@@ -1014,6 +1104,10 @@ onMounted(async () => {
 
 .filter-row .select {
   min-width: 136px;
+}
+
+.date-input {
+  min-width: 168px;
 }
 
 .filter-row :deep(.input-with-icon) {
@@ -1054,6 +1148,10 @@ onMounted(async () => {
   .filter-row .select {
     flex: 1 1 calc(33.333% - var(--space-sm));
   }
+
+  .date-input {
+    flex: 1 1 calc(33.333% - var(--space-sm));
+  }
 }
 
 @media (max-width: 768px) {
@@ -1076,6 +1174,12 @@ onMounted(async () => {
   }
 
   .filter-row .select {
+    min-width: 0;
+    width: 100%;
+    flex: 1 1 calc(50% - var(--space-sm));
+  }
+
+  .date-input {
     min-width: 0;
     width: 100%;
     flex: 1 1 calc(50% - var(--space-sm));

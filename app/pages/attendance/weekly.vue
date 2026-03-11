@@ -66,22 +66,22 @@
       </template>
 
       <div v-if="weeklyBoardRows.length === 0" class="table-empty">표시할 주간 근태가 없습니다.</div>
-      <div v-else-if="!isAdmin" class="monthly-log-list">
+      <div v-else-if="!isAdmin" class="weekly-self-list">
         <div class="section-head compact-head">
           <div>
-            <h2>{{ formatMonthLabel(selectedMonth) }} 내 기록</h2>
+            <h2>{{ currentWeekLabel }}</h2>
           </div>
         </div>
 
-        <div v-if="personalMonthlyEntries.length === 0" class="table-empty">해당 월 근태 기록이 없습니다.</div>
-        <div v-else class="monthly-log-cards">
+        <div v-if="personalWeeklyEntries.length === 0" class="table-empty">해당 주 근태 기록이 없습니다.</div>
+        <div v-else class="weekly-self-cards">
           <article
-            v-for="entry in personalMonthlyEntries"
-            :key="`month-entry-${entry.date}`"
-            class="monthly-log-card"
+            v-for="entry in personalWeeklyEntries"
+            :key="`week-entry-${entry.date}`"
+            class="day-card"
             :class="dayCardTone(entry.status)"
           >
-            <div class="monthly-log-head">
+            <div class="day-card-head">
               <div>
                 <div class="day-card-weekday">{{ getWeekdayLabel(entry.date) }}</div>
                 <strong class="day-card-date">{{ entry.date }}</strong>
@@ -89,22 +89,24 @@
               <span class="status-chip" :class="entry.className">{{ entry.label }}</span>
             </div>
 
-            <div class="monthly-log-grid">
-              <div class="monthly-log-item">
+            <div class="day-card-body">
+              <div class="day-card-row">
                 <span>출근</span>
                 <strong>{{ entry.checkIn }}</strong>
               </div>
-              <div class="monthly-log-item">
+              <div class="day-card-row">
                 <span>퇴근</span>
                 <strong>{{ entry.checkOut }}</strong>
               </div>
-              <div class="monthly-log-item">
+              <div class="day-card-row">
                 <span>근무시간</span>
                 <strong>{{ entry.duration }}</strong>
               </div>
+              <div class="day-card-row">
+                <span>메모</span>
+                <strong>{{ entry.note || '-' }}</strong>
+              </div>
             </div>
-
-            <div v-if="entry.note" class="monthly-log-note">{{ entry.note }}</div>
           </article>
         </div>
       </div>
@@ -356,9 +358,9 @@ const statusFilters = [
 
 const weekSummaryCards = computed(() => {
   if (!isAdmin.value) {
-    const countBy = (predicate: (entry: typeof personalMonthlyEntries.value[number]) => boolean) => personalMonthlyEntries.value.filter(predicate).length
+    const countBy = (predicate: (entry: typeof personalWeeklyEntries.value[number]) => boolean) => personalWeeklyEntries.value.filter(predicate).length
     return [
-      { label: '기록 일수', value: `${personalMonthlyEntries.value.length}일`, tone: 'summary-tone-slate', icon: CalendarRange },
+      { label: '기록 일수', value: `${personalWeeklyEntries.value.length}일`, tone: 'summary-tone-slate', icon: CalendarRange },
       { label: '정상/근무', value: `${countBy((entry) => ['done', 'working'].includes(entry.status))}일`, tone: 'summary-tone-blue', icon: BriefcaseBusiness },
       { label: '지각/조퇴', value: `${countBy((entry) => ['late', 'late_early', 'early_leave'].includes(entry.status))}일`, tone: 'summary-tone-amber', icon: CircleAlert },
       { label: '휴가/반차', value: `${countBy((entry) => entry.status.includes('leave'))}일`, tone: 'summary-tone-purple', icon: Plane },
@@ -386,39 +388,23 @@ const weekSummaryCards = computed(() => {
   ]
 })
 
-const personalMonthlyEntries = computed(() => {
+const personalWeeklyEntries = computed(() => {
   if (isAdmin.value) return []
   const profile = profiles.value[0]
   if (!profile) return []
-  const { start, end } = getMonthRange(selectedMonth.value)
   const recordMap = new Map(
     rows.value
       .filter((row) => row.user_id === profile.profile_id)
       .map((row) => [row.work_date, row]),
   )
-  const dates = new Set<string>()
-
-  for (const row of rows.value) {
-    if (row.user_id === profile.profile_id && row.work_date >= start && row.work_date <= end) {
-      dates.add(row.work_date)
-    }
-  }
-
-  for (const [key, leave] of approvedLeaveMapByUserDate.value.entries()) {
-    const [userId, dateKey] = key.split(':')
-    if (userId === profile.profile_id && leave.status === 'approved' && dateKey >= start && dateKey <= end) {
-      dates.add(dateKey)
-    }
-  }
-
-  return [...dates]
-    .sort((a, b) => b.localeCompare(a))
-    .map((dateKey) => {
-      const row = recordMap.get(dateKey) || null
-      const leave = approvedLeaveMapByUserDate.value.get(`${profile.profile_id}:${dateKey}`) || null
-      const daySessions = sessionMapByUserDate.value.get(`${profile.profile_id}:${dateKey}`) || []
+  return [...currentWeekDays.value]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((day) => {
+      const row = recordMap.get(day.date) || null
+      const leave = approvedLeaveMapByUserDate.value.get(`${profile.profile_id}:${day.date}`) || null
+      const daySessions = sessionMapByUserDate.value.get(`${profile.profile_id}:${day.date}`) || []
       const status = computeAttendanceStatus({
-        workDate: dateKey,
+        workDate: day.date,
         checkInAt: row?.check_in_at,
         checkOutAt: row?.check_out_at,
         settings: settings.value,
@@ -426,11 +412,11 @@ const personalMonthlyEntries = computed(() => {
         todayDate: todayDate.value,
       })
       const workMinutes = daySessions.length
-        ? calcWorkSessionMinutes(daySessions, dateKey === todayDate.value ? liveNowIso.value : null)
+        ? calcWorkSessionMinutes(daySessions, day.date === todayDate.value ? liveNowIso.value : null)
         : calcWorkMinutes(row?.check_in_at, row?.check_out_at)
 
       return {
-        date: dateKey,
+        date: day.date,
         status: status.code,
         label: status.label,
         className: status.className,
@@ -866,60 +852,16 @@ onBeforeUnmount(() => {
   color: #1d4ed8;
 }
 
-.monthly-log-list {
+.weekly-self-list {
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
 }
 
-.monthly-log-cards {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-}
-
-.monthly-log-card {
-  padding: 18px;
-  border-radius: 22px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(255, 255, 255, 0.86);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.monthly-log-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.monthly-log-grid {
+.weekly-self-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-}
-
-.monthly-log-item {
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(248, 250, 252, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.monthly-log-item span,
-.monthly-log-note {
-  font-size: 0.88rem;
-  color: var(--color-text-secondary);
-}
-
-.monthly-log-item strong {
-  font-size: 0.98rem;
-  font-weight: 800;
 }
 
 .day-card {
@@ -1068,22 +1010,22 @@ onBeforeUnmount(() => {
 }
 
 .weekly-day-card.tone-blue,
-.monthly-log-card.tone-blue {
+.day-card.tone-blue {
   border-color: rgba(37, 99, 235, 0.16);
 }
 
 .weekly-day-card.tone-amber,
-.monthly-log-card.tone-amber {
+.day-card.tone-amber {
   border-color: rgba(245, 158, 11, 0.2);
 }
 
 .weekly-day-card.tone-purple,
-.monthly-log-card.tone-purple {
+.day-card.tone-purple {
   border-color: rgba(139, 92, 246, 0.18);
 }
 
 .weekly-day-card.tone-red,
-.monthly-log-card.tone-red {
+.day-card.tone-red {
   border-color: rgba(239, 68, 68, 0.16);
 }
 
@@ -1127,16 +1069,13 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .monthly-log-grid {
-    grid-template-columns: 1fr;
-  }
-
   .weekly-person-head,
   .weekly-person-summary {
     align-items: stretch;
     justify-content: flex-start;
   }
 
+  .weekly-self-cards,
   .weekly-day-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

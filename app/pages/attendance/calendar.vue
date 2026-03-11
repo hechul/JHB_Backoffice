@@ -210,6 +210,14 @@ type CalendarAttendanceRow = AttendanceRecord & ProfileRow
 
 type CalendarLeaveRow = LeaveRequest & ProfileRow
 
+type CalendarDaySummary = {
+  presentCount: number
+  lateCount: number
+  leaveCount: number
+  absentCount: number
+  totalCount: number
+}
+
 const calendarWeekdayLabels = ['월', '화', '수', '목', '금', '토', '일']
 
 const supabase = useSupabaseClient()
@@ -303,6 +311,14 @@ const filteredProfiles = computed(() => {
     .some((value) => String(value || '').toLowerCase().includes(q)))
 })
 
+const filteredProfileIdSet = computed(() => {
+  return new Set(filteredProfiles.value.map((profile) => profile.profile_id))
+})
+
+const profileMapById = computed(() => {
+  return new Map(profiles.value.map((profile) => [profile.profile_id, profile]))
+})
+
 const rowMapByUserDate = computed(() => {
   return new Map(rows.value.map((row) => [`${row.user_id}:${row.work_date}`, row]))
 })
@@ -331,14 +347,27 @@ const approvedLeaveMapByUserDate = computed(() => {
   return map
 })
 
+const monthCalendarRange = computed(() => {
+  const { start, end } = getMonthRange(selectedMonth.value)
+  const first = getWeekStart(start)
+  const lastWeekStart = getWeekStart(end)
+  return {
+    start,
+    end,
+    first,
+    last: addDateKeyDays(lastWeekStart, 6),
+  }
+})
+
 const selectedMonthLabel = computed(() => formatMonthLabel(selectedMonth.value))
 
 const monthlySummaryCards = computed(() => {
   if (isAdmin.value) {
     const totalPeople = filteredProfiles.value.length
-    const totalPresent = calendarCells.value.reduce((sum, cell) => sum + (cell.presentCount || 0), 0)
-    const totalLate = calendarCells.value.reduce((sum, cell) => sum + (cell.lateCount || 0), 0)
-    const totalLeave = calendarCells.value.reduce((sum, cell) => sum + (cell.leaveCount || 0), 0)
+    const summaries = Array.from(adminCalendarSummaryByDate.value.values())
+    const totalPresent = summaries.reduce((sum, day) => sum + day.presentCount, 0)
+    const totalLate = summaries.reduce((sum, day) => sum + day.lateCount, 0)
+    const totalLeave = summaries.reduce((sum, day) => sum + day.leaveCount, 0)
     return [
       { label: '조회 인원', value: `${totalPeople}명`, tone: 'summary-tone-slate', icon: Users },
       { label: '근무 기록', value: `${totalPresent}건`, tone: 'summary-tone-blue', icon: BriefcaseBusiness },
@@ -350,7 +379,7 @@ const monthlySummaryCards = computed(() => {
   const ownCells = calendarCells.value.filter((cell) => cell.inMonth)
   const counts = ownCells.reduce((acc, cell) => {
     const code = cell.status?.code || 'empty'
-    if (code === 'leave') acc.leave += 1
+    if (code.endsWith('_leave')) acc.leave += 1
     else if (code === 'late' || code === 'late_early') acc.late += 1
     else if (code === 'done' || code === 'early_leave') acc.done += 1
     else if (code === 'working') acc.working += 1
@@ -365,50 +394,100 @@ const monthlySummaryCards = computed(() => {
   ]
 })
 
+const adminCalendarSummaryByDate = computed(() => {
+  const summary = new Map<string, CalendarDaySummary>()
+  if (!isAdmin.value) return summary
+
+  const { start, end } = monthCalendarRange.value
+  const totalProfiles = filteredProfiles.value.length
+
+  for (let cursor = start; cursor <= end; cursor = addDateKeyDays(cursor, 1)) {
+    summary.set(cursor, {
+      presentCount: 0,
+      lateCount: 0,
+      leaveCount: 0,
+      absentCount: cursor < todayDate.value ? totalProfiles : 0,
+      totalCount: 0,
+    })
+  }
+
+  if (!totalProfiles) return summary
+
+  const filteredIds = filteredProfileIdSet.value
+  const leaveMap = approvedLeaveMapByUserDate.value
+
+  for (const [key] of leaveMap) {
+    const separatorIndex = key.indexOf(':')
+    const profileId = key.slice(0, separatorIndex)
+    const dateKey = key.slice(separatorIndex + 1)
+    if (!filteredIds.has(profileId) || dateKey < start || dateKey > end) continue
+    const day = summary.get(dateKey)
+    if (!day) continue
+    day.leaveCount += 1
+    if (dateKey < todayDate.value) day.absentCount = Math.max(0, day.absentCount - 1)
+  }
+
+  for (const row of rowMapByUserDate.value.values()) {
+    if (!filteredIds.has(row.user_id) || row.work_date < start || row.work_date > end) continue
+    if (!row.check_in_at) continue
+    if (leaveMap.has(`${row.user_id}:${row.work_date}`)) continue
+
+    const day = summary.get(row.work_date)
+    if (!day) continue
+
+    day.presentCount += 1
+    if (row.work_date < todayDate.value) day.absentCount = Math.max(0, day.absentCount - 1)
+
+    const status = computeAttendanceStatus({
+      workDate: row.work_date,
+      checkInAt: row.check_in_at,
+      checkOutAt: row.check_out_at,
+      settings: settings.value,
+      approvedLeave: null,
+      todayDate: todayDate.value,
+    })
+
+    if (status.code === 'late' || status.code === 'late_early') {
+      day.lateCount += 1
+    }
+  }
+
+  for (const day of summary.values()) {
+    day.totalCount = day.presentCount + day.leaveCount + day.absentCount
+  }
+
+  return summary
+})
+
 const calendarCells = computed(() => {
-  const { start, end } = getMonthRange(selectedMonth.value)
-  const first = getWeekStart(start)
-  const lastWeekStart = getWeekStart(end)
-  const last = addDateKeyDays(lastWeekStart, 6)
+  const { first, last } = monthCalendarRange.value
   const cells: Array<any> = []
 
   for (let cursor = first; cursor <= last; cursor = addDateKeyDays(cursor, 1)) {
     const inMonth = cursor.startsWith(selectedMonth.value)
 
     if (isAdmin.value) {
-      let presentCount = 0
-      let lateCount = 0
-      let leaveCount = 0
-      let absentCount = 0
-
-      if (inMonth) {
-        for (const profile of filteredProfiles.value) {
-          const row = rowMapByUserDate.value.get(`${profile.profile_id}:${cursor}`) || null
-          const leave = approvedLeaveMapByUserDate.value.get(`${profile.profile_id}:${cursor}`) || null
-          const status = computeAttendanceStatus({
-            workDate: cursor,
-            checkInAt: row?.check_in_at,
-            checkOutAt: row?.check_out_at,
-            settings: settings.value,
-            approvedLeave: leave,
-            todayDate: todayDate.value,
-          })
-          if (leave) leaveCount += 1
-          else if (row?.check_in_at) presentCount += 1
-          if (status.code === 'late' || status.code === 'late_early') lateCount += 1
-          if (status.code === 'absent') absentCount += 1
+      const daySummary = inMonth
+        ? adminCalendarSummaryByDate.value.get(cursor) || {
+          presentCount: 0,
+          lateCount: 0,
+          leaveCount: 0,
+          absentCount: 0,
+          totalCount: 0,
         }
-      }
+        : {
+          presentCount: 0,
+          lateCount: 0,
+          leaveCount: 0,
+          absentCount: 0,
+          totalCount: 0,
+        }
 
       cells.push({
         date: cursor,
         inMonth,
         dayNumber: Number(cursor.slice(-2)),
-        presentCount,
-        lateCount,
-        leaveCount,
-        absentCount,
-        totalCount: presentCount + leaveCount + absentCount,
+        ...daySummary,
       })
       continue
     }
@@ -460,7 +539,7 @@ const selectedDateLeaveRows = computed<CalendarLeaveRow[]>(() => {
     .filter((row) => row.start_date <= selectedCalendarDate.value && row.end_date >= selectedCalendarDate.value)
     .map((row) => ({
       ...row,
-      ...(profiles.value.find((profile) => profile.profile_id === row.user_id) || {
+      ...(profileMapById.value.get(row.user_id) || {
         profile_id: row.user_id,
         user_name: '-',
         user_email: '',
@@ -974,6 +1053,7 @@ function handleEscape(event: KeyboardEvent) {
   flex-direction: column;
   gap: 10px;
   text-align: left;
+  contain: layout paint;
 }
 
 .calendar-day.outside {

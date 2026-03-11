@@ -92,6 +92,23 @@
       </div>
     </div>
 
+    <div class="single-grid">
+      <div class="card">
+        <div class="card-header">
+          <div class="dashboard-card-head">
+            <h3 class="card-title">{{ dailySalesTitle }}</h3>
+            <p class="card-caption">원문 상품명 기준 수량 계산 로직으로 집계한 실구매 판매량입니다. 막대를 누르면 고객 분석으로 이동합니다.</p>
+          </div>
+          <StatusBadge :label="dailySalesRangeLabel" variant="neutral" />
+        </div>
+        <div class="trend-chart">
+          <div class="trend-chart-area">
+            <canvas ref="dailySalesChartCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="bottom-grid">
       <div class="card">
         <div class="card-header">
@@ -192,13 +209,13 @@ import {
   UserPlus,
   MoveRight,
 } from 'lucide-vue-next'
-import { Chart, DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler } from 'chart.js'
+import { Chart, DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler, BarController, BarElement } from 'chart.js'
 import { customerStageLabel, progressiveCustomerStage, productStageLabel } from '~/composables/useGrowthStage'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
 import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
 import { buildWeekOptions, weekCodeFromDate, weekLabelFromCode } from '~/composables/useWeekFilter'
 
-Chart.register(DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler)
+Chart.register(DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler, BarController, BarElement)
 
 interface PurchaseRow {
   purchase_id: string
@@ -278,8 +295,10 @@ const { profileLoaded, profileRevision } = useCurrentUser()
 
 const petChartCanvas = ref<HTMLCanvasElement | null>(null)
 const trendChartCanvas = ref<HTMLCanvasElement | null>(null)
+const dailySalesChartCanvas = ref<HTMLCanvasElement | null>(null)
 const petChartInstance = shallowRef<Chart | null>(null)
 const trendChartInstance = shallowRef<Chart | null>(null)
+const dailySalesChartInstance = shallowRef<Chart | null>(null)
 
 const dashboardLoading = ref(false)
 const currentMetrics = ref<DashboardMetrics>({
@@ -303,6 +322,9 @@ const stageData = ref<StageDatum[]>([
 const churnData = ref<ChurnRow[]>([])
 const trendLabels = ref<string[]>([])
 const trendValues = ref<number[]>([])
+const dailySalesLabels = ref<string[]>([])
+const dailySalesValues = ref<number[]>([])
+const dailySalesKeys = ref<string[]>([])
 const dashboardWeekFilter = ref('')
 const dashboardFetchSeq = ref(0)
 const dashboardRows = ref<PurchaseRow[]>([])
@@ -331,6 +353,22 @@ const trendRangeLabel = computed(() => {
   return `${selectedPeriodLabel.value} 기준`
 })
 
+const dailySalesTitle = computed(() => {
+  if (selectedMonth.value === 'all') return '월별 실구매 판매량'
+  if (dashboardWeekFilter.value) return '일별 실구매 판매량'
+  return '일자별 실구매 판매량'
+})
+
+const dailySalesRangeLabel = computed(() => {
+  if (selectedMonth.value === 'all') {
+    if (dailySalesLabels.value.length === 0) return '최근 6개월'
+    if (dailySalesLabels.value.length === 1) return dailySalesLabels.value[0]
+    return `${dailySalesLabels.value[0]} ~ ${dailySalesLabels.value[dailySalesLabels.value.length - 1]}`
+  }
+  if (dashboardWeekFilter.value) return weekLabelFromCode(selectedMonth.value, dashboardWeekFilter.value)
+  return `${selectedPeriodLabel.value} 기준`
+})
+
 const visibleChurnData = computed(() => {
   return churnData.value.slice(0, 5)
 })
@@ -351,6 +389,15 @@ function navigateToCustomers(query: Record<string, string> = {}) {
   }
   const withMonth = { ...base, ...query }
   router.push({ path: '/customers', query: withMonth })
+}
+
+function navigateToCustomersBySalesKey(key: string) {
+  if (!key) return
+  if (/^\d{4}-\d{2}$/.test(key)) {
+    router.push({ path: '/customers', query: { month: key } })
+    return
+  }
+  navigateToCustomers({ orderDate: key })
 }
 
 function stageQueryByName(stageName: string): string {
@@ -550,6 +597,17 @@ function buildWeekDateTokens(monthToken: string, weekCode: string): string[] {
   return tokens
 }
 
+function buildMonthDateTokens(monthToken: string): string[] {
+  const [year, month] = String(monthToken || '').split('-').map((part) => Number(part))
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return []
+  const totalDays = new Date(year, month, 0).getDate()
+  const tokens: string[] = []
+  for (let day = 1; day <= totalDays; day += 1) {
+    tokens.push(`${monthToken}-${String(day).padStart(2, '0')}`)
+  }
+  return tokens
+}
+
 function applyTrendSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekSnapshot: string) {
   const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
 
@@ -591,6 +649,37 @@ function applyTrendSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekS
   }
   trendLabels.value = weekOptions.map((option) => option.label.split(' ')[0])
   trendValues.value = weekOptions.map((option) => countMap.get(option.value) || 0)
+}
+
+function applyDailySalesSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekSnapshot: string) {
+  const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
+
+  if (monthSnapshot === 'all') {
+    const monthTokens = buildTrendMonths(monthSnapshot)
+    const countMap = new Map<string, number>(monthTokens.map((token) => [token, 0]))
+    for (const row of realRows) {
+      const monthToken = String(row.target_month || '')
+      if (!countMap.has(monthToken)) continue
+      countMap.set(monthToken, (countMap.get(monthToken) || 0) + computePurchaseQuantity(purchaseQuantityInput(row)).totalCount)
+    }
+    dailySalesKeys.value = monthTokens
+    dailySalesLabels.value = monthTokens.map((token) => formatMonthLabel(token))
+    dailySalesValues.value = monthTokens.map((token) => countMap.get(token) || 0)
+    return
+  }
+
+  const dateTokens = weekSnapshot
+    ? buildWeekDateTokens(monthSnapshot, weekSnapshot)
+    : buildMonthDateTokens(monthSnapshot)
+  const countMap = new Map<string, number>(dateTokens.map((token) => [token, 0]))
+  for (const row of realRows) {
+    const dateToken = String(row.order_date || '').slice(0, 10)
+    if (!countMap.has(dateToken)) continue
+    countMap.set(dateToken, (countMap.get(dateToken) || 0) + computePurchaseQuantity(purchaseQuantityInput(row)).totalCount)
+  }
+  dailySalesKeys.value = dateTokens
+  dailySalesLabels.value = dateTokens.map((token) => formatDayLabel(token))
+  dailySalesValues.value = dateTokens.map((token) => countMap.get(token) || 0)
 }
 
 async function loadProductMeta() {
@@ -829,6 +918,7 @@ function applyDashboardScope() {
 
   applyDashboardMetrics(scopeRows)
   applyTrendSeries(scopeRows, monthSnapshot, weekSnapshot)
+  applyDailySalesSeries(scopeRows, monthSnapshot, weekSnapshot)
 }
 
 function renderPetChart() {
@@ -928,6 +1018,73 @@ function renderTrendChart() {
   })
 }
 
+function renderDailySalesChart() {
+  if (!dailySalesChartCanvas.value) return
+  if (dailySalesChartInstance.value) {
+    dailySalesChartInstance.value.destroy()
+    dailySalesChartInstance.value = null
+  }
+
+  dailySalesChartInstance.value = new Chart(dailySalesChartCanvas.value, {
+    type: 'bar',
+    data: {
+      labels: dailySalesLabels.value,
+      datasets: [{
+        data: dailySalesValues.value,
+        backgroundColor: 'rgba(37, 99, 235, 0.84)',
+        hoverBackgroundColor: '#2563EB',
+        borderRadius: 6,
+        borderSkipped: false,
+        maxBarThickness: 32,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: (_, elements) => {
+        const first = elements[0]
+        if (!first) return
+        const key = dailySalesKeys.value[first.index]
+        if (!key) return
+        navigateToCustomersBySalesKey(key)
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1E293B',
+          titleFont: { size: 12 },
+          bodyFont: { size: 13, weight: 'bold' as const },
+          padding: 10,
+          cornerRadius: 6,
+          callbacks: {
+            label: (ctx) => `${formatQuantityCount(Number(ctx.parsed.y || 0))}개`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            font: { size: 11 },
+            color: '#9CA3AF',
+          },
+        },
+        y: {
+          grid: {
+            color: '#F3F4F6',
+          },
+          ticks: {
+            font: { size: 11 },
+            color: '#9CA3AF',
+            callback: (value) => formatQuantityCount(Number(value)),
+          },
+          beginAtZero: true,
+        },
+      },
+    },
+  })
+}
+
 watch(
   () => selectedMonth.value,
   (month, prevMonth) => {
@@ -970,11 +1127,12 @@ watch(
 )
 
 watch(
-  () => [petData.value, trendLabels.value, trendValues.value],
+  () => [petData.value, trendLabels.value, trendValues.value, dailySalesLabels.value, dailySalesValues.value],
   async () => {
     await nextTick()
     renderPetChart()
     renderTrendChart()
+    renderDailySalesChart()
   },
   { deep: true },
 )
@@ -982,6 +1140,7 @@ watch(
 onBeforeUnmount(() => {
   if (petChartInstance.value) petChartInstance.value.destroy()
   if (trendChartInstance.value) trendChartInstance.value.destroy()
+  if (dailySalesChartInstance.value) dailySalesChartInstance.value.destroy()
 })
 </script>
 

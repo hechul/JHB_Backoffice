@@ -150,11 +150,14 @@
   - `app/pages/customers.vue`
   - `app/composables/useGrowthStage.ts`
   - `app/composables/usePurchaseQuantity.ts`
+  - `구매일(orderDate)` 필터와 상세 `구매 타임라인`을 제공하며, 대시보드의 일자별 판매량 차트에서 drill-down 진입을 받는다
+  - 엑셀 다운로드는 고객 요약 1행이 아니라 실구매 `구매 이력 1행` 기준이다. 현재 필터 조건에 맞는 주문행만 대상으로 `구매일`, `상품명`, `옵션`, `상품 개수`가 반복 출력된다
 - 실행 이력:
   - `app/pages/logs.vue`
 - 대시보드:
   - `app/pages/dashboard.vue`
   - `app/composables/useGrowthStage.ts`
+  - `일자별 실구매 판매량` 차트는 `computePurchaseQuantity(purchaseQuantityInput(row))`로 집계하며, 기존 실구매 건수 추이와 별개로 `개수` 기준 차트다
 - 고객 성장 단계:
   - `app/pages/growth-stages.vue`
   - `app/composables/useGrowthInsights.ts`
@@ -304,6 +307,7 @@
 
 - 실구매만 대상
 - 체험단 고객은 여기서 제외
+- 대시보드에서 날짜 막대를 누르면 `month + orderDate` 쿼리를 받아 해당 일자 구매 고객만 남긴다
 - 주요 계산:
   - 구매횟수: 구매한 날짜 수 기준
   - 구매 상품 수: 상품 개수 합
@@ -321,6 +325,8 @@
 - 수량 계산은 `source_product_name`, `source_option_info`가 있으면 원문 기준으로 우선 계산한다
 - 고객 분석과 같은 상품 수량 규칙을 공유한다
 - 고객 성장 단계 분포는 고객 분석과 같은 `products.stage` 점진 승급 규칙을 공유한다
+- `일자별 실구매 판매량`은 현재 월 선택 기준으로 일자별, 주차 선택 시 해당 주 일별, 전체 기간에서는 월별 판매량으로 렌더링한다
+- 일자별 판매량 차트 클릭 시 고객 분석으로 이동해 해당 날짜 고객을 바로 볼 수 있다
 
 ---
 

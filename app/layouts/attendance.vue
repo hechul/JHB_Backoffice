@@ -434,13 +434,27 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  padding: 12px var(--space-md);
-  border-radius: 16px;
-  border: 1px solid transparent;
-  color: var(--color-text-secondary);
-  font-size: 0.94rem;
-  font-weight: 500;
-  transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), color var(--transition-fast);
+  padding: 9px var(--space-md);
+  border-radius: 12px;
+  color: var(--color-sidebar-text);
+  font-size: 0.92rem;
+  font-weight: 450;
+  white-space: nowrap;
+  overflow: hidden;
+  position: relative;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  width: 3px;
+  height: 60%;
+  border-radius: 99px;
+  background: transparent;
+  transition: background var(--transition-fast);
 }
 
 .nav-item-label {
@@ -465,19 +479,39 @@ onBeforeUnmount(() => {
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.74);
-  border-color: rgba(255, 255, 255, 0.86);
-  color: var(--color-text);
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
-  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.64);
+  color: var(--color-sidebar-text-active);
+  transform: translateX(2px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
 }
 
 .nav-item.active {
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.88) 0%, rgba(238, 244, 255, 0.94) 50%, rgba(219, 234, 254, 0.86) 100%);
-  color: var(--color-text);
+  background: linear-gradient(140deg, rgba(234, 242, 255, 0.92) 0%, rgba(219, 234, 254, 0.84) 100%);
+  color: var(--color-sidebar-text-active);
   font-weight: 550;
-  border-color: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.08), inset 0 0 0 1px rgba(37, 99, 235, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
+}
+
+.nav-item.active::before {
+  background: var(--color-primary);
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 9px;
+}
+
+.nav-item.nav-home {
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  font-weight: 500;
+  margin-bottom: var(--space-sm);
+}
+
+.nav-item.nav-home:hover {
+  color: var(--color-primary);
+  background: var(--color-sidebar-hover);
+  transform: translateX(2px);
 }
 
 .sidebar-collapse-btn {
@@ -861,8 +895,7 @@ onBeforeUnmount(() => {
 .content-shell :deep(.today-person-card:hover),
 .content-shell :deep(.weekly-person-card:hover),
 .content-shell :deep(.monthly-log-card:hover),
-.content-shell :deep(.detail-record-card:hover),
-.content-shell :deep(.calendar-day:hover:not(:disabled)) {
+.content-shell :deep(.detail-record-card:hover) {
   transform: translateY(-2px);
   box-shadow: 0 28px 56px rgba(15, 23, 42, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.74);
 }
@@ -896,7 +929,6 @@ onBeforeUnmount(() => {
 .content-shell :deep(.calendar-tools),
 .content-shell :deep(.session-item),
 .content-shell :deep(.mini-week-item),
-.content-shell :deep(.calendar-day),
 .content-shell :deep(.today-note-row) {
   border: 1px solid rgba(226, 232, 240, 0.78);
   background: rgba(255, 255, 255, 0.72);
@@ -907,7 +939,19 @@ onBeforeUnmount(() => {
 
 .content-shell :deep(.calendar-day) {
   border-radius: 24px;
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast), background-color var(--transition-fast);
+  border: 1px solid rgba(226, 232, 240, 0.76);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+  contain: layout paint;
+}
+
+.content-shell :deep(.calendar-day:hover:not(:disabled)) {
+  transform: none;
+  border-color: rgba(37, 99, 235, 0.22);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.06);
 }
 
 .content-shell :deep(.mini-week-item),
@@ -931,6 +975,15 @@ onBeforeUnmount(() => {
   box-shadow: 0 10px 18px rgba(15, 23, 42, 0.04);
   backdrop-filter: blur(12px) saturate(150%);
   -webkit-backdrop-filter: blur(12px) saturate(150%);
+}
+
+.content-shell :deep(.calendar-page .calendar-stat),
+.content-shell :deep(.calendar-page .legend-item) {
+  border-color: rgba(226, 232, 240, 0.78);
+  background: rgba(248, 250, 252, 0.94);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .content-shell :deep(.status-filter-chip) {
