@@ -13,7 +13,7 @@
       <div class="admin-header">
         <div>
           <h1 class="admin-title">금일 근태 이력</h1>
-          <div class="admin-subtitle">{{ todayDate }}</div>
+          <div class="admin-subtitle">{{ todayDate }}{{ lastRefreshedLabel ? ` · ${lastRefreshedLabel}` : '' }}</div>
         </div>
         <div class="admin-actions">
           <input v-model.trim="searchText" type="text" class="input search-input" placeholder="이름/아이디 검색" />
@@ -35,6 +35,11 @@
       <div v-if="leaveTableMissing" class="card notice-neutral">
         `leave_requests` 테이블이 없어 휴가/반차 정보는 표시되지 않습니다.
         `docs/sql/2026-03-10_attendance_phase2.sql` 실행이 필요합니다.
+      </div>
+
+      <div v-if="absentCount > 0 && !tableMissing" class="absent-banner">
+        <strong class="absent-banner-count">미출근 {{ absentCount }}명</strong>
+        <span class="absent-banner-desc">출근 예정 시각({{ settings.work_start_time }})이 지났습니다.</span>
       </div>
 
       <div class="summary-grid">
@@ -159,6 +164,7 @@ const todaySessions = ref<AttendanceWorkSession[]>([])
 const todayLeaves = ref<LeaveRequest[]>([])
 const settings = ref<AttendanceSettings>(normalizeAttendanceSettings(DEFAULT_ATTENDANCE_SETTINGS))
 const liveNowIso = ref(new Date().toISOString())
+const lastRefreshedAt = ref<Date | null>(null)
 let liveTimer: ReturnType<typeof setInterval> | null = null
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 
@@ -235,6 +241,23 @@ const adminStatusFilters = [
   { label: '퇴근 완료', value: 'done' },
   { label: '휴가/반차', value: 'leave' },
 ] as const
+
+const lastRefreshedLabel = computed(() => {
+  if (!lastRefreshedAt.value) return ''
+  const d = lastRefreshedAt.value
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} 기준`
+})
+
+const absentCount = computed(() => {
+  if (tableMissing.value) return 0
+  const nowKst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+  const [h = 9, m = 0] = (settings.value.work_start_time || '09:00').split(':').map(Number)
+  const grace = settings.value.late_grace_minutes ?? 10
+  const thresholdMinutes = h * 60 + m + grace
+  const nowMinutes = nowKst.getHours() * 60 + nowKst.getMinutes()
+  if (nowMinutes < thresholdMinutes) return 0
+  return todayRows.value.filter((row) => !row.record?.check_in_at && !row.leave).length
+})
 
 const summaryCards = computed(() => {
   const list = todayRows.value
@@ -389,6 +412,7 @@ async function refreshTodayRows() {
       fetchTodaySessions(),
       fetchTodayLeaves(),
     ])
+    lastRefreshedAt.value = new Date()
   } catch (error: any) {
     console.error('Failed to fetch admin today rows:', error)
     toast.error(`금일 근태 조회 실패: ${error?.message || '알 수 없는 오류'}`)
@@ -469,6 +493,28 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
   background: rgba(248, 250, 252, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.absent-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-radius: 18px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.absent-banner-count {
+  font-size: 0.96rem;
+  font-weight: 800;
+  color: #b91c1c;
+  white-space: nowrap;
+}
+
+.absent-banner-desc {
+  font-size: 0.9rem;
+  color: #b91c1c;
 }
 
 .summary-grid {

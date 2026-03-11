@@ -2,7 +2,7 @@
   <div class="weekly-page">
     <div class="page-header">
       <div>
-        <h1 class="page-title">주별 근태 기록</h1>
+        <h1 class="page-title">{{ isAdmin ? '주별 근태 기록' : '내 근태 기록' }}</h1>
       </div>
       <div class="page-actions">
         <input v-model="selectedMonth" type="month" class="input month-input" />
@@ -104,7 +104,7 @@
               </div>
             </div>
 
-            <div class="monthly-log-note">{{ entry.note }}</div>
+            <div v-if="entry.note" class="monthly-log-note">{{ entry.note }}</div>
           </article>
         </div>
       </div>
@@ -137,7 +137,7 @@
               v-for="cell in row.days"
               :key="`${row.profile_id}-${cell.date}`"
               class="weekly-day-card"
-              :class="[dayCardTone(cell), { muted: !cell.inMonth, today: cell.date === todayDate }]"
+              :class="[dayCardTone(cell.status.code), { muted: !cell.inMonth, today: cell.date === todayDate }]"
             >
               <div class="weekly-day-head">
                 <div>
@@ -437,7 +437,7 @@ const personalMonthlyEntries = computed(() => {
         checkIn: leave ? '-' : formatTime(row?.check_in_at),
         checkOut: leave ? '-' : formatTime(row?.check_out_at),
         duration: leave ? getLeaveTypeLabel(leave.leave_type) : formatWorkDuration(workMinutes),
-        note: leave ? `${getLeaveTypeLabel(leave.leave_type)} · ${getLeaveStatusLabel(leave.status)}` : (workMinutes > 0 ? formatWorkDuration(workMinutes) : '-'),
+        note: leave ? `${getLeaveTypeLabel(leave.leave_type)} · ${getLeaveStatusLabel(leave.status)}` : '',
       }
     })
 })
@@ -665,12 +665,11 @@ function getWeekdayLabel(dateKey: string) {
   return calendarWeekdayLabels[(date.getDay() + 6) % 7]
 }
 
-function dayCardTone(cell: { status: { code?: string } }) {
-  const code = cell.status.code
-  if (code === 'leave') return 'tone-purple'
-  if (code === 'late' || code === 'late_early') return 'tone-amber'
-  if (code === 'absent') return 'tone-red'
-  if (code === 'done' || code === 'early_leave' || code === 'working') return 'tone-blue'
+function dayCardTone(statusCode?: string) {
+  if (statusCode === 'leave') return 'tone-purple'
+  if (statusCode === 'late' || statusCode === 'late_early') return 'tone-amber'
+  if (statusCode === 'absent') return 'tone-red'
+  if (statusCode === 'done' || statusCode === 'early_leave' || statusCode === 'working') return 'tone-blue'
   return 'tone-slate'
 }
 

@@ -390,6 +390,9 @@ watch(selectedMonth, async () => {
   gap: 6px;
   padding: var(--space-lg);
   border-radius: var(--radius-xl);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .summary-label {
@@ -403,10 +406,13 @@ watch(selectedMonth, async () => {
   color: var(--color-text);
 }
 
-.tone-slate { background: rgba(148, 163, 184, 0.12); }
-.tone-amber { background: rgba(245, 158, 11, 0.12); }
-.tone-green { background: rgba(34, 197, 94, 0.12); }
-.tone-red { background: rgba(239, 68, 68, 0.12); }
+.tone-slate,
+.tone-amber,
+.tone-green,
+.tone-red {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(148, 163, 184, 0.16);
+}
 
 .table-card,
 .empty-state,
@@ -424,15 +430,45 @@ watch(selectedMonth, async () => {
   padding: 8px 12px;
   border: 1px solid var(--color-border);
   border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
   color: var(--color-text-muted);
   font-size: 0.82rem;
-  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .status-filter-chip.active {
-  background: rgba(37, 99, 235, 0.12);
-  border-color: rgba(37, 99, 235, 0.22);
-  color: #2563eb;
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(15, 23, 42, 0.14);
+  color: var(--color-text);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+}
+
+.approval-card .status-chip {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: var(--color-text);
+  box-shadow: none;
+}
+
+.approval-actions .btn,
+.approval-actions .btn-primary,
+.approval-actions .btn-ghost,
+.approval-actions .btn-danger {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: var(--color-text);
+  box-shadow: none;
+}
+
+.approval-actions .btn:hover:not(:disabled),
+.approval-actions .btn-primary:hover:not(:disabled),
+.approval-actions .btn-ghost:hover:not(:disabled),
+.approval-actions .btn-danger:hover:not(:disabled) {
+  background: rgba(248, 250, 252, 0.98);
+  border-color: rgba(100, 116, 139, 0.26);
+  color: var(--color-text);
+  transform: none;
+  box-shadow: none;
 }
 
 .table-empty,

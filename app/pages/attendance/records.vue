@@ -14,7 +14,7 @@
       </button>
     </div>
 
-    <div class="card today-card">
+    <div class="card today-card" :class="{ 'mode-cta': workToggleMode === 'before_start' && !blocksAttendanceToday }">
       <div class="today-head">
         <div>
           <div class="today-label">오늘 ({{ todayDate }})</div>
@@ -25,21 +25,6 @@
           <div v-else class="today-note">{{ todayActionDescription }}</div>
         </div>
         <div class="today-pill">{{ currentModeLabel }}</div>
-      </div>
-
-      <div class="today-grid">
-        <div class="today-item">
-          <span>출근 시각</span>
-          <strong>{{ formatTime(todayRecord?.check_in_at) }}</strong>
-        </div>
-        <div class="today-item">
-          <span>퇴근 시각</span>
-          <strong>{{ formatTime(todayRecord?.check_out_at) }}</strong>
-        </div>
-        <div class="today-item">
-          <span>총 근무시간</span>
-          <strong>{{ todayWorkDuration }}</strong>
-        </div>
       </div>
 
       <div v-if="!tableMissing" class="action-panel">
@@ -56,12 +41,12 @@
 
             <div v-else-if="workToggleMode === 'on'" class="action-row">
               <button class="btn btn-ghost btn-lg action-secondary" :disabled="saving || !canToggleWork" @click="handleToggleWork">일시중단</button>
-              <button class="btn btn-primary btn-lg action-primary" :disabled="saving || !canFinalCheckOut" @click="handleFinalCheckOut">퇴근하기</button>
+              <button class="btn btn-primary btn-lg action-primary" :disabled="saving || !canFinalCheckOut" @click="isCheckOutConfirmOpen = true">퇴근하기</button>
             </div>
 
             <div v-else-if="workToggleMode === 'off'" class="action-row">
               <button class="btn btn-primary btn-lg action-primary" :disabled="saving || !canToggleWork" @click="handleToggleWork">재시작</button>
-              <button class="btn btn-ghost btn-lg action-secondary" :disabled="saving || !canFinalCheckOut" @click="handleFinalCheckOut">퇴근하기</button>
+              <button class="btn btn-ghost btn-lg action-secondary" :disabled="saving || !canFinalCheckOut" @click="isCheckOutConfirmOpen = true">퇴근하기</button>
             </div>
 
             <div v-else class="action-complete">
@@ -72,12 +57,27 @@
 
           <div v-else class="action-row legacy-row">
             <button class="btn btn-primary btn-lg action-primary" :disabled="!canLegacyCheckIn || saving" @click="handleLegacyCheckIn">출근하기</button>
-            <button class="btn btn-ghost btn-lg action-secondary" :disabled="!canLegacyCheckOut || saving" @click="handleLegacyCheckOut">퇴근하기</button>
+            <button class="btn btn-ghost btn-lg action-secondary" :disabled="!canLegacyCheckOut || saving" @click="isCheckOutConfirmOpen = true">퇴근하기</button>
           </div>
         </template>
         <div v-else class="action-complete leave-complete">
           <strong>{{ todayDisplayStatus.label }}</strong>
           <span>승인된 휴가 일정이 있어 오늘 출퇴근 기록은 입력하지 않습니다.</span>
+        </div>
+      </div>
+
+      <div class="today-grid">
+        <div class="today-item">
+          <span>출근 시각</span>
+          <strong>{{ formatTime(todayRecord?.check_in_at) }}</strong>
+        </div>
+        <div class="today-item">
+          <span>퇴근 시각</span>
+          <strong>{{ formatTime(todayRecord?.check_out_at) }}</strong>
+        </div>
+        <div class="today-item">
+          <span>총 근무시간</span>
+          <strong>{{ todayWorkDuration }}</strong>
         </div>
       </div>
 
@@ -129,6 +129,19 @@
       <div v-if="leaveTableMissing" class="today-warning neutral">
         `leave_requests` 테이블이 없어 휴가 정보는 표시되지 않습니다.
         `docs/sql/2026-03-10_attendance_phase2.sql` 실행이 필요합니다.
+      </div>
+    </div>
+
+    <div v-if="isCheckOutConfirmOpen" class="modal-backdrop" @click.self="isCheckOutConfirmOpen = false">
+      <div class="confirm-modal">
+        <div class="confirm-modal-body">
+          <strong>퇴근 처리하시겠습니까?</strong>
+          <span>퇴근 후에는 다시 출근으로 되돌릴 수 없습니다.</span>
+        </div>
+        <div class="confirm-modal-actions">
+          <button type="button" class="btn btn-ghost" :disabled="saving" @click="isCheckOutConfirmOpen = false">취소</button>
+          <button type="button" class="btn btn-primary" :disabled="saving" @click="confirmFinalCheckOut">퇴근하기</button>
+        </div>
       </div>
     </div>
 
@@ -222,6 +235,7 @@ const settingsTableMissing = ref(false)
 const leaveTableMissing = ref(false)
 const liveNowIso = ref(new Date().toISOString())
 const isLeaveModalOpen = ref(false)
+const isCheckOutConfirmOpen = ref(false)
 let liveTimer: ReturnType<typeof setInterval> | null = null
 
 const leaveForm = reactive({
@@ -275,7 +289,7 @@ const currentModeLabel = computed(() => {
   if (todayApprovedLeave.value) return getLeaveTypeLabel(todayApprovedLeave.value.leave_type)
   if (sessionsTableMissing.value) return todayComputedStatus.value.label
   if (workToggleMode.value === 'before_start') return '미출근'
-  if (workToggleMode.value === 'on') return '근무 중'
+  if (workToggleMode.value === 'on') return `근무 중 · ${todayWorkDuration.value}`
   if (workToggleMode.value === 'off') return '중단 중'
   return '퇴근 완료'
 })
@@ -418,6 +432,15 @@ function isHalfDayType(type: LeaveType) {
 
 function closeLeaveModal() {
   isLeaveModalOpen.value = false
+}
+
+async function confirmFinalCheckOut() {
+  isCheckOutConfirmOpen.value = false
+  if (sessionsTableMissing.value) {
+    await handleLegacyCheckOut()
+  } else {
+    await handleFinalCheckOut()
+  }
 }
 
 async function fetchSettings() {
@@ -848,6 +871,11 @@ onBeforeUnmount(() => {
   gap: var(--space-lg);
 }
 
+.today-card.mode-cta {
+  border-color: rgba(37, 99, 235, 0.22);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.06), 0 12px 32px rgba(15, 23, 42, 0.06);
+}
+
 .today-head {
   display: flex;
   justify-content: space-between;
@@ -1160,6 +1188,43 @@ onBeforeUnmount(() => {
 }
 
 .leave-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.confirm-modal {
+  width: min(400px, 100%);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 28px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.confirm-modal-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 4px 0;
+}
+
+.confirm-modal-body strong {
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+
+.confirm-modal-body span {
+  color: var(--color-text-secondary);
+  font-size: 0.92rem;
+}
+
+.confirm-modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
