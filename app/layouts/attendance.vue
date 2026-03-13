@@ -59,7 +59,7 @@
     <div class="main-wrapper">
       <header class="header">
         <div class="header-left">
-          <button class="mobile-menu-btn" @click="mobileMenuOpen = !mobileMenuOpen">
+          <button class="mobile-menu-btn" @click="toggleMobileMenu">
             <Menu :size="20" :stroke-width="1.8" />
           </button>
 
@@ -133,6 +133,7 @@ const mobileMenuOpen = ref(false)
 const pendingLeaveApprovalCount = ref(0)
 const leaveApprovalTableMissing = ref(false)
 let pendingBadgeTimer: ReturnType<typeof setInterval> | null = null
+let resizeCleanup: (() => void) | null = null
 
 const attendanceMenuItems = computed(() => {
   if (isAdmin.value) {
@@ -239,6 +240,18 @@ function handlePageRefresh() {
   window.location.reload()
 }
 
+function syncMobileSidebarState() {
+  if (!import.meta.client) return
+  if (window.innerWidth <= 960) {
+    sidebarCollapsed.value = false
+  }
+}
+
+function toggleMobileMenu() {
+  syncMobileSidebarState()
+  mobileMenuOpen.value = !mobileMenuOpen.value
+}
+
 async function goHomeWithFallback() {
   mobileMenuOpen.value = false
   try {
@@ -287,6 +300,16 @@ watch(
 )
 
 onMounted(() => {
+  syncMobileSidebarState()
+  const handleResize = () => {
+    syncMobileSidebarState()
+    if (window.innerWidth > 960) {
+      mobileMenuOpen.value = false
+    }
+  }
+  window.addEventListener('resize', handleResize, { passive: true })
+  resizeCleanup = () => window.removeEventListener('resize', handleResize)
+
   pendingBadgeTimer = setInterval(() => {
     void fetchPendingLeaveApprovalCount()
   }, 60 * 1000)
@@ -294,6 +317,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (pendingBadgeTimer) clearInterval(pendingBadgeTimer)
+  resizeCleanup?.()
 })
 </script>
 
@@ -1146,12 +1170,23 @@ onBeforeUnmount(() => {
   }
 
   .sidebar {
+    width: min(248px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    overflow: hidden;
     transform: translateX(-100%);
     transition: transform var(--transition-normal);
   }
 
+  .sidebar.collapsed {
+    width: min(248px, calc(100vw - 24px));
+  }
+
   .mobile-open .sidebar {
     transform: translateX(0);
+  }
+
+  .mobile-open .mobile-overlay {
+    display: block;
   }
 
   .main-wrapper,
@@ -1167,6 +1202,10 @@ onBeforeUnmount(() => {
     height: 38px;
     border-radius: var(--radius-md);
     color: var(--color-text-secondary);
+  }
+
+  .sidebar-collapse-btn {
+    display: none;
   }
 
   .header {
