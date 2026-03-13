@@ -278,7 +278,25 @@ async function handleLogout() {
 
 @media (max-width: 768px) {
   .home-header {
-    padding: 0 var(--space-lg);
+    height: auto;
+    padding: var(--space-sm) var(--space-md);
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+
+  .home-header-left,
+  .home-header-right {
+    width: 100%;
+  }
+
+  .home-header-left {
+    justify-content: space-between;
+    gap: var(--space-sm);
+  }
+
+  .home-header-right {
+    justify-content: flex-end;
+    gap: var(--space-md);
   }
 
   .home-logo-sub {
@@ -298,7 +316,7 @@ async function handleLogout() {
   }
 
   .home-content {
-    padding: var(--space-xl);
+    padding: var(--space-lg) var(--space-md) var(--space-2xl);
   }
 }
 </style>

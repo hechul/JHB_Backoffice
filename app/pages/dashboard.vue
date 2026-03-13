@@ -1496,7 +1496,22 @@ onBeforeUnmount(() => {
   }
 
   .status-row {
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+  }
+
+  .status-row-main,
+  .status-row-actions {
+    width: 100%;
+  }
+
+  .status-row-actions {
+    justify-content: stretch;
+  }
+
+  .status-row-actions .select {
+    width: 100%;
   }
 
   .kpi-grid {
@@ -1528,11 +1543,11 @@ onBeforeUnmount(() => {
 
   .top-product-stats {
     width: 100%;
-    justify-content: flex-end;
+    justify-content: space-between;
   }
 
   .top-product-bar-wrap {
-    width: 132px;
+    width: min(132px, 44vw);
   }
 
   .stage-bars {

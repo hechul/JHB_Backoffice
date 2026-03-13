@@ -1170,11 +1170,58 @@ onBeforeUnmount(() => {
   }
 
   .header {
-    padding: 0 var(--space-lg);
+    height: auto;
+    min-height: 64px;
+    padding: var(--space-sm) var(--space-md);
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+  }
+
+  .header-left {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+
+  .breadcrumb {
+    min-width: 0;
+  }
+
+  .breadcrumb-item,
+  .breadcrumb-separator {
+    display: none;
+  }
+
+  .breadcrumb-current {
+    display: block;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .header-nav-actions {
+    justify-self: end;
+  }
+
+  .header-nav-btn span {
+    display: none;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .header-date {
+    display: none;
   }
 
   .content {
-    padding: var(--space-lg);
+    padding: var(--space-md);
   }
 
   .content-shell::before {

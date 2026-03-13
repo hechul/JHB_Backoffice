@@ -1324,6 +1324,11 @@ input, select, textarea {
     padding: 10px;
   }
 
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .toast-container {
     right: var(--space-md);
     left: var(--space-md);

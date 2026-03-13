@@ -1053,15 +1053,53 @@ watch(
   }
 
   .header {
-    padding: 0 var(--space-lg);
+    height: auto;
+    min-height: var(--header-height);
+    padding: var(--space-sm) var(--space-md);
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+  }
+
+  .header-left {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+
+  .breadcrumb {
+    min-width: 0;
+  }
+
+  .breadcrumb-item,
+  .breadcrumb-separator {
+    display: none;
+  }
+
+  .breadcrumb-current {
+    display: block;
+    min-width: 0;
+    font-size: 0.9375rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .header-actions {
+    width: 100%;
+    justify-content: space-between;
     gap: var(--space-sm);
+    flex-wrap: wrap;
   }
 
   .header-nav-btn span {
     display: none;
+  }
+
+  .header-nav-actions {
+    justify-self: end;
   }
 
   .header-date {
@@ -1069,11 +1107,13 @@ watch(
   }
 
   .content {
-    padding: var(--space-lg);
+    padding: var(--space-md);
   }
 
   .period-selector {
     display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .period-nav {
@@ -1081,8 +1121,32 @@ watch(
   }
 
   .period-current {
+    width: 100%;
+    justify-content: center;
+    min-width: 0;
     padding: 5px 10px;
     font-size: 0.75rem;
+  }
+
+  .period-current span {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .period-dropdown {
+    width: 100%;
+    min-width: 0;
+    left: 0;
+    right: 0;
+    transform-origin: top center;
+  }
+
+  .period-error {
+    order: 4;
+    width: 100%;
+    max-width: none;
   }
 }
 </style>

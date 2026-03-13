@@ -126,6 +126,63 @@
         </table>
       </div>
 
+      <div class="customer-card-list">
+        <div
+          v-for="c in pagedCustomers"
+          :key="`mobile-${c.customerKey}`"
+          class="customer-mobile-card clickable"
+          @click="openCustomerDetail(c)"
+        >
+          <div class="customer-mobile-head">
+            <div class="customer-mobile-title">
+              <strong>{{ c.name }}</strong>
+              <span class="customer-mobile-id">{{ c.id }}</span>
+            </div>
+            <StatusBadge
+              :label="c.petType === 'DOG' ? '강아지' : c.petType === 'CAT' ? '고양이' : '모두'"
+              :variant="c.petType === 'DOG' ? 'primary' : c.petType === 'CAT' ? 'warning' : 'neutral'"
+            />
+          </div>
+
+          <div class="customer-mobile-grid">
+            <div class="customer-mobile-item">
+              <span class="customer-mobile-label">성장 단계</span>
+              <span class="customer-mobile-value">{{ stageLabel(c.stage) }}</span>
+            </div>
+            <div class="customer-mobile-item">
+              <span class="customer-mobile-label">구매 횟수</span>
+              <span class="customer-mobile-value">{{ c.purchaseCount }}회</span>
+            </div>
+            <div class="customer-mobile-item">
+              <span class="customer-mobile-label">구매 상품 수</span>
+              <span class="customer-mobile-value">{{ formatQuantityCount(c.productCount) }}개</span>
+            </div>
+            <div v-if="hasProductFilter" class="customer-mobile-item">
+              <span class="customer-mobile-label">검색상품 구매횟수</span>
+              <span class="customer-mobile-value">{{ matchingProductPurchaseCount(c) }}회</span>
+            </div>
+            <div class="customer-mobile-item">
+              <span class="customer-mobile-label">최근 주문</span>
+              <span class="customer-mobile-value customer-mobile-muted">{{ c.lastOrder }}</span>
+            </div>
+            <div class="customer-mobile-item">
+              <span class="customer-mobile-label">이탈 위험</span>
+              <StatusBadge
+                v-if="c.churnRisk"
+                label="위험"
+                variant="danger"
+                dot
+              />
+              <span v-else class="customer-mobile-value customer-mobile-muted">정상</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="filteredCustomers.length === 0" class="customer-card-empty">
+          조건에 맞는 고객이 없습니다.
+        </div>
+      </div>
+
       <!-- Pagination -->
       <div class="pagination">
         <span class="pagination-info">{{ paginationInfoLabel }}</span>
@@ -1140,6 +1197,10 @@ onMounted(async () => {
   transition: width 0.3s ease;
 }
 
+.customer-card-list {
+  display: none;
+}
+
 @media (max-width: 1024px) {
   .filter-bar {
     padding: var(--space-md) var(--space-lg);
@@ -1195,6 +1256,103 @@ onMounted(async () => {
 
   .stage-progress {
     width: 40px;
+  }
+
+  .card-header {
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+
+  .table-wrapper {
+    display: none;
+  }
+
+  .customer-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .customer-mobile-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    padding: var(--space-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .customer-mobile-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-md);
+  }
+
+  .customer-mobile-title {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .customer-mobile-title strong {
+    font-size: 1rem;
+    color: var(--color-text);
+  }
+
+  .customer-mobile-id {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .customer-mobile-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-sm);
+  }
+
+  .customer-mobile-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: var(--space-sm);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+    min-width: 0;
+  }
+
+  .customer-mobile-label {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+
+  .customer-mobile-value {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-text);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .customer-mobile-muted {
+    font-weight: 500;
+    color: var(--color-text-secondary);
+  }
+
+  .customer-card-empty {
+    padding: var(--space-xl);
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-lg);
+    text-align: center;
+    color: var(--color-text-muted);
+    background: var(--color-bg);
   }
 }
 </style>
