@@ -1054,6 +1054,10 @@ function handleEscape(event: KeyboardEvent) {
   gap: 10px;
   text-align: left;
   contain: layout paint;
+  appearance: none;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, background-color 0.14s ease;
 }
 
 .calendar-day.outside {
@@ -1067,6 +1071,21 @@ function handleEscape(event: KeyboardEvent) {
 
 .calendar-day.today {
   background: rgba(37, 99, 235, 0.06);
+}
+
+.calendar-day:focus {
+  outline: none;
+}
+
+.calendar-day:focus-visible {
+  border-color: rgba(37, 99, 235, 0.34);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.calendar-day:active:not(:disabled) {
+  transform: none;
+  border-color: rgba(37, 99, 235, 0.26);
+  background: rgba(248, 250, 252, 0.96);
 }
 
 .calendar-day-head {
@@ -1148,6 +1167,8 @@ function handleEscape(event: KeyboardEvent) {
   display: flex;
   align-items: center;
   justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  animation: none !important;
 }
 
 .detail-dialog {
@@ -1162,6 +1183,8 @@ function handleEscape(event: KeyboardEvent) {
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
+  animation: none !important;
+  transform: none !important;
 }
 
 .detail-head {
@@ -1178,6 +1201,7 @@ function handleEscape(event: KeyboardEvent) {
   border-radius: 14px;
   padding: 10px 14px;
   font-weight: 700;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .detail-summary {
@@ -1268,6 +1292,16 @@ function handleEscape(event: KeyboardEvent) {
 .detail-field strong {
   font-size: 1rem;
   font-weight: 800;
+}
+
+.detail-close:focus,
+.row-actions :deep(.btn):focus {
+  outline: none;
+}
+
+.detail-close:focus-visible,
+.row-actions :deep(.btn):focus-visible {
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.14);
 }
 
 @media (max-width: 960px) {

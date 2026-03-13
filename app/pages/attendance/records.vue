@@ -863,6 +863,7 @@ onBeforeUnmount(() => {
 .records-header-btn {
   min-height: 40px;
   white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .today-card {
@@ -1130,6 +1131,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  animation: none !important;
 }
 
 .leave-modal {
@@ -1142,6 +1145,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  animation: none !important;
+  transform: none !important;
 }
 
 .leave-modal-head {
@@ -1159,6 +1164,7 @@ onBeforeUnmount(() => {
   background: #fff;
   color: var(--color-text-secondary);
   font-weight: 700;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .leave-form-grid {
@@ -1203,6 +1209,22 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  animation: none !important;
+  transform: none !important;
+}
+
+.records-header-btn:focus,
+.modal-close-btn:focus,
+.leave-modal-actions :deep(.btn):focus,
+.confirm-modal-actions :deep(.btn):focus {
+  outline: none;
+}
+
+.records-header-btn:focus-visible,
+.modal-close-btn:focus-visible,
+.leave-modal-actions :deep(.btn):focus-visible,
+.confirm-modal-actions :deep(.btn):focus-visible {
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.14);
 }
 
 .confirm-modal-body {
