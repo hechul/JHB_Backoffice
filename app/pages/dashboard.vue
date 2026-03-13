@@ -213,7 +213,7 @@ import { Chart, DoughnutController, ArcElement, Tooltip, Legend, LineController,
 import { customerStageLabel, progressiveCustomerStage, productStageLabel } from '~/composables/useGrowthStage'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
 import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
-import { buildWeekOptions, weekCodeFromDate, weekLabelFromCode } from '~/composables/useWeekFilter'
+import { buildWeekOptions, weekCodeFromDate, weekDateTokensFromCode, weekLabelFromCode } from '~/composables/useWeekFilter'
 
 Chart.register(DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler, BarController, BarElement)
 
@@ -583,18 +583,7 @@ function buildTrendMonths(monthSnapshot: string): string[] {
 }
 
 function buildWeekDateTokens(monthToken: string, weekCode: string): string[] {
-  const [year, month] = String(monthToken || '').split('-').map((part) => Number(part))
-  const weekNumber = Number(String(weekCode || '').replace('W', ''))
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(weekNumber) || weekNumber <= 0) return []
-
-  const totalDays = new Date(year, month, 0).getDate()
-  const startDay = (weekNumber - 1) * 7 + 1
-  const endDay = Math.min(totalDays, startDay + 6)
-  const tokens: string[] = []
-  for (let day = startDay; day <= endDay; day += 1) {
-    tokens.push(`${monthToken}-${String(day).padStart(2, '0')}`)
-  }
-  return tokens
+  return weekDateTokensFromCode(monthToken, weekCode, 'inMonth')
 }
 
 function buildMonthDateTokens(monthToken: string): string[] {
@@ -642,7 +631,7 @@ function applyTrendSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekS
   const weekOptions = buildWeekOptions(monthSnapshot)
   const countMap = new Map<string, number>(weekOptions.map((option) => [option.value, 0]))
   for (const row of realRows) {
-    const weekCode = weekCodeFromDate(row.order_date)
+    const weekCode = weekCodeFromDate(row.order_date, monthSnapshot)
     if (countMap.has(weekCode)) {
       countMap.set(weekCode, (countMap.get(weekCode) || 0) + 1)
     }
@@ -913,7 +902,7 @@ function applyDashboardScope() {
   const weekSnapshot = monthSnapshot !== 'all' ? dashboardWeekFilter.value : ''
   const sourceRows = dashboardRows.value
   const scopeRows = monthSnapshot !== 'all' && weekSnapshot
-    ? sourceRows.filter((row) => weekCodeFromDate(row.order_date) === weekSnapshot)
+    ? sourceRows.filter((row) => weekCodeFromDate(row.order_date, monthSnapshot) === weekSnapshot)
     : sourceRows
 
   applyDashboardMetrics(scopeRows)

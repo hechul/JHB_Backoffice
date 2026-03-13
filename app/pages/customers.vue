@@ -618,7 +618,11 @@ async function fetchCustomers() {
         lastOrder,
         churnRisk: daysFromNow(lastOrder) > 90,
         productStats,
-        purchaseWeeks: Array.from(new Set(customerRows.map((row) => weekCodeFromDate(row.order_date)).filter(Boolean))).sort(),
+        purchaseWeeks: Array.from(new Set(customerRows.map((row) => (
+          monthSnapshot !== 'all'
+            ? weekCodeFromDate(row.order_date, monthSnapshot)
+            : weekCodeFromDate(row.order_date)
+        )).filter(Boolean))).sort(),
         purchaseDates: Array.from(new Set(customerRows.map((row) => purchaseDateKey(row)).filter(Boolean))).sort(),
       })
     }
@@ -686,7 +690,7 @@ async function fetchCustomerOrders(customer: CustomerRow) {
 
   let filteredOrders = orders
   if (monthSnapshot !== 'all' && weekSnapshot) {
-    filteredOrders = filteredOrders.filter((order) => weekCodeFromDate(order.date) === weekSnapshot)
+    filteredOrders = filteredOrders.filter((order) => weekCodeFromDate(order.date, monthSnapshot) === weekSnapshot)
   }
   if (orderDateSnapshot) {
     filteredOrders = filteredOrders.filter((order) => order.date === orderDateSnapshot)
@@ -1027,7 +1031,7 @@ function downloadFilteredCustomers() {
     .filter((row) => {
       const customerKey = row.customer_key || `${row.buyer_id}_${row.buyer_name}`
       if (!customerMap.has(customerKey)) return false
-      if (filterWeek.value && weekCodeFromDate(row.order_date) !== filterWeek.value) return false
+      if (filterWeek.value && weekCodeFromDate(row.order_date, selectedMonth.value) !== filterWeek.value) return false
       if (filterOrderDate.value && purchaseDateKey(row) !== filterOrderDate.value) return false
       if (productQuery && !matchesSearchQuery(productQuery, purchaseDisplayProductName(row), row.product_name, row.source_product_name)) return false
       return true

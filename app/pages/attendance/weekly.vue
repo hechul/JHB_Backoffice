@@ -164,6 +164,7 @@
 <script setup lang="ts">
 import { BriefcaseBusiness, CalendarRange, CircleAlert, Plane, Users } from 'lucide-vue-next'
 import type { AttendanceRecord, AttendanceSettings, AttendanceWorkSession, LeaveRequest } from '~/composables/useAttendance'
+import { addWeekDateDays, getMonthWeekRanges, getWeekStart as getStandardWeekStart } from '~/composables/useWeekFilter'
 
 definePageMeta({ layout: 'attendance' })
 
@@ -222,19 +223,6 @@ function parseDateKey(dateKey: string) {
   return new Date(`${dateKey}T00:00:00+09:00`)
 }
 
-function addDateKeyDays(dateKey: string, days: number) {
-  const next = parseDateKey(dateKey)
-  next.setDate(next.getDate() + days)
-  return getKstDateKey(next)
-}
-
-function getWeekStart(dateKey: string) {
-  const date = parseDateKey(dateKey)
-  const shift = (date.getDay() + 6) % 7
-  date.setDate(date.getDate() - shift)
-  return getKstDateKey(date)
-}
-
 function formatMonthLabel(monthKey: string) {
   const [year, month] = String(monthKey || '').split('-')
   return `${year}년 ${Number(month || 0)}월`
@@ -247,17 +235,6 @@ function formatShortDay(dateKey: string) {
     label: weekday,
     shortDate: `${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`,
   }
-}
-
-function getMonthWeekStarts(monthKey: string) {
-  const { start, end } = getMonthRange(monthKey)
-  const starts: string[] = []
-  let cursor = getWeekStart(start)
-  while (cursor <= end) {
-    starts.push(cursor)
-    cursor = addDateKeyDays(cursor, 7)
-  }
-  return starts
 }
 
 function isMissingTableError(error: any, tableName: string) {
@@ -273,12 +250,14 @@ function isMissingSettingsColumnError(error: any) {
 }
 
 function syncWeekTarget() {
-  const monthWeekStarts = getMonthWeekStarts(selectedMonth.value)
+  const ranges = getMonthWeekRanges(selectedMonth.value)
+  const monthWeekStarts = ranges.map((range) => range.startDate)
   if (!monthWeekStarts.includes(selectedWeekStart.value)) {
     const { start, end } = getMonthRange(selectedMonth.value)
+    const currentRange = ranges.find((range) => range.allDateTokens.includes(todayDate.value))
     const initialWeek = todayDate.value >= start && todayDate.value <= end
-      ? getWeekStart(todayDate.value)
-      : monthWeekStarts[0] || getWeekStart(start)
+      ? currentRange?.startDate || monthWeekStarts[0] || getStandardWeekStart(start)
+      : monthWeekStarts[0] || getStandardWeekStart(start)
     selectedWeekStart.value = initialWeek
   }
 }
@@ -322,15 +301,21 @@ const approvedLeaveMapByUserDate = computed(() => {
   return map
 })
 
-const monthWeekStarts = computed(() => getMonthWeekStarts(selectedMonth.value))
+const monthWeekRanges = computed(() => getMonthWeekRanges(selectedMonth.value))
+const monthWeekStarts = computed(() => monthWeekRanges.value.map((range) => range.startDate))
 const currentWeekIndex = computed(() => monthWeekStarts.value.findIndex((value) => value === selectedWeekStart.value))
 const hasPrevWeek = computed(() => currentWeekIndex.value > 0)
 const hasNextWeek = computed(() => currentWeekIndex.value >= 0 && currentWeekIndex.value < monthWeekStarts.value.length - 1)
+const currentWeekRange = computed(() => {
+  return monthWeekRanges.value.find((range) => range.startDate === selectedWeekStart.value) || monthWeekRanges.value[0] || null
+})
 
 const currentWeekDays = computed(() => {
-  const start = selectedWeekStart.value || monthWeekStarts.value[0] || getWeekStart(getMonthRange(selectedMonth.value).start)
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = addDateKeyDays(start, index)
+  const dateTokens = currentWeekRange.value?.allDateTokens || Array.from(
+    { length: 7 },
+    (_, index) => addWeekDateDays(selectedWeekStart.value || monthWeekStarts.value[0] || getStandardWeekStart(getMonthRange(selectedMonth.value).start), index),
+  )
+  return dateTokens.map((date) => {
     const formatted = formatShortDay(date)
     return {
       date,
@@ -344,7 +329,7 @@ const currentWeekDays = computed(() => {
 const currentWeekLabel = computed(() => {
   const first = currentWeekDays.value[0]
   const last = currentWeekDays.value[currentWeekDays.value.length - 1]
-  const weekNo = currentWeekIndex.value >= 0 ? currentWeekIndex.value + 1 : 1
+  const weekNo = currentWeekRange.value?.weekNumber || (currentWeekIndex.value >= 0 ? currentWeekIndex.value + 1 : 1)
   return `${formatMonthLabel(selectedMonth.value)} ${weekNo}주차 · ${first.shortDate} ~ ${last.shortDate}`
 })
 
@@ -638,7 +623,9 @@ function moveWeek(direction: -1 | 1) {
 function jumpToCurrentWeek() {
   const currentMonth = getKstMonthKey()
   selectedMonth.value = currentMonth
-  selectedWeekStart.value = getWeekStart(getKstDateKey())
+  const today = getKstDateKey()
+  const currentRange = getMonthWeekRanges(currentMonth).find((range) => range.allDateTokens.includes(today))
+  selectedWeekStart.value = currentRange?.startDate || getStandardWeekStart(today)
 }
 
 function formatCardDate(dateKey: string) {
