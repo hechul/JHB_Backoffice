@@ -279,6 +279,7 @@ const todayDisplayStatus = computed(() => {
 const currentModeLabel = computed(() => {
   if (todayApprovedLeave.value) return getLeaveTypeLabel(todayApprovedLeave.value.leave_type)
   if (sessionsTableMissing.value) return todayComputedStatus.value.label
+  if (workToggleMode.value === 'before_start' && todayComputedStatus.value.code === 'off_day') return todayComputedStatus.value.label
   if (workToggleMode.value === 'before_start') return '미출근'
   if (workToggleMode.value === 'on') return `근무 중 · ${todayWorkDuration.value}`
   if (workToggleMode.value === 'off') return '중단 중'
@@ -287,6 +288,9 @@ const currentModeLabel = computed(() => {
 
 const todayActionDescription = computed(() => {
   if (todayApprovedLeave.value) return `승인된 부재: ${getLeaveTypeLabel(todayApprovedLeave.value.leave_type)}`
+  if (workToggleMode.value === 'before_start' && todayComputedStatus.value.code === 'off_day') {
+    return '기본 휴무일입니다. 필요하면 출근하기로 근무 기록을 시작할 수 있습니다.'
+  }
   if (workToggleMode.value === 'before_start') return '출근하기를 눌러 근무를 시작하세요.'
   if (workToggleMode.value === 'on') return '잠시 자리를 비울 때 일시중단, 업무가 끝나면 퇴근하기를 누르세요.'
   if (workToggleMode.value === 'off') return '자리로 돌아왔으면 재시작, 업무를 마쳤으면 퇴근하기를 누르세요.'

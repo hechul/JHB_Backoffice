@@ -53,6 +53,7 @@ export interface LeaveRequest {
 
 export type AttendanceStatusCode =
   | 'not_started'
+  | 'off_day'
   | 'working'
   | 'done'
   | 'late'
@@ -101,6 +102,13 @@ export function getKstDateKey(date: Date = new Date()) {
 
 export function getKstMonthKey(date: Date = new Date()) {
   return getKstDateKey(date).slice(0, 7)
+}
+
+export function isWeekendDateKey(dateKey: string) {
+  const date = new Date(`${dateKey}T00:00:00+09:00`)
+  if (Number.isNaN(date.getTime())) return false
+  const day = date.getDay()
+  return day === 0 || day === 6
 }
 
 export function getMonthRange(month: string) {
@@ -189,11 +197,21 @@ export function getDateKeyFromDateTimeLocalValue(value: string | null | undefine
   return match?.[1] || ''
 }
 
+export function getTimeValueFromDateTimeLocalValue(value: string | null | undefined) {
+  const match = String(value || '').match(/T(\d{2}:\d{2})$/)
+  return match?.[1] || ''
+}
+
 export function applyDateToDateTimeLocalValue(value: string | null | undefined, dateKey: string) {
   if (!dateKey) return String(value || '')
   const match = String(value || '').match(/T(\d{2}:\d{2})$/)
   if (!match) return ''
   return `${dateKey}T${match[1]}`
+}
+
+export function buildDateTimeLocalValue(dateKey: string | null | undefined, timeValue: string | null | undefined) {
+  if (!dateKey || !timeValue) return ''
+  return `${dateKey}T${timeValue}`
 }
 
 export function shiftIsoToDateKey(value: string | null | undefined, dateKey: string) {
@@ -376,6 +394,9 @@ export function computeAttendanceStatus(params: {
   }
 
   if (!params.checkInAt) {
+    if (isWeekendDateKey(params.workDate)) {
+      return { code: 'off_day', label: '쉬는날', className: 'status-empty' }
+    }
     if (params.workDate < todayDate) {
       return { code: 'absent', label: '결근', className: 'status-absent' }
     }
@@ -421,6 +442,7 @@ export function useAttendance() {
     DEFAULT_ATTENDANCE_SETTINGS,
     getKstDateKey,
     getKstMonthKey,
+    isWeekendDateKey,
     getMonthRange,
     formatDate,
     formatDateTime,
@@ -428,7 +450,9 @@ export function useAttendance() {
     toDateTimeLocalValue,
     parseDateTimeLocalToIso,
     getDateKeyFromDateTimeLocalValue,
+    getTimeValueFromDateTimeLocalValue,
     applyDateToDateTimeLocalValue,
+    buildDateTimeLocalValue,
     shiftIsoToDateKey,
     calcWorkMinutes,
     calcWorkSessionMinutes,

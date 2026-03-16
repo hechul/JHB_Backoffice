@@ -155,26 +155,27 @@
             </div>
 
             <template v-if="isAdmin && editingRowId === row.id">
-              <div class="detail-record-date-row">
-                <label class="detail-field detail-date-field">
-                  <span>날짜 선택</span>
-                  <input v-model="editSelectedDate" type="date" class="input date-input" />
-                </label>
-                <button type="button" class="btn btn-ghost btn-sm detail-date-apply" :disabled="saving" @click="applySelectedDateToCalendarEdit">
-                  확인
-                </button>
-              </div>
-              <p class="detail-date-hint">선택한 날짜를 현재 출근/퇴근 시각에 반영합니다.</p>
-
               <div class="detail-record-edit-grid">
-                <label class="detail-field">
-                  <span>출근</span>
-                  <input v-model="editCheckIn" type="datetime-local" class="input dt-input" />
-                </label>
-                <label class="detail-field">
-                  <span>퇴근</span>
-                  <input v-model="editCheckOut" type="datetime-local" class="input dt-input" />
-                </label>
+                <div class="detail-edit-datetime-card">
+                  <div class="detail-edit-datetime-head">
+                    <span>출근</span>
+                    <button type="button" class="btn btn-ghost btn-sm" :disabled="saving" @click="applyCalendarEditDraft('check_in')">확인</button>
+                  </div>
+                  <div class="detail-edit-datetime-inputs">
+                    <input v-model="editCheckInDate" type="date" class="input date-input" />
+                    <input v-model="editCheckInTime" type="time" class="input time-input" />
+                  </div>
+                </div>
+                <div class="detail-edit-datetime-card">
+                  <div class="detail-edit-datetime-head">
+                    <span>퇴근</span>
+                    <button type="button" class="btn btn-ghost btn-sm" :disabled="saving" @click="applyCalendarEditDraft('check_out')">확인</button>
+                  </div>
+                  <div class="detail-edit-datetime-inputs">
+                    <input v-model="editCheckOutDate" type="date" class="input date-input" />
+                    <input v-model="editCheckOutTime" type="time" class="input time-input" />
+                  </div>
+                </div>
                 <div class="detail-field">
                   <span>근무시간</span>
                   <strong>{{ editDuration }}</strong>
@@ -248,6 +249,7 @@ const {
   DEFAULT_ATTENDANCE_SETTINGS,
   getKstDateKey,
   getKstMonthKey,
+  isWeekendDateKey,
   getMonthRange,
   formatTime,
   calcWorkMinutes,
@@ -256,7 +258,8 @@ const {
   toDateTimeLocalValue,
   parseDateTimeLocalToIso,
   getDateKeyFromDateTimeLocalValue,
-  applyDateToDateTimeLocalValue,
+  getTimeValueFromDateTimeLocalValue,
+  buildDateTimeLocalValue,
   shiftIsoToDateKey,
   normalizeAttendanceSettings,
   getLeaveTypeLabel,
@@ -286,7 +289,10 @@ let liveTimer: ReturnType<typeof setInterval> | null = null
 const dateModalOpen = ref(false)
 
 const editingRowId = ref<number | null>(null)
-const editSelectedDate = ref('')
+const editCheckInDate = ref('')
+const editCheckInTime = ref('')
+const editCheckOutDate = ref('')
+const editCheckOutTime = ref('')
 const editCheckIn = ref('')
 const editCheckOut = ref('')
 
@@ -432,7 +438,7 @@ const adminCalendarSummaryByDate = computed(() => {
       presentCount: 0,
       lateCount: 0,
       leaveCount: 0,
-      absentCount: cursor < todayDate.value ? totalProfiles : 0,
+      absentCount: cursor < todayDate.value && !isWeekendDateKey(cursor) ? totalProfiles : 0,
       totalCount: 0,
     })
   }
@@ -918,44 +924,56 @@ async function refreshCalendar() {
 
 function startEdit(row: CalendarAttendanceRow) {
   editingRowId.value = row.id
-  editSelectedDate.value = row.work_date
   editCheckIn.value = toDateTimeLocalValue(row.check_in_at)
   editCheckOut.value = toDateTimeLocalValue(row.check_out_at)
+  syncCalendarEditDraftFields()
 }
 
 function cancelEdit() {
   editingRowId.value = null
-  editSelectedDate.value = ''
+  editCheckInDate.value = ''
+  editCheckInTime.value = ''
+  editCheckOutDate.value = ''
+  editCheckOutTime.value = ''
   editCheckIn.value = ''
   editCheckOut.value = ''
 }
 
-function applySelectedDateToCalendarEdit() {
-  if (!editSelectedDate.value) {
-    toast.error('먼저 날짜를 선택해주세요.')
-    return
+function syncCalendarEditDraftFields() {
+  editCheckInDate.value = getDateKeyFromDateTimeLocalValue(editCheckIn.value)
+  editCheckInTime.value = getTimeValueFromDateTimeLocalValue(editCheckIn.value)
+  editCheckOutDate.value = getDateKeyFromDateTimeLocalValue(editCheckOut.value)
+  editCheckOutTime.value = getTimeValueFromDateTimeLocalValue(editCheckOut.value)
+}
+
+function applyCalendarEditDraft(target: 'check_in' | 'check_out', options?: { silent?: boolean }) {
+  const isCheckIn = target === 'check_in'
+  const dateValue = isCheckIn ? editCheckInDate.value : editCheckOutDate.value
+  const timeValue = isCheckIn ? editCheckInTime.value : editCheckOutTime.value
+
+  if (!dateValue && !timeValue) {
+    if (isCheckIn) editCheckIn.value = ''
+    else editCheckOut.value = ''
+    if (!options?.silent) toast.success(`${isCheckIn ? '출근' : '퇴근'} 시각을 비웠습니다.`)
+    return true
   }
 
-  let applied = false
-  if (editCheckIn.value) {
-    editCheckIn.value = applyDateToDateTimeLocalValue(editCheckIn.value, editSelectedDate.value)
-    applied = true
-  }
-  if (editCheckOut.value) {
-    editCheckOut.value = applyDateToDateTimeLocalValue(editCheckOut.value, editSelectedDate.value)
-    applied = true
+  if (!dateValue || !timeValue) {
+    toast.error(`${isCheckIn ? '출근' : '퇴근'} 날짜와 시간을 모두 선택해주세요.`)
+    return false
   }
 
-  if (!applied) {
-    toast.error('반영할 출퇴근 시간이 없습니다.')
-    return
-  }
-
-  toast.success('선택한 날짜를 수정 시각에 반영했습니다.')
+  const nextValue = buildDateTimeLocalValue(dateValue, timeValue)
+  if (isCheckIn) editCheckIn.value = nextValue
+  else editCheckOut.value = nextValue
+  if (!options?.silent) toast.success(`${isCheckIn ? '출근' : '퇴근'} 시각을 반영했습니다.`)
+  return true
 }
 
 async function saveEdit(row: CalendarAttendanceRow) {
   if (!editingRowId.value) return
+  if (!applyCalendarEditDraft('check_in', { silent: true })) return
+  if (!applyCalendarEditDraft('check_out', { silent: true })) return
   const checkInIso = parseDateTimeLocalToIso(editCheckIn.value)
   const checkOutIso = parseDateTimeLocalToIso(editCheckOut.value)
   const workDate = getDateKeyFromDateTimeLocalValue(editCheckIn.value)
@@ -1463,31 +1481,45 @@ function handleEscape(event: KeyboardEvent) {
   font-size: 0.88rem;
 }
 
-.detail-record-date-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.detail-date-field {
-  flex: 1;
-}
-
-.detail-date-apply {
-  min-width: 84px;
-}
-
-.detail-date-hint {
-  margin: -4px 0 0;
-  color: var(--color-text-secondary);
-  font-size: 0.84rem;
-}
-
 .detail-record-metrics,
 .detail-record-edit-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.detail-record-edit-grid {
+  grid-template-columns: 1fr;
+}
+
+.detail-edit-datetime-card,
+.detail-field {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.detail-edit-datetime-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail-edit-datetime-head span {
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.detail-edit-datetime-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 10px;
 }
 
 .detail-record-metric,
@@ -1553,11 +1585,13 @@ function handleEscape(event: KeyboardEvent) {
   }
 
   .detail-record-grid,
-  .detail-record-date-row,
   .detail-record-metrics,
   .detail-record-edit-grid {
     grid-template-columns: 1fr;
-    flex-direction: column;
+  }
+
+  .detail-edit-datetime-inputs {
+    grid-template-columns: 1fr;
   }
 
   .search-input {

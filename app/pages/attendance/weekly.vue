@@ -183,31 +183,41 @@
           <button type="button" class="detail-close" @click="closeWeeklyEditModal">닫기</button>
         </div>
 
-        <div class="weekly-edit-date-row">
-          <label class="weekly-edit-field weekly-edit-date-field">
-            <span>날짜 선택</span>
-            <input v-model="editSelectedDate" type="date" class="input date-input" />
-          </label>
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm weekly-edit-date-apply"
-            :disabled="savingRecordId === weeklyEditTarget.recordId"
-            @click="applySelectedDateToWeeklyEdit"
-          >
-            확인
-          </button>
-        </div>
-        <p class="weekly-edit-date-hint">선택한 날짜를 현재 출근/퇴근 시각에 반영합니다.</p>
-
         <div class="weekly-edit-grid">
-          <label class="weekly-edit-field">
-            <span>출근</span>
-            <input v-model="editCheckIn" type="datetime-local" class="input dt-input" />
-          </label>
-          <label class="weekly-edit-field">
-            <span>퇴근</span>
-            <input v-model="editCheckOut" type="datetime-local" class="input dt-input" />
-          </label>
+          <div class="weekly-edit-datetime-card">
+            <div class="weekly-edit-datetime-head">
+              <span>출근</span>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                :disabled="savingRecordId === weeklyEditTarget.recordId"
+                @click="applyWeeklyEditDraft('check_in')"
+              >
+                확인
+              </button>
+            </div>
+            <div class="weekly-edit-datetime-inputs">
+              <input v-model="editCheckInDate" type="date" class="input date-input" />
+              <input v-model="editCheckInTime" type="time" class="input time-input" />
+            </div>
+          </div>
+          <div class="weekly-edit-datetime-card">
+            <div class="weekly-edit-datetime-head">
+              <span>퇴근</span>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                :disabled="savingRecordId === weeklyEditTarget.recordId"
+                @click="applyWeeklyEditDraft('check_out')"
+              >
+                확인
+              </button>
+            </div>
+            <div class="weekly-edit-datetime-inputs">
+              <input v-model="editCheckOutDate" type="date" class="input date-input" />
+              <input v-model="editCheckOutTime" type="time" class="input time-input" />
+            </div>
+          </div>
           <div class="weekly-edit-field">
             <span>근무시간</span>
             <strong>{{ weeklyEditDuration }}</strong>
@@ -267,7 +277,8 @@ const {
   toDateTimeLocalValue,
   parseDateTimeLocalToIso,
   getDateKeyFromDateTimeLocalValue,
-  applyDateToDateTimeLocalValue,
+  getTimeValueFromDateTimeLocalValue,
+  buildDateTimeLocalValue,
   shiftIsoToDateKey,
   normalizeAttendanceSettings,
   getLeaveTypeLabel,
@@ -304,7 +315,10 @@ const weeklyDeleteTarget = ref<{
   userLoginId: string
   workDate: string
 } | null>(null)
-const editSelectedDate = ref('')
+const editCheckInDate = ref('')
+const editCheckInTime = ref('')
+const editCheckOutDate = ref('')
+const editCheckOutTime = ref('')
 const editCheckIn = ref('')
 const editCheckOut = ref('')
 const savingRecordId = ref<number | null>(null)
@@ -825,46 +839,59 @@ function openWeeklyEditModal(
     userLoginId: profile.user_login_id,
     workDate: cell.date,
   }
-  editSelectedDate.value = cell.date
   editCheckIn.value = toDateTimeLocalValue(cell.checkInAt)
   editCheckOut.value = toDateTimeLocalValue(cell.checkOutAt)
+  syncWeeklyEditDraftFields()
 }
 
 function closeWeeklyEditModal() {
   if (savingRecordId.value) return
   weeklyEditTarget.value = null
-  editSelectedDate.value = ''
+  editCheckInDate.value = ''
+  editCheckInTime.value = ''
+  editCheckOutDate.value = ''
+  editCheckOutTime.value = ''
   editCheckIn.value = ''
   editCheckOut.value = ''
 }
 
-function applySelectedDateToWeeklyEdit() {
-  if (!editSelectedDate.value) {
-    toast.error('먼저 날짜를 선택해주세요.')
-    return
+function syncWeeklyEditDraftFields() {
+  editCheckInDate.value = getDateKeyFromDateTimeLocalValue(editCheckIn.value)
+  editCheckInTime.value = getTimeValueFromDateTimeLocalValue(editCheckIn.value)
+  editCheckOutDate.value = getDateKeyFromDateTimeLocalValue(editCheckOut.value)
+  editCheckOutTime.value = getTimeValueFromDateTimeLocalValue(editCheckOut.value)
+}
+
+function applyWeeklyEditDraft(target: 'check_in' | 'check_out', options?: { silent?: boolean }) {
+  const isCheckIn = target === 'check_in'
+  const dateValue = isCheckIn ? editCheckInDate.value : editCheckOutDate.value
+  const timeValue = isCheckIn ? editCheckInTime.value : editCheckOutTime.value
+
+  if (!dateValue && !timeValue) {
+    if (isCheckIn) editCheckIn.value = ''
+    else editCheckOut.value = ''
+    if (!options?.silent) toast.success(`${isCheckIn ? '출근' : '퇴근'} 시각을 비웠습니다.`)
+    return true
   }
 
-  let applied = false
-  if (editCheckIn.value) {
-    editCheckIn.value = applyDateToDateTimeLocalValue(editCheckIn.value, editSelectedDate.value)
-    applied = true
-  }
-  if (editCheckOut.value) {
-    editCheckOut.value = applyDateToDateTimeLocalValue(editCheckOut.value, editSelectedDate.value)
-    applied = true
+  if (!dateValue || !timeValue) {
+    toast.error(`${isCheckIn ? '출근' : '퇴근'} 날짜와 시간을 모두 선택해주세요.`)
+    return false
   }
 
-  if (!applied) {
-    toast.error('반영할 출퇴근 시간이 없습니다.')
-    return
-  }
-
-  toast.success('선택한 날짜를 수정 시각에 반영했습니다.')
+  const nextValue = buildDateTimeLocalValue(dateValue, timeValue)
+  if (isCheckIn) editCheckIn.value = nextValue
+  else editCheckOut.value = nextValue
+  if (!options?.silent) toast.success(`${isCheckIn ? '출근' : '퇴근'} 시각을 반영했습니다.`)
+  return true
 }
 
 async function saveWeeklyEdit() {
   const recordId = weeklyEditTarget.value?.recordId
   if (!recordId) return
+
+  if (!applyWeeklyEditDraft('check_in', { silent: true })) return
+  if (!applyWeeklyEditDraft('check_out', { silent: true })) return
 
   const checkInIso = parseDateTimeLocalToIso(editCheckIn.value)
   const checkOutIso = parseDateTimeLocalToIso(editCheckOut.value)
@@ -1416,30 +1443,38 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
-.weekly-edit-date-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.weekly-edit-date-field {
-  flex: 1;
-}
-
-.weekly-edit-date-apply {
-  min-width: 84px;
-}
-
-.weekly-edit-date-hint {
-  margin: -8px 0 0;
-  color: var(--color-text-secondary);
-  font-size: 0.84rem;
-}
-
 .weekly-edit-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+}
+
+.weekly-edit-datetime-card,
+.weekly-edit-field {
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.weekly-edit-datetime-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.weekly-edit-datetime-head span {
+  color: var(--color-text-secondary);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.weekly-edit-datetime-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 10px;
 }
 
 .weekly-edit-field {
@@ -1458,8 +1493,8 @@ onBeforeUnmount(() => {
   min-height: 44px;
   padding: 0 14px;
   border-radius: 14px;
-  background: rgba(248, 250, 252, 0.94);
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.12);
   display: inline-flex;
   align-items: center;
 }
@@ -1493,13 +1528,16 @@ onBeforeUnmount(() => {
   }
 
   .weekly-self-row,
-  .weekly-edit-date-row,
   .weekly-edit-grid,
   .weekly-edit-actions,
   .weekly-edit-head {
     grid-template-columns: 1fr;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .weekly-edit-datetime-inputs {
+    grid-template-columns: 1fr;
   }
 
   .weekly-self-row {

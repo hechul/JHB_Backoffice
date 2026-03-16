@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyDateToDateTimeLocalValue,
+  buildDateTimeLocalValue,
   calcWorkSessionMinutes,
+  computeAttendanceStatus,
   getDateKeyFromDateTimeLocalValue,
+  getTimeValueFromDateTimeLocalValue,
+  isWeekendDateKey,
   shiftIsoToDateKey,
 } from '../../app/composables/useAttendance'
 
@@ -66,9 +70,28 @@ describe('useAttendance', () => {
   it('applies a selected date to local datetime values while keeping the time', () => {
     expect(applyDateToDateTimeLocalValue('2026-03-16T09:30', '2026-03-20')).toBe('2026-03-20T09:30')
     expect(getDateKeyFromDateTimeLocalValue('2026-03-20T09:30')).toBe('2026-03-20')
+    expect(getTimeValueFromDateTimeLocalValue('2026-03-20T09:30')).toBe('09:30')
+    expect(buildDateTimeLocalValue('2026-03-20', '09:30')).toBe('2026-03-20T09:30')
   })
 
   it('shifts iso timestamps to a new work date while keeping the local time', () => {
     expect(shiftIsoToDateKey('2026-03-16T00:30:00.000Z', '2026-03-20')).toBe('2026-03-20T00:30:00.000Z')
+  })
+
+  it('treats saturday and sunday without records as off days, not absences', () => {
+    expect(isWeekendDateKey('2026-03-14')).toBe(true)
+    expect(isWeekendDateKey('2026-03-15')).toBe(true)
+    expect(computeAttendanceStatus({
+      workDate: '2026-03-14',
+      todayDate: '2026-03-16',
+    }).code).toBe('off_day')
+    expect(computeAttendanceStatus({
+      workDate: '2026-03-15',
+      todayDate: '2026-03-16',
+    }).label).toBe('쉬는날')
+    expect(computeAttendanceStatus({
+      workDate: '2026-03-13',
+      todayDate: '2026-03-16',
+    }).code).toBe('absent')
   })
 })
