@@ -18,13 +18,23 @@ export default defineNuxtConfig({
 
   app: {
     head: {
+      htmlAttrs: {
+        lang: 'ko',
+      },
       title: 'JHBioFarm 백오피스',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'description', content: 'JHBioFarm SmartStore Analytics & Filter' },
+        { name: 'theme-color', content: '#1D63E9' },
+        { name: 'mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'default' },
+        { name: 'apple-mobile-web-app-title', content: 'JHBioFarm' },
       ],
       link: [
+        { rel: 'manifest', href: '/manifest.webmanifest' },
+        { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
         {
           rel: 'stylesheet',
           href: 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css',
@@ -37,6 +47,9 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     kakaoRestApiKey: process.env.KAKAO_REST_API_KEY || '',
+    public: {
+      pwaVersion: process.env.NUXT_PUBLIC_PWA_VERSION || '2026-03-16-phase1',
+    },
   },
 
   dir: {

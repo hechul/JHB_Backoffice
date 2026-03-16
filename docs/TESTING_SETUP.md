@@ -20,7 +20,7 @@ npm run test:all
 ## 4) Notes
 - E2E uses Playwright `webServer` in `playwright.config.ts`.
 - Command used by Playwright:
-  - `npm run build && npm run preview -- --port=4173`
+  - `npm run generate && python3 -m http.server 4173 -d .vercel/output/static`
 - Base URL:
   - `http://127.0.0.1:4173`
 

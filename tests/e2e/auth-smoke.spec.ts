@@ -9,8 +9,9 @@ test.describe('Auth Guard Smoke', () => {
   test('renders login form', async ({ page }) => {
     await page.goto('/login')
     await expect(page.getByText('JHBioFarm')).toBeVisible()
-    await expect(page.getByLabel('이메일')).toBeVisible()
+    await expect(page.getByRole('textbox', { name: '아이디' })).toBeVisible()
+    await expect(page.getByPlaceholder('admin01 또는 admin@jhbiofarm.co.kr')).toBeVisible()
     await expect(page.getByPlaceholder('비밀번호 입력')).toBeVisible()
-    await expect(page.getByRole('button', { name: '로그인' })).toBeVisible()
+    await expect(page.locator('form').getByRole('button', { name: '로그인' })).toBeVisible()
   })
 })
