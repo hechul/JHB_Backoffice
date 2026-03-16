@@ -113,6 +113,7 @@ const selectedStatusFilter = ref<'all' | 'pending' | 'approved' | 'rejected'>('p
 const requests = ref<ApprovalRow[]>([])
 const leaveTableMissing = ref(false)
 const savingId = ref<number | null>(null)
+const autoFocusedPendingMonth = ref(false)
 
 const statusFilters = [
   { label: '대기', value: 'pending' },
@@ -153,6 +154,10 @@ const summaryCards = computed(() => {
 function splitEmailLoginId(email: string) {
   const [idPart = ''] = String(email || '').split('@')
   return idPart || '-'
+}
+
+function getMonthKey(date: string | null | undefined) {
+  return String(date || '').slice(0, 7)
 }
 
 function isMissingTableError(error: any) {
@@ -211,6 +216,30 @@ async function fetchRequests() {
       user_login_id: splitEmailLoginId(email),
     } as ApprovalRow
   })
+
+  if (autoFocusedPendingMonth.value) return
+
+  const hasPendingInSelectedMonth = rows.some((row) => row.status === 'pending')
+  if (hasPendingInSelectedMonth) return
+
+  const { data: nextPending, error: nextPendingError } = await supabase
+    .from('leave_requests')
+    .select('id, start_date')
+    .eq('status', 'pending')
+    .order('start_date', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (nextPendingError) {
+    if (isMissingTableError(nextPendingError)) return
+    throw nextPendingError
+  }
+
+  const pendingMonth = getMonthKey((nextPending as { start_date?: string } | null)?.start_date)
+  if (!pendingMonth || pendingMonth === selectedMonth.value) return
+
+  autoFocusedPendingMonth.value = true
+  selectedMonth.value = pendingMonth
 }
 
 async function reviewRequest(row: ApprovalRow, status: 'approved' | 'rejected') {
