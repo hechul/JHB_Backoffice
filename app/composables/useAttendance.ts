@@ -184,6 +184,25 @@ export function parseDateTimeLocalToIso(value: string | null | undefined) {
   return d.toISOString()
 }
 
+export function getDateKeyFromDateTimeLocalValue(value: string | null | undefined) {
+  const match = String(value || '').match(/^(\d{4}-\d{2}-\d{2})T/)
+  return match?.[1] || ''
+}
+
+export function applyDateToDateTimeLocalValue(value: string | null | undefined, dateKey: string) {
+  if (!dateKey) return String(value || '')
+  const match = String(value || '').match(/T(\d{2}:\d{2})$/)
+  if (!match) return ''
+  return `${dateKey}T${match[1]}`
+}
+
+export function shiftIsoToDateKey(value: string | null | undefined, dateKey: string) {
+  const localValue = toDateTimeLocalValue(value)
+  if (!localValue) return null
+  const shiftedLocalValue = applyDateToDateTimeLocalValue(localValue, dateKey)
+  return parseDateTimeLocalToIso(shiftedLocalValue)
+}
+
 export function calcWorkMinutes(checkInAt: string | null | undefined, checkOutAt: string | null | undefined) {
   if (!checkInAt || !checkOutAt) return 0
   const start = new Date(checkInAt).getTime()
@@ -408,6 +427,9 @@ export function useAttendance() {
     formatTime,
     toDateTimeLocalValue,
     parseDateTimeLocalToIso,
+    getDateKeyFromDateTimeLocalValue,
+    applyDateToDateTimeLocalValue,
+    shiftIsoToDateKey,
     calcWorkMinutes,
     calcWorkSessionMinutes,
     formatWorkDuration,

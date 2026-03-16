@@ -74,39 +74,36 @@
         </div>
 
         <div v-if="personalWeeklyEntries.length === 0" class="table-empty">해당 주 근태 기록이 없습니다.</div>
-        <div v-else class="weekly-self-cards">
+        <div v-else class="weekly-self-rows">
           <article
             v-for="entry in personalWeeklyEntries"
             :key="`week-entry-${entry.date}`"
-            class="day-card"
-            :class="dayCardTone(entry.status)"
+            class="weekly-self-row"
+            :class="[dayCardTone(entry.status), { today: entry.isToday }]"
           >
-            <div class="day-card-head">
-              <div>
-                <div class="day-card-weekday">{{ getWeekdayLabel(entry.date) }}</div>
-                <strong class="day-card-date">{{ entry.date }}</strong>
-              </div>
+            <div class="weekly-self-date">
+              <span class="weekly-self-weekday">{{ getWeekdayLabel(entry.date) }}</span>
+              <strong class="weekly-self-date-value">{{ formatCardDate(entry.date) }}</strong>
+            </div>
+
+            <div class="weekly-self-status">
               <span class="status-chip" :class="entry.className">{{ entry.label }}</span>
             </div>
 
-            <div class="day-card-body">
-              <div class="day-card-row">
-                <span>출근</span>
-                <strong>{{ entry.checkIn }}</strong>
-              </div>
-              <div class="day-card-row">
-                <span>퇴근</span>
-                <strong>{{ entry.checkOut }}</strong>
-              </div>
-              <div class="day-card-row">
-                <span>근무시간</span>
-                <strong>{{ entry.duration }}</strong>
-              </div>
-              <div class="day-card-row">
-                <span>메모</span>
-                <strong>{{ entry.note || '-' }}</strong>
+            <div class="weekly-self-main">
+              <strong class="weekly-self-primary">{{ entry.primaryLabel }}</strong>
+              <div class="weekly-self-meta">
+                <span
+                  v-for="item in entry.metaItems"
+                  :key="`${entry.date}-${item}`"
+                  class="weekly-self-meta-pill"
+                >
+                  {{ item }}
+                </span>
               </div>
             </div>
+
+            <div class="weekly-self-duration">{{ entry.durationLabel }}</div>
           </article>
         </div>
       </div>
@@ -152,11 +149,89 @@
                 <span class="weekly-day-time">{{ cell.timeLabel }}</span>
                 <span class="weekly-day-note">{{ cell.note }}</span>
               </div>
+              <div v-if="cell.recordId" class="weekly-day-actions">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  :disabled="savingRecordId === cell.recordId || deletingRecordId === cell.recordId"
+                  @click.stop="openWeeklyEditModal(row, cell)"
+                >
+                  수정
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm btn-danger"
+                  :disabled="deletingRecordId === cell.recordId || savingRecordId === cell.recordId"
+                  @click.stop="openWeeklyDeleteModal(row, cell)"
+                >
+                  삭제
+                </button>
+              </div>
             </article>
           </div>
         </article>
       </div>
       <div v-else class="table-empty">선택한 조건에 맞는 주간 근태가 없습니다.</div>
+    </div>
+
+    <div v-if="weeklyEditTarget" class="modal-backdrop" @click.self="closeWeeklyEditModal">
+      <div class="weekly-edit-modal">
+        <div class="weekly-edit-head">
+          <div>
+            <h2>{{ weeklyEditTarget.userName }} · {{ weeklyEditTarget.workDate }}</h2>
+          </div>
+          <button type="button" class="detail-close" @click="closeWeeklyEditModal">닫기</button>
+        </div>
+
+        <div class="weekly-edit-date-row">
+          <label class="weekly-edit-field weekly-edit-date-field">
+            <span>날짜 선택</span>
+            <input v-model="editSelectedDate" type="date" class="input date-input" />
+          </label>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm weekly-edit-date-apply"
+            :disabled="savingRecordId === weeklyEditTarget.recordId"
+            @click="applySelectedDateToWeeklyEdit"
+          >
+            확인
+          </button>
+        </div>
+        <p class="weekly-edit-date-hint">선택한 날짜를 현재 출근/퇴근 시각에 반영합니다.</p>
+
+        <div class="weekly-edit-grid">
+          <label class="weekly-edit-field">
+            <span>출근</span>
+            <input v-model="editCheckIn" type="datetime-local" class="input dt-input" />
+          </label>
+          <label class="weekly-edit-field">
+            <span>퇴근</span>
+            <input v-model="editCheckOut" type="datetime-local" class="input dt-input" />
+          </label>
+          <div class="weekly-edit-field">
+            <span>근무시간</span>
+            <strong>{{ weeklyEditDuration }}</strong>
+          </div>
+        </div>
+
+        <div class="weekly-edit-actions">
+          <button type="button" class="btn btn-ghost" :disabled="savingRecordId === weeklyEditTarget.recordId" @click="closeWeeklyEditModal">취소</button>
+          <button type="button" class="btn btn-primary" :disabled="savingRecordId === weeklyEditTarget.recordId" @click="saveWeeklyEdit">저장</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="weeklyDeleteTarget" class="modal-backdrop" @click.self="closeWeeklyDeleteModal">
+      <div class="weekly-edit-modal weekly-delete-modal">
+        <div class="confirm-modal-body">
+          <strong>{{ weeklyDeleteTarget.userName }}님의 {{ weeklyDeleteTarget.workDate }} 근태 기록을 삭제할까요?</strong>
+          <span>해당 날짜의 근무 전환 기록도 함께 삭제됩니다.</span>
+        </div>
+        <div class="weekly-edit-actions">
+          <button type="button" class="btn btn-ghost" :disabled="deletingRecordId === weeklyDeleteTarget.recordId" @click="closeWeeklyDeleteModal">취소</button>
+          <button type="button" class="btn btn-primary" :disabled="deletingRecordId === weeklyDeleteTarget.recordId" @click="confirmWeeklyDelete">삭제하기</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -189,6 +264,11 @@ const {
   calcWorkMinutes,
   calcWorkSessionMinutes,
   formatWorkDuration,
+  toDateTimeLocalValue,
+  parseDateTimeLocalToIso,
+  getDateKeyFromDateTimeLocalValue,
+  applyDateToDateTimeLocalValue,
+  shiftIsoToDateKey,
   normalizeAttendanceSettings,
   getLeaveTypeLabel,
   getLeaveStatusLabel,
@@ -212,6 +292,23 @@ const leaves = ref<LeaveRequest[]>([])
 const profiles = ref<ProfileRow[]>([])
 const settings = ref<AttendanceSettings>(normalizeAttendanceSettings(DEFAULT_ATTENDANCE_SETTINGS))
 const liveNowIso = ref(new Date().toISOString())
+const weeklyEditTarget = ref<{
+  recordId: number
+  userName: string
+  userLoginId: string
+  workDate: string
+} | null>(null)
+const weeklyDeleteTarget = ref<{
+  recordId: number
+  userName: string
+  userLoginId: string
+  workDate: string
+} | null>(null)
+const editSelectedDate = ref('')
+const editCheckIn = ref('')
+const editCheckOut = ref('')
+const savingRecordId = ref<number | null>(null)
+const deletingRecordId = ref<number | null>(null)
 let liveTimer: ReturnType<typeof setInterval> | null = null
 
 function splitEmailLoginId(email: string) {
@@ -290,6 +387,19 @@ const sessionMapByUserDate = computed(() => {
   return map
 })
 
+const sessionMapByRecord = computed(() => {
+  const map = new Map<number, AttendanceWorkSession[]>()
+  for (const session of sessions.value) {
+    const bucket = map.get(session.record_id) || []
+    bucket.push(session)
+    map.set(session.record_id, bucket)
+  }
+  for (const bucket of map.values()) {
+    bucket.sort((a, b) => a.started_at.localeCompare(b.started_at))
+  }
+  return map
+})
+
 const approvedLeaveMapByUserDate = computed(() => {
   const map = new Map<string, LeaveRequest>()
   for (const leave of leaves.value) {
@@ -358,7 +468,7 @@ const weekSummaryCards = computed(() => {
     for (const day of row.days) {
       if (!day.inMonth) continue
       const code = day.status.code
-      if (code === 'leave') statusCounts.leave += 1
+      if (isLeaveStatusCode(code)) statusCounts.leave += 1
       else if (code === 'late' || code === 'late_early') statusCounts.late += 1
       else if (code === 'absent') statusCounts.absent += 1
       else if (code === 'done' || code === 'early_leave' || code === 'working') statusCounts.working += 1
@@ -409,10 +519,28 @@ const personalWeeklyEntries = computed(() => {
         status: status.code,
         label: status.label,
         className: status.className,
-        checkIn: leave ? '-' : formatTime(row?.check_in_at),
-        checkOut: leave ? '-' : formatTime(row?.check_out_at),
-        duration: leave ? getLeaveTypeLabel(leave.leave_type) : formatWorkDuration(workMinutes),
-        note: leave ? `${getLeaveTypeLabel(leave.leave_type)} · ${getLeaveStatusLabel(leave.status)}` : '',
+        isToday: day.date === todayDate.value,
+        primaryLabel: leave
+          ? `${getLeaveTypeLabel(leave.leave_type)} 일정`
+          : row?.check_in_at
+            ? `${formatTime(row.check_in_at)}${row.check_out_at ? ` - ${formatTime(row.check_out_at)}` : ' - 진행 중'}`
+            : '기록 없음',
+        durationLabel: leave
+          ? getLeaveStatusLabel(leave.status)
+          : workMinutes > 0
+            ? formatWorkDuration(workMinutes)
+            : row?.check_in_at
+              ? '근무 중'
+              : '근무 없음',
+        metaItems: leave
+          ? [`상태 ${getLeaveStatusLabel(leave.status)}`]
+          : row?.check_in_at
+            ? [
+                `출근 ${formatTime(row.check_in_at)}`,
+                row.check_out_at ? `퇴근 ${formatTime(row.check_out_at)}` : '퇴근 전',
+              ]
+            : ['출퇴근 기록 없음'],
+        note: '',
       }
     })
 })
@@ -452,6 +580,9 @@ const weeklyBoardRows = computed(() => {
         date: day.date,
         inMonth: day.inMonth,
         status,
+        recordId: row?.id || null,
+        checkInAt: row?.check_in_at || null,
+        checkOutAt: row?.check_out_at || null,
         timeLabel,
         note,
       }
@@ -647,7 +778,7 @@ function getWeekdayLabel(dateKey: string) {
 }
 
 function dayCardTone(statusCode?: string) {
-  if (statusCode === 'leave') return 'tone-purple'
+  if (isLeaveStatusCode(statusCode)) return 'tone-purple'
   if (statusCode === 'late' || statusCode === 'late_early') return 'tone-amber'
   if (statusCode === 'absent') return 'tone-red'
   if (statusCode === 'done' || statusCode === 'early_leave' || statusCode === 'working') return 'tone-blue'
@@ -658,13 +789,180 @@ function matchesStatusFilter(code?: string) {
   if (selectedStatusFilter.value === 'all') return true
   if (selectedStatusFilter.value === 'working') return code === 'done' || code === 'early_leave' || code === 'working'
   if (selectedStatusFilter.value === 'late') return code === 'late' || code === 'late_early'
-  if (selectedStatusFilter.value === 'leave') return code === 'leave'
+  if (selectedStatusFilter.value === 'leave') return isLeaveStatusCode(code)
   if (selectedStatusFilter.value === 'absent') return code === 'absent'
   return true
 }
 
 function countWeeklyStatuses(days: Array<{ inMonth: boolean, status: { code?: string } }>, codes: string[]) {
-  return days.filter((day) => day.inMonth && codes.includes(String(day.status.code || ''))).length
+  return days.filter((day) => {
+    if (!day.inMonth) return false
+    const code = String(day.status.code || '')
+    if (codes.includes(code)) return true
+    if (codes.includes('leave') && isLeaveStatusCode(code)) return true
+    return false
+  }).length
+}
+
+function isLeaveStatusCode(code?: string) {
+  return String(code || '').includes('leave')
+}
+
+const weeklyEditDuration = computed(() => {
+  const inIso = parseDateTimeLocalToIso(editCheckIn.value)
+  const outIso = parseDateTimeLocalToIso(editCheckOut.value)
+  return formatWorkDuration(calcWorkMinutes(inIso, outIso))
+})
+
+function openWeeklyEditModal(
+  profile: { user_name: string, user_login_id: string },
+  cell: { recordId: number | null, date: string, checkInAt: string | null, checkOutAt: string | null },
+) {
+  if (!cell.recordId) return
+  weeklyEditTarget.value = {
+    recordId: cell.recordId,
+    userName: profile.user_name,
+    userLoginId: profile.user_login_id,
+    workDate: cell.date,
+  }
+  editSelectedDate.value = cell.date
+  editCheckIn.value = toDateTimeLocalValue(cell.checkInAt)
+  editCheckOut.value = toDateTimeLocalValue(cell.checkOutAt)
+}
+
+function closeWeeklyEditModal() {
+  if (savingRecordId.value) return
+  weeklyEditTarget.value = null
+  editSelectedDate.value = ''
+  editCheckIn.value = ''
+  editCheckOut.value = ''
+}
+
+function applySelectedDateToWeeklyEdit() {
+  if (!editSelectedDate.value) {
+    toast.error('먼저 날짜를 선택해주세요.')
+    return
+  }
+
+  let applied = false
+  if (editCheckIn.value) {
+    editCheckIn.value = applyDateToDateTimeLocalValue(editCheckIn.value, editSelectedDate.value)
+    applied = true
+  }
+  if (editCheckOut.value) {
+    editCheckOut.value = applyDateToDateTimeLocalValue(editCheckOut.value, editSelectedDate.value)
+    applied = true
+  }
+
+  if (!applied) {
+    toast.error('반영할 출퇴근 시간이 없습니다.')
+    return
+  }
+
+  toast.success('선택한 날짜를 수정 시각에 반영했습니다.')
+}
+
+async function saveWeeklyEdit() {
+  const recordId = weeklyEditTarget.value?.recordId
+  if (!recordId) return
+
+  const checkInIso = parseDateTimeLocalToIso(editCheckIn.value)
+  const checkOutIso = parseDateTimeLocalToIso(editCheckOut.value)
+  const workDate = getDateKeyFromDateTimeLocalValue(editCheckIn.value)
+    || getDateKeyFromDateTimeLocalValue(editCheckOut.value)
+    || weeklyEditTarget.value?.workDate
+    || todayDate.value
+
+  if (checkOutIso && !checkInIso) {
+    toast.error('퇴근 시간만 단독 저장할 수 없습니다.')
+    return
+  }
+  if (checkInIso && checkOutIso && new Date(checkOutIso).getTime() < new Date(checkInIso).getTime()) {
+    toast.error('퇴근 시간은 출근 시간보다 빠를 수 없습니다.')
+    return
+  }
+
+  savingRecordId.value = recordId
+  try {
+    const sessionsForRecord = sessionMapByRecord.value.get(recordId) || []
+    if (!sessionsTableMissing.value && sessionsForRecord.length > 0) {
+      const updatedSessions = sessionsForRecord.map((session) => ({
+        ...session,
+        work_date: workDate,
+        started_at: shiftIsoToDateKey(session.started_at, workDate) || session.started_at,
+        ended_at: shiftIsoToDateKey(session.ended_at, workDate),
+        updated_at: new Date().toISOString(),
+      }))
+      const { error: sessionError } = await supabase
+        .from('attendance_work_sessions')
+        .upsert(updatedSessions)
+
+      if (sessionError) throw sessionError
+    }
+
+    const { error } = await supabase
+      .from('attendance_records')
+      .update({
+        work_date: workDate,
+        check_in_at: checkInIso,
+        check_out_at: checkOutIso,
+        updated_by: user.value.id || null,
+      })
+      .eq('id', recordId)
+
+    if (error) throw error
+
+    toast.success('주간 근태 기록을 수정했습니다.')
+    closeWeeklyEditModal()
+    await refreshBoard()
+  } catch (error: any) {
+    console.error('Failed to save weekly attendance edit:', error)
+    toast.error(`주간 근태 수정 실패: ${error?.message || '알 수 없는 오류'}`)
+  } finally {
+    savingRecordId.value = null
+  }
+}
+
+function openWeeklyDeleteModal(
+  profile: { user_name: string, user_login_id: string },
+  cell: { recordId: number | null, date: string },
+) {
+  if (!cell.recordId) return
+  weeklyDeleteTarget.value = {
+    recordId: cell.recordId,
+    userName: profile.user_name,
+    userLoginId: profile.user_login_id,
+    workDate: cell.date,
+  }
+}
+
+function closeWeeklyDeleteModal() {
+  if (deletingRecordId.value) return
+  weeklyDeleteTarget.value = null
+}
+
+async function confirmWeeklyDelete() {
+  const recordId = weeklyDeleteTarget.value?.recordId
+  if (!recordId) return
+
+  deletingRecordId.value = recordId
+  try {
+    const { error } = await supabase
+      .from('attendance_records')
+      .delete()
+      .eq('id', recordId)
+
+    if (error) throw error
+
+    toast.success('주간 근태 기록을 삭제했습니다.')
+    closeWeeklyDeleteModal()
+    await refreshBoard()
+  } catch (error: any) {
+    console.error('Failed to delete weekly attendance row:', error)
+    toast.error(`주간 근태 삭제 실패: ${error?.message || '알 수 없는 오류'}`)
+  } finally {
+    deletingRecordId.value = null
+  }
 }
 
 watch(
@@ -853,67 +1151,93 @@ onBeforeUnmount(() => {
   gap: var(--space-lg);
 }
 
-.weekly-self-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+.weekly-self-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.day-card {
-  padding: 18px;
-  border-radius: 20px;
+.weekly-self-row {
+  padding: 14px 16px;
+  border-radius: 18px;
   border: 1px solid var(--color-border-light);
-  background: rgba(255, 255, 255, 0.82);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.day-card.today {
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
-}
-
-.day-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.day-card-weekday {
-  font-size: 0.86rem;
-  color: var(--color-text-secondary);
-}
-
-.day-card-date {
-  display: block;
-  margin-top: 4px;
-  font-size: 1.08rem;
-  font-weight: 800;
-}
-
-.day-card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.day-card-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  background: rgba(255, 255, 255, 0.88);
+  display: grid;
+  grid-template-columns: 92px 104px minmax(0, 1fr) auto;
+  gap: 14px;
   align-items: center;
 }
 
-.day-card-row span {
-  font-size: 0.9rem;
+.weekly-self-row.today {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.weekly-self-date {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.weekly-self-weekday {
+  font-size: 0.82rem;
   color: var(--color-text-secondary);
 }
 
-.day-card-row strong {
+.weekly-self-date-value {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.weekly-self-status {
+  display: flex;
+  align-items: center;
+}
+
+.weekly-self-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.weekly-self-primary {
   font-size: 0.96rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.weekly-self-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.weekly-self-meta-pill {
+  min-height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+}
+
+.weekly-self-duration {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
   font-weight: 700;
-  text-align: right;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .section-caption,
@@ -1005,22 +1329,22 @@ onBeforeUnmount(() => {
 }
 
 .weekly-day-card.tone-blue,
-.day-card.tone-blue {
+.weekly-self-row.tone-blue {
   border-color: rgba(37, 99, 235, 0.16);
 }
 
 .weekly-day-card.tone-amber,
-.day-card.tone-amber {
+.weekly-self-row.tone-amber {
   border-color: rgba(245, 158, 11, 0.2);
 }
 
 .weekly-day-card.tone-purple,
-.day-card.tone-purple {
+.weekly-self-row.tone-purple {
   border-color: rgba(139, 92, 246, 0.18);
 }
 
 .weekly-day-card.tone-red,
-.day-card.tone-red {
+.weekly-self-row.tone-red {
   border-color: rgba(239, 68, 68, 0.16);
 }
 
@@ -1045,11 +1369,105 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
+.weekly-day-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .weekly-day-time,
 .weekly-day-note {
   font-size: 0.84rem;
   color: var(--color-text-secondary);
   line-height: 1.35;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.44);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.weekly-edit-modal {
+  width: min(560px, 100%);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.weekly-delete-modal {
+  width: min(420px, 100%);
+}
+
+.weekly-edit-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.weekly-edit-date-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.weekly-edit-date-field {
+  flex: 1;
+}
+
+.weekly-edit-date-apply {
+  min-width: 84px;
+}
+
+.weekly-edit-date-hint {
+  margin: -8px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+}
+
+.weekly-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.weekly-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.weekly-edit-field span {
+  color: var(--color-text-secondary);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.weekly-edit-field strong {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  display: inline-flex;
+  align-items: center;
+}
+
+.weekly-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 @media (max-width: 768px) {
@@ -1070,13 +1488,31 @@ onBeforeUnmount(() => {
     justify-content: flex-start;
   }
 
-  .weekly-self-cards,
   .weekly-day-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .weekly-self-row,
+  .weekly-edit-date-row,
+  .weekly-edit-grid,
+  .weekly-edit-actions,
+  .weekly-edit-head {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .weekly-self-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
   .search-input {
     min-width: 0;
+  }
+
+  .modal-backdrop {
+    padding: 16px;
   }
 }
 </style>

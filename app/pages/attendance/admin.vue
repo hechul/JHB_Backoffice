@@ -105,15 +105,110 @@
               <span class="today-note-label">메모</span>
               <span class="today-note-value">{{ row.note }}</span>
             </div>
+
+            <div v-if="row.record?.id" class="today-card-actions">
+              <span class="today-card-action-hint">잘못 입력된 오늘 기록은 여기서 바로 수정하거나 삭제할 수 있습니다.</span>
+              <div class="today-card-action-buttons">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  :disabled="savingRecordId === row.record.id || deletingRecordId === row.record.id"
+                  @click="openEditModal(row)"
+                >
+                  수정
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm today-delete-btn"
+                  :disabled="deletingRecordId === row.record.id || savingRecordId === row.record.id"
+                  @click="openDeleteModal(row)"
+                >
+                  <Trash2 :size="14" :stroke-width="1.8" />
+                  삭제
+                </button>
+              </div>
+            </div>
           </article>
         </div>
       </div>
     </template>
+
+    <div v-if="editTargetRow" class="modal-backdrop" @click.self="closeEditModal">
+      <div class="confirm-modal edit-modal">
+        <div class="confirm-modal-body edit-modal-body">
+          <strong>{{ editTargetRow.user_name }}님의 오늘 근태 기록 수정</strong>
+          <span>{{ todayDate }} 기준 출퇴근 시각을 바로 수정합니다.</span>
+        </div>
+
+        <div class="edit-date-row">
+          <label class="edit-field edit-date-field">
+            <span>날짜 선택</span>
+            <input v-model="editSelectedDate" type="date" class="input date-input" />
+          </label>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm edit-date-apply"
+            :disabled="savingRecordId === editTargetRow.record?.id"
+            @click="applySelectedDateToEditRow"
+          >
+            확인
+          </button>
+        </div>
+        <p class="edit-date-hint">선택한 날짜를 현재 출근/퇴근 시각에 반영합니다.</p>
+
+        <div class="edit-grid">
+          <label class="edit-field">
+            <span>출근</span>
+            <input v-model="editCheckIn" type="datetime-local" class="input dt-input" />
+          </label>
+          <label class="edit-field">
+            <span>퇴근</span>
+            <input v-model="editCheckOut" type="datetime-local" class="input dt-input" />
+          </label>
+          <div class="edit-field">
+            <span>근무시간</span>
+            <strong>{{ editDuration }}</strong>
+          </div>
+        </div>
+
+        <div class="confirm-modal-actions">
+          <button type="button" class="btn btn-ghost" :disabled="savingRecordId === editTargetRow.record?.id" @click="closeEditModal">취소</button>
+          <button type="button" class="btn btn-primary" :disabled="savingRecordId === editTargetRow.record?.id" @click="saveEditRow">저장</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="deleteTargetRow" class="modal-backdrop" @click.self="closeDeleteModal">
+      <div class="confirm-modal">
+        <div class="confirm-modal-body">
+          <strong>{{ deleteTargetRow.user_name }}님의 오늘 근태 기록을 삭제할까요?</strong>
+          <span>출퇴근 시각과 연결된 오늘 근무 전환 기록도 함께 삭제됩니다.</span>
+        </div>
+        <div class="confirm-modal-actions">
+          <button
+            type="button"
+            class="btn btn-ghost"
+            :disabled="deletingRecordId === deleteTargetRow.record?.id"
+            @click="closeDeleteModal"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="deletingRecordId === deleteTargetRow.record?.id"
+            @click="confirmDeleteRow"
+          >
+            삭제하기
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { CalendarCheck2, PauseCircle, PlayCircle, Users, UserRoundX } from 'lucide-vue-next'
+import { CalendarCheck2, PauseCircle, PlayCircle, Trash2, Users, UserRoundX } from 'lucide-vue-next'
 import type { AttendanceRecord, AttendanceSettings, AttendanceWorkSession, LeaveRequest } from '~/composables/useAttendance'
 
 definePageMeta({ layout: 'attendance' })
@@ -145,6 +240,11 @@ const {
   calcWorkMinutes,
   calcWorkSessionMinutes,
   formatWorkDuration,
+  toDateTimeLocalValue,
+  parseDateTimeLocalToIso,
+  getDateKeyFromDateTimeLocalValue,
+  applyDateToDateTimeLocalValue,
+  shiftIsoToDateKey,
   normalizeAttendanceSettings,
   getLeaveTypeLabel,
   computeAttendanceStatus,
@@ -165,6 +265,13 @@ const todayLeaves = ref<LeaveRequest[]>([])
 const settings = ref<AttendanceSettings>(normalizeAttendanceSettings(DEFAULT_ATTENDANCE_SETTINGS))
 const liveNowIso = ref(new Date().toISOString())
 const lastRefreshedAt = ref<Date | null>(null)
+const editTargetRow = ref<TodayAttendanceRow | null>(null)
+const editSelectedDate = ref('')
+const editCheckIn = ref('')
+const editCheckOut = ref('')
+const savingRecordId = ref<number | null>(null)
+const deletingRecordId = ref<number | null>(null)
+const deleteTargetRow = ref<TodayAttendanceRow | null>(null)
 let liveTimer: ReturnType<typeof setInterval> | null = null
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 
@@ -177,6 +284,19 @@ const todaySessionMap = computed(() => {
   }
   for (const sessions of map.values()) {
     sessions.sort((a, b) => a.started_at.localeCompare(b.started_at))
+  }
+  return map
+})
+
+const todaySessionMapByRecord = computed(() => {
+  const map = new Map<number, AttendanceWorkSession[]>()
+  for (const session of todaySessions.value) {
+    const bucket = map.get(session.record_id) || []
+    bucket.push(session)
+    map.set(session.record_id, bucket)
+  }
+  for (const bucket of map.values()) {
+    bucket.sort((a, b) => a.started_at.localeCompare(b.started_at))
   }
   return map
 })
@@ -422,6 +542,148 @@ async function refreshTodayRows() {
     toast.error(`금일 근태 조회 실패: ${error?.message || '알 수 없는 오류'}`)
   } finally {
     loading.value = false
+  }
+}
+
+const editDuration = computed(() => {
+  const inIso = parseDateTimeLocalToIso(editCheckIn.value)
+  const outIso = parseDateTimeLocalToIso(editCheckOut.value)
+  return formatWorkDuration(calcWorkMinutes(inIso, outIso))
+})
+
+function openEditModal(row: TodayAttendanceRow) {
+  if (!row.record?.id) return
+  editTargetRow.value = row
+  editSelectedDate.value = row.record.work_date
+  editCheckIn.value = toDateTimeLocalValue(row.record.check_in_at)
+  editCheckOut.value = toDateTimeLocalValue(row.record.check_out_at)
+}
+
+function closeEditModal() {
+  if (savingRecordId.value) return
+  editTargetRow.value = null
+  editSelectedDate.value = ''
+  editCheckIn.value = ''
+  editCheckOut.value = ''
+}
+
+function applySelectedDateToEditRow() {
+  if (!editSelectedDate.value) {
+    toast.error('먼저 날짜를 선택해주세요.')
+    return
+  }
+
+  let applied = false
+  if (editCheckIn.value) {
+    editCheckIn.value = applyDateToDateTimeLocalValue(editCheckIn.value, editSelectedDate.value)
+    applied = true
+  }
+  if (editCheckOut.value) {
+    editCheckOut.value = applyDateToDateTimeLocalValue(editCheckOut.value, editSelectedDate.value)
+    applied = true
+  }
+
+  if (!applied) {
+    toast.error('반영할 출퇴근 시간이 없습니다.')
+    return
+  }
+
+  toast.success('선택한 날짜를 수정 시각에 반영했습니다.')
+}
+
+function openDeleteModal(row: TodayAttendanceRow) {
+  if (!row.record?.id) return
+  deleteTargetRow.value = row
+}
+
+function closeDeleteModal() {
+  if (deletingRecordId.value) return
+  deleteTargetRow.value = null
+}
+
+async function confirmDeleteRow() {
+  const recordId = deleteTargetRow.value?.record?.id
+  if (!recordId) return
+
+  deletingRecordId.value = recordId
+  try {
+    const { error } = await supabase
+      .from('attendance_records')
+      .delete()
+      .eq('id', recordId)
+
+    if (error) throw error
+
+    toast.success('오늘 근태 기록을 삭제했습니다.')
+    deleteTargetRow.value = null
+    await refreshTodayRows()
+  } catch (error: any) {
+    console.error('Failed to delete attendance record from admin page:', error)
+    toast.error(`근태 삭제 실패: ${error?.message || '알 수 없는 오류'}`)
+  } finally {
+    deletingRecordId.value = null
+  }
+}
+
+async function saveEditRow() {
+  const target = editTargetRow.value
+  const recordId = target?.record?.id
+  if (!recordId) return
+
+  const checkInIso = parseDateTimeLocalToIso(editCheckIn.value)
+  const checkOutIso = parseDateTimeLocalToIso(editCheckOut.value)
+  const workDate = getDateKeyFromDateTimeLocalValue(editCheckIn.value)
+    || getDateKeyFromDateTimeLocalValue(editCheckOut.value)
+    || target.record?.work_date
+    || todayDate.value
+
+  if (checkOutIso && !checkInIso) {
+    toast.error('퇴근 시간만 단독 저장할 수 없습니다.')
+    return
+  }
+  if (checkInIso && checkOutIso && new Date(checkOutIso).getTime() < new Date(checkInIso).getTime()) {
+    toast.error('퇴근 시간은 출근 시간보다 빠를 수 없습니다.')
+    return
+  }
+
+  savingRecordId.value = recordId
+  try {
+    const sessionsForRecord = todaySessionMapByRecord.value.get(recordId) || []
+    if (!sessionsTableMissing.value && sessionsForRecord.length > 0) {
+      const updatedSessions = sessionsForRecord.map((session) => ({
+        ...session,
+        work_date: workDate,
+        started_at: shiftIsoToDateKey(session.started_at, workDate) || session.started_at,
+        ended_at: shiftIsoToDateKey(session.ended_at, workDate),
+        updated_at: new Date().toISOString(),
+      }))
+      const { error: sessionError } = await supabase
+        .from('attendance_work_sessions')
+        .upsert(updatedSessions)
+
+      if (sessionError) throw sessionError
+    }
+
+    const { error } = await supabase
+      .from('attendance_records')
+      .update({
+        work_date: workDate,
+        check_in_at: checkInIso,
+        check_out_at: checkOutIso,
+        updated_by: user.value.id || null,
+      })
+      .eq('id', recordId)
+
+    if (error) throw error
+
+    toast.success('오늘 근태 기록을 수정했습니다.')
+    closeEditModal()
+    await refreshTodayRows()
+  } catch (error: any) {
+    console.error('Failed to save attendance record from admin page:', error)
+    toast.error(`근태 수정 실패: ${error?.message || '알 수 없는 오류'}`)
+  } finally {
+    savingRecordId.value = null
   }
 }
 
@@ -686,6 +948,87 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+.today-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.22);
+}
+
+.today-card-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.today-card-action-hint {
+  color: var(--color-text-secondary);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.today-delete-btn {
+  min-height: 38px;
+  color: #b91c1c;
+  border-color: rgba(239, 68, 68, 0.18);
+  white-space: nowrap;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.44);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirm-modal {
+  width: min(420px, 100%);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 28px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.edit-modal {
+  width: min(520px, 100%);
+}
+
+.confirm-modal-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 4px 0;
+}
+
+.confirm-modal-body strong {
+  font-size: 1.06rem;
+  font-weight: 800;
+}
+
+.confirm-modal-body span {
+  color: var(--color-text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.confirm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .status-filter-row {
   display: flex;
   flex-wrap: wrap;
@@ -724,16 +1067,89 @@ onBeforeUnmount(() => {
   }
 }
 
+.edit-modal-body {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.edit-date-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.edit-date-field {
+  flex: 1;
+}
+
+.edit-date-apply {
+  min-width: 84px;
+}
+
+.edit-date-hint {
+  margin: -8px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+}
+
+.edit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.edit-field span {
+  color: var(--color-text-secondary);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.edit-field strong {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  display: inline-flex;
+  align-items: center;
+}
+
 @media (max-width: 768px) {
   .admin-header,
   .section-head,
-  .admin-actions {
+  .admin-actions,
+  .today-card-actions,
+  .confirm-modal-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .edit-date-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .today-card-action-buttons {
     flex-direction: column;
     align-items: stretch;
   }
 
   .search-input {
     min-width: 0;
+  }
+
+  .modal-backdrop {
+    padding: 16px;
   }
 }
 </style>

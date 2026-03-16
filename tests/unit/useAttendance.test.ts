@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { calcWorkSessionMinutes } from '../../app/composables/useAttendance'
+import {
+  applyDateToDateTimeLocalValue,
+  calcWorkSessionMinutes,
+  getDateKeyFromDateTimeLocalValue,
+  shiftIsoToDateKey,
+} from '../../app/composables/useAttendance'
 
 describe('useAttendance', () => {
   it('applies admin-adjusted check-in time to session-based work minutes', () => {
@@ -56,5 +61,14 @@ describe('useAttendance', () => {
     )
 
     expect(minutes).toBe(420)
+  })
+
+  it('applies a selected date to local datetime values while keeping the time', () => {
+    expect(applyDateToDateTimeLocalValue('2026-03-16T09:30', '2026-03-20')).toBe('2026-03-20T09:30')
+    expect(getDateKeyFromDateTimeLocalValue('2026-03-20T09:30')).toBe('2026-03-20')
+  })
+
+  it('shifts iso timestamps to a new work date while keeping the local time', () => {
+    expect(shiftIsoToDateKey('2026-03-16T00:30:00.000Z', '2026-03-20')).toBe('2026-03-20T00:30:00.000Z')
   })
 })

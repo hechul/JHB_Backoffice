@@ -109,25 +109,6 @@
         </div>
       </div>
 
-      <div class="mini-week-wrap">
-        <div class="mini-week-head">
-          <div class="section-label">이번 주 한눈에 보기</div>
-          <NuxtLink to="/attendance/weekly" class="mini-week-link">자세히 보기</NuxtLink>
-        </div>
-        <div class="mini-week-grid">
-          <article
-            v-for="day in weekMiniDays"
-            :key="day.date"
-            class="mini-week-item"
-            :class="[day.tone, { today: day.isToday }]"
-          >
-            <span class="mini-week-weekday">{{ day.weekday }}</span>
-            <strong class="mini-week-date">{{ day.shortDate }}</strong>
-            <span class="status-chip" :class="day.status.className">{{ day.status.label }}</span>
-          </article>
-        </div>
-      </div>
-
       <div v-if="tableMissing" class="today-warning">
         `attendance_records` 테이블이 없어 근태 기능을 사용할 수 없습니다.
         `docs/sql/2026-03-05_attendance_phase1.sql` 실행이 필요합니다.
@@ -228,7 +209,6 @@ const {
   calcWorkSessionMinutes,
   formatWorkDuration,
   normalizeAttendanceSettings,
-  createLeaveDateMap,
   getLeaveTypeLabel,
   computeAttendanceStatus,
 } = useAttendance()
@@ -237,8 +217,6 @@ const todayDate = ref(getKstDateKey())
 const todayRecord = ref<AttendanceRecord | null>(null)
 const todaySessions = ref<AttendanceWorkSession[]>([])
 const todayApprovedLeave = ref<LeaveRequest | null>(null)
-const weekRecords = ref<AttendanceRecord[]>([])
-const weekLeaves = ref<LeaveRequest[]>([])
 const settings = ref<AttendanceSettings>(normalizeAttendanceSettings(DEFAULT_ATTENDANCE_SETTINGS))
 const saving = ref(false)
 const savingLeave = ref(false)
@@ -393,42 +371,6 @@ const canFinalCheckOut = computed(() => {
     && !tableMissing.value
   })
 
-const weekStartDate = computed(() => getWeekStart(todayDate.value))
-const weekDates = computed(() => Array.from({ length: 7 }, (_, index) => addDateKeyDays(weekStartDate.value, index)))
-
-const weekRecordMap = computed(() => {
-  return new Map(weekRecords.value.map((row) => [row.work_date, row]))
-})
-
-const weekLeaveMap = computed(() => createLeaveDateMap(weekLeaves.value))
-
-const weekMiniDays = computed(() => {
-  return weekDates.value.map((dateKey) => {
-    const record = weekRecordMap.value.get(dateKey) || null
-    const leave = weekLeaveMap.value.get(dateKey) || null
-    const isToday = dateKey === todayDate.value
-    const baseStatus = isToday
-      ? todayDisplayStatus.value
-      : computeAttendanceStatus({
-          workDate: dateKey,
-          checkInAt: record?.check_in_at,
-          checkOutAt: record?.check_out_at,
-          settings: settings.value,
-          approvedLeave: leave,
-          todayDate: todayDate.value,
-        })
-
-    return {
-      date: dateKey,
-      isToday,
-      weekday: getWeekdayLabel(dateKey),
-      shortDate: formatCardDate(dateKey),
-      status: baseStatus,
-      tone: dayCardTone(baseStatus.code),
-    }
-  })
-})
-
 function isMissingTableError(error: any, tableName: string) {
   const code = String(error?.code || '').toUpperCase()
   const msg = String(error?.message || '').toLowerCase()
@@ -439,41 +381,6 @@ function isMissingSettingsColumnError(error: any) {
   const code = String(error?.code || '').toUpperCase()
   const msg = String(error?.message || '').toLowerCase()
   return code === '42703' || msg.includes('early_leave_grace_minutes')
-}
-
-function parseDateKey(dateKey: string) {
-  return new Date(`${dateKey}T00:00:00+09:00`)
-}
-
-function addDateKeyDays(dateKey: string, days: number) {
-  const next = parseDateKey(dateKey)
-  next.setDate(next.getDate() + days)
-  return getKstDateKey(next)
-}
-
-function getWeekStart(dateKey: string) {
-  const date = parseDateKey(dateKey)
-  const shift = (date.getDay() + 6) % 7
-  date.setDate(date.getDate() - shift)
-  return getKstDateKey(date)
-}
-
-function getWeekdayLabel(dateKey: string) {
-  const date = parseDateKey(dateKey)
-  return ['월', '화', '수', '목', '금', '토', '일'][(date.getDay() + 6) % 7]
-}
-
-function formatCardDate(dateKey: string) {
-  const [, month = '', day = ''] = String(dateKey).split('-')
-  return `${month}.${day}`
-}
-
-function dayCardTone(code?: string) {
-  if (String(code).includes('leave')) return 'tone-purple'
-  if (code === 'late' || code === 'late_early' || code === 'early_leave') return 'tone-amber'
-  if (code === 'absent') return 'tone-red'
-  if (code === 'done' || code === 'working') return 'tone-blue'
-  return 'tone-slate'
 }
 
 function isHalfDayType(type: LeaveType) {
@@ -584,55 +491,6 @@ async function fetchTodayLeave() {
   todayApprovedLeave.value = (data as LeaveRequest | null) || null
 }
 
-async function fetchWeekRecords() {
-  if (!user.value.id) return
-  const endDate = addDateKeyDays(weekStartDate.value, 6)
-  const { data, error } = await supabase
-    .from('attendance_records')
-    .select('id, user_id, work_date, check_in_at, check_out_at, check_in_note, check_out_note, updated_by, created_at, updated_at')
-    .eq('user_id', user.value.id)
-    .gte('work_date', weekStartDate.value)
-    .lte('work_date', endDate)
-    .order('work_date', { ascending: true })
-
-  if (error) {
-    if (isMissingTableError(error, 'attendance_records')) {
-      tableMissing.value = true
-      weekRecords.value = []
-      return
-    }
-    throw error
-  }
-
-  tableMissing.value = false
-  weekRecords.value = (data || []) as AttendanceRecord[]
-}
-
-async function fetchWeekLeaves() {
-  if (!user.value.id) return
-  const endDate = addDateKeyDays(weekStartDate.value, 6)
-  const { data, error } = await supabase
-    .from('leave_requests')
-    .select('id, user_id, leave_type, start_date, end_date, status, reason, approved_by, approved_at, created_at, updated_at')
-    .eq('user_id', user.value.id)
-    .eq('status', 'approved')
-    .lte('start_date', endDate)
-    .gte('end_date', weekStartDate.value)
-    .order('start_date', { ascending: true })
-
-  if (error) {
-    if (isMissingTableError(error, 'leave_requests')) {
-      leaveTableMissing.value = true
-      weekLeaves.value = []
-      return
-    }
-    throw error
-  }
-
-  leaveTableMissing.value = false
-  weekLeaves.value = (data || []) as LeaveRequest[]
-}
-
 async function refreshToday() {
   if (!profileLoaded.value || !user.value.id) return
   try {
@@ -642,8 +500,6 @@ async function refreshToday() {
       fetchTodayRecord(),
       fetchTodaySessions(),
       fetchTodayLeave(),
-      fetchWeekRecords(),
-      fetchWeekLeaves(),
     ])
   } catch (error: any) {
     console.error('Failed to fetch attendance records:', error)
@@ -970,57 +826,6 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-md);
-}
-
-.mini-week-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.mini-week-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.mini-week-link {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: #2563eb;
-}
-
-.mini-week-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.mini-week-item {
-  padding: 12px 10px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(255, 255, 255, 0.94);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  text-align: center;
-}
-
-.mini-week-item.today {
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.18);
-}
-
-.mini-week-weekday {
-  font-size: 0.82rem;
-  color: var(--color-text-secondary);
-}
-
-.mini-week-date {
-  font-size: 0.92rem;
-  font-weight: 800;
 }
 
 .today-item {
@@ -1377,10 +1182,6 @@ onBeforeUnmount(() => {
   .today-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-
-  .mini-week-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 768px) {
@@ -1401,7 +1202,6 @@ onBeforeUnmount(() => {
 
   .today-head,
   .records-header,
-  .mini-week-head,
   .session-head,
   .session-top {
     display: flex;
@@ -1410,10 +1210,6 @@ onBeforeUnmount(() => {
 
   .session-state {
     align-self: flex-start;
-  }
-
-  .mini-week-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .modal-backdrop {

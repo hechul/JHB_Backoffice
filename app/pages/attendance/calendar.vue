@@ -7,6 +7,15 @@
       <div class="page-actions">
         <input v-model="selectedMonth" type="month" class="input month-input" />
         <input v-if="isAdmin" v-model.trim="searchText" type="text" class="input search-input" placeholder="이름/아이디 검색" />
+        <button
+          v-if="isAdmin"
+          type="button"
+          class="btn btn-ghost btn-sm"
+          :disabled="saving || exporting"
+          @click="downloadMonthlyAttendanceWorkbook"
+        >
+          {{ exporting ? '엑셀 생성 중...' : '엑셀 다운로드' }}
+        </button>
       </div>
     </div>
 
@@ -146,6 +155,17 @@
             </div>
 
             <template v-if="isAdmin && editingRowId === row.id">
+              <div class="detail-record-date-row">
+                <label class="detail-field detail-date-field">
+                  <span>날짜 선택</span>
+                  <input v-model="editSelectedDate" type="date" class="input date-input" />
+                </label>
+                <button type="button" class="btn btn-ghost btn-sm detail-date-apply" :disabled="saving" @click="applySelectedDateToCalendarEdit">
+                  확인
+                </button>
+              </div>
+              <p class="detail-date-hint">선택한 날짜를 현재 출근/퇴근 시각에 반영합니다.</p>
+
               <div class="detail-record-edit-grid">
                 <label class="detail-field">
                   <span>출근</span>
@@ -195,6 +215,7 @@
 
 <script setup lang="ts">
 import { BriefcaseBusiness, CalendarRange, CircleAlert, Plane, Users } from 'lucide-vue-next'
+import * as XLSX from 'xlsx'
 import type { AttendanceRecord, AttendanceSettings, AttendanceWorkSession, LeaveRequest } from '~/composables/useAttendance'
 
 definePageMeta({ layout: 'attendance' })
@@ -234,6 +255,9 @@ const {
   formatWorkDuration,
   toDateTimeLocalValue,
   parseDateTimeLocalToIso,
+  getDateKeyFromDateTimeLocalValue,
+  applyDateToDateTimeLocalValue,
+  shiftIsoToDateKey,
   normalizeAttendanceSettings,
   getLeaveTypeLabel,
   getLeaveStatusLabel,
@@ -247,6 +271,7 @@ const selectedMonth = ref(getKstMonthKey())
 const selectedCalendarDate = ref('')
 const searchText = ref('')
 const saving = ref(false)
+const exporting = ref(false)
 const tableMissing = ref(false)
 const sessionsTableMissing = ref(false)
 const settingsTableMissing = ref(false)
@@ -261,6 +286,7 @@ let liveTimer: ReturnType<typeof setInterval> | null = null
 const dateModalOpen = ref(false)
 
 const editingRowId = ref<number | null>(null)
+const editSelectedDate = ref('')
 const editCheckIn = ref('')
 const editCheckOut = ref('')
 
@@ -596,6 +622,10 @@ function statusClassFromValues(checkIn: string, checkOut: string) {
   return 'status-done'
 }
 
+function isLeaveStatusCode(code?: string) {
+  return String(code || '').includes('leave')
+}
+
 function openDateModal(date: string) {
   selectedCalendarDate.value = date
   dateModalOpen.value = true
@@ -608,6 +638,125 @@ function closeDateModal() {
 
 function jumpToCurrentMonth() {
   selectedMonth.value = getKstMonthKey()
+}
+
+async function downloadMonthlyAttendanceWorkbook() {
+  if (!isAdmin.value) return
+  if (filteredProfiles.value.length === 0) {
+    toast.error('엑셀로 내보낼 조회 대상이 없습니다.')
+    return
+  }
+
+  exporting.value = true
+  try {
+    const monthDates = calendarCells.value
+      .filter((cell) => cell.inMonth)
+      .map((cell) => String(cell.date))
+
+    const summaryRows = filteredProfiles.value.map((profile) => {
+      const dailyRows = monthDates.map((dateKey) => {
+        const row = rowMapByUserDate.value.get(`${profile.profile_id}:${dateKey}`) || null
+        const leave = approvedLeaveMapByUserDate.value.get(`${profile.profile_id}:${dateKey}`) || null
+        const status = computeAttendanceStatus({
+          workDate: dateKey,
+          checkInAt: row?.check_in_at,
+          checkOutAt: row?.check_out_at,
+          settings: settings.value,
+          approvedLeave: leave,
+          todayDate: todayDate.value,
+        })
+        const workMinutes = row ? rowWorkMinutes(row) : 0
+        const sessionCount = row ? (sessionMapByRecord.value.get(row.id) || []).length : 0
+
+        return {
+          dateKey,
+          row,
+          leave,
+          status,
+          workMinutes,
+          sessionCount,
+        }
+      })
+
+      const countByStatus = (codes: string[]) => dailyRows.filter((entry) => codes.includes(String(entry.status.code || ''))).length
+      const countByLeaveType = (leaveType: string) => dailyRows.filter((entry) => entry.leave?.leave_type === leaveType).length
+
+      return {
+        이름: profile.user_name,
+        아이디: profile.user_login_id,
+        근무일수: dailyRows.filter((entry) => !!entry.row?.check_in_at && !entry.leave).length,
+        총근무시간_분: dailyRows.reduce((sum, entry) => sum + entry.workMinutes, 0),
+        총근무시간: formatWorkDuration(dailyRows.reduce((sum, entry) => sum + entry.workMinutes, 0)),
+        근무전환횟수: dailyRows.reduce((sum, entry) => sum + entry.sessionCount, 0),
+        지각: countByStatus(['late', 'late_early']),
+        조퇴: countByStatus(['early_leave', 'late_early']),
+        결근: countByStatus(['absent']),
+        연차: countByLeaveType('annual'),
+        오전반차: countByLeaveType('half_am'),
+        오후반차: countByLeaveType('half_pm'),
+        병가: countByLeaveType('sick'),
+        공가: countByLeaveType('official'),
+        기타휴가: countByLeaveType('other'),
+      }
+    })
+
+    const detailRows = filteredProfiles.value.flatMap((profile) => {
+      return monthDates.map((dateKey) => {
+        const row = rowMapByUserDate.value.get(`${profile.profile_id}:${dateKey}`) || null
+        const leave = approvedLeaveMapByUserDate.value.get(`${profile.profile_id}:${dateKey}`) || null
+        const status = computeAttendanceStatus({
+          workDate: dateKey,
+          checkInAt: row?.check_in_at,
+          checkOutAt: row?.check_out_at,
+          settings: settings.value,
+          approvedLeave: leave,
+          todayDate: todayDate.value,
+        })
+        const workMinutes = row ? rowWorkMinutes(row) : 0
+        const sessionsForRow = row ? (sessionMapByRecord.value.get(row.id) || []) : []
+
+        return {
+          날짜: dateKey,
+          이름: profile.user_name,
+          아이디: profile.user_login_id,
+          상태: status.label,
+          출근: leave ? '-' : formatTime(row?.check_in_at),
+          퇴근: leave ? '-' : formatTime(row?.check_out_at),
+          근무시간_분: workMinutes,
+          근무시간: leave ? getLeaveTypeLabel(leave.leave_type) : formatWorkDuration(workMinutes),
+          근무전환횟수: sessionsForRow.length,
+          휴가유형: leave ? getLeaveTypeLabel(leave.leave_type) : '-',
+          휴가상태: leave ? getLeaveStatusLabel(leave.status) : '-',
+          출근메모: row?.check_in_note || '',
+          퇴근메모: row?.check_out_note || '',
+        }
+      })
+    })
+
+    const dailySummaryRows = monthDates.map((dateKey) => {
+      const day = adminCalendarSummaryByDate.value.get(dateKey)
+      return {
+        날짜: dateKey,
+        근무: day?.presentCount || 0,
+        지각: day?.lateCount || 0,
+        휴가: day?.leaveCount || 0,
+        결근: day?.absentCount || 0,
+        전체: day?.totalCount || 0,
+      }
+    })
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), '월간요약')
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(detailRows), '일별상세')
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(dailySummaryRows), '일자집계')
+    XLSX.writeFile(workbook, `근태관리_${selectedMonth.value}_월간리포트.xlsx`)
+    toast.success('월간 근태 엑셀을 다운로드했습니다.')
+  } catch (error: any) {
+    console.error('Failed to export monthly attendance workbook:', error)
+    toast.error(`엑셀 다운로드 실패: ${error?.message || '알 수 없는 오류'}`)
+  } finally {
+    exporting.value = false
+  }
 }
 
 async function fetchSettings() {
@@ -769,20 +918,49 @@ async function refreshCalendar() {
 
 function startEdit(row: CalendarAttendanceRow) {
   editingRowId.value = row.id
+  editSelectedDate.value = row.work_date
   editCheckIn.value = toDateTimeLocalValue(row.check_in_at)
   editCheckOut.value = toDateTimeLocalValue(row.check_out_at)
 }
 
 function cancelEdit() {
   editingRowId.value = null
+  editSelectedDate.value = ''
   editCheckIn.value = ''
   editCheckOut.value = ''
+}
+
+function applySelectedDateToCalendarEdit() {
+  if (!editSelectedDate.value) {
+    toast.error('먼저 날짜를 선택해주세요.')
+    return
+  }
+
+  let applied = false
+  if (editCheckIn.value) {
+    editCheckIn.value = applyDateToDateTimeLocalValue(editCheckIn.value, editSelectedDate.value)
+    applied = true
+  }
+  if (editCheckOut.value) {
+    editCheckOut.value = applyDateToDateTimeLocalValue(editCheckOut.value, editSelectedDate.value)
+    applied = true
+  }
+
+  if (!applied) {
+    toast.error('반영할 출퇴근 시간이 없습니다.')
+    return
+  }
+
+  toast.success('선택한 날짜를 수정 시각에 반영했습니다.')
 }
 
 async function saveEdit(row: CalendarAttendanceRow) {
   if (!editingRowId.value) return
   const checkInIso = parseDateTimeLocalToIso(editCheckIn.value)
   const checkOutIso = parseDateTimeLocalToIso(editCheckOut.value)
+  const workDate = getDateKeyFromDateTimeLocalValue(editCheckIn.value)
+    || getDateKeyFromDateTimeLocalValue(editCheckOut.value)
+    || row.work_date
 
   if (checkOutIso && !checkInIso) {
     toast.error('퇴근 시간만 단독 저장할 수 없습니다.')
@@ -795,9 +973,26 @@ async function saveEdit(row: CalendarAttendanceRow) {
 
   saving.value = true
   try {
+    const sessionsForRow = sessionMapByRecord.value.get(row.id) || []
+    if (!sessionsTableMissing.value && sessionsForRow.length > 0) {
+      const updatedSessions = sessionsForRow.map((session) => ({
+        ...session,
+        work_date: workDate,
+        started_at: shiftIsoToDateKey(session.started_at, workDate) || session.started_at,
+        ended_at: shiftIsoToDateKey(session.ended_at, workDate),
+        updated_at: new Date().toISOString(),
+      }))
+      const { error: sessionError } = await supabase
+        .from('attendance_work_sessions')
+        .upsert(updatedSessions)
+
+      if (sessionError) throw sessionError
+    }
+
     const { error } = await supabase
       .from('attendance_records')
       .update({
+        work_date: workDate,
         check_in_at: checkInIso,
         check_out_at: checkOutIso,
         updated_by: user.value.id || null,
@@ -1268,6 +1463,26 @@ function handleEscape(event: KeyboardEvent) {
   font-size: 0.88rem;
 }
 
+.detail-record-date-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.detail-date-field {
+  flex: 1;
+}
+
+.detail-date-apply {
+  min-width: 84px;
+}
+
+.detail-date-hint {
+  margin: -4px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+}
+
 .detail-record-metrics,
 .detail-record-edit-grid {
   display: grid;
@@ -1338,9 +1553,11 @@ function handleEscape(event: KeyboardEvent) {
   }
 
   .detail-record-grid,
+  .detail-record-date-row,
   .detail-record-metrics,
   .detail-record-edit-grid {
     grid-template-columns: 1fr;
+    flex-direction: column;
   }
 
   .search-input {
