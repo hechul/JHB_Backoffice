@@ -85,14 +85,27 @@
         v-if="!sessionsTableMissing && (todaySessionsSorted.length > 0 || workToggleMode !== 'before_start')"
         class="session-list-wrap"
       >
-        <div class="section-label">오늘 근무 전환 기록</div>
-        <div v-if="todaySessionsSorted.length === 0" class="history-empty">아직 근무 전환 기록이 없습니다.</div>
+        <div class="session-head">
+          <div class="section-label">오늘 근무 전환 기록</div>
+          <div v-if="todaySessionHeadline" class="session-headline">{{ todaySessionHeadline }}</div>
+        </div>
+        <div v-if="todaySessionEntries.length === 0" class="history-empty">아직 근무 전환 기록이 없습니다.</div>
         <div v-else class="session-list">
-          <div v-for="(session, index) in todaySessionsSorted" :key="session.id" class="session-item">
-            <span class="session-index">기록 {{ index + 1 }}</span>
-            <span>시작 {{ formatTime(session.started_at) }}</span>
-            <span>중단 {{ formatTime(session.ended_at) }}</span>
-          </div>
+          <article
+            v-for="entry in todaySessionEntries"
+            :key="entry.id"
+            class="session-item"
+            :class="{ active: entry.isOpen }"
+          >
+            <div class="session-marker" aria-hidden="true"></div>
+            <div class="session-body">
+              <div class="session-top">
+                <strong class="session-range">{{ entry.rangeLabel }}</strong>
+                <span class="session-state" :class="{ active: entry.isOpen }">{{ entry.stateLabel }}</span>
+              </div>
+              <div class="session-meta">{{ entry.metaLabel }}</div>
+            </div>
+          </article>
         </div>
       </div>
 
@@ -312,6 +325,39 @@ const todayWorkDuration = computed(() => {
       })
     : calcWorkMinutes(todayRecord.value.check_in_at, todayRecord.value.check_out_at)
   return formatWorkDuration(minutes)
+})
+
+const todaySessionHeadline = computed(() => {
+  if (!todaySessionsSorted.value.length) return ''
+  const firstStart = formatTime(todaySessionsSorted.value[0]?.started_at)
+  const countLabel = todaySessionsSorted.value.length > 1
+    ? `근무 ${todaySessionsSorted.value.length}회`
+    : '근무 1회'
+  const stateLabel = workToggleMode.value === 'on'
+    ? '현재 근무 중'
+    : workToggleMode.value === 'off'
+      ? '현재 중단 중'
+      : workToggleMode.value === 'done'
+        ? '오늘 기록 완료'
+        : ''
+
+  return [countLabel, firstStart !== '-' ? `첫 시작 ${firstStart}` : '', stateLabel].filter(Boolean).join(' · ')
+})
+
+const todaySessionEntries = computed(() => {
+  return todaySessionsSorted.value.map((session) => {
+    const isOpen = !session.ended_at
+    const endAt = session.ended_at || liveNowIso.value
+    const duration = formatWorkDuration(calcWorkMinutes(session.started_at, endAt))
+
+    return {
+      id: session.id,
+      isOpen,
+      rangeLabel: `${formatTime(session.started_at)} - ${isOpen ? '진행 중' : formatTime(session.ended_at)}`,
+      stateLabel: isOpen ? '진행 중' : '완료',
+      metaLabel: isOpen ? `${duration}째 근무 중` : duration,
+    }
+  })
 })
 
 const canLegacyCheckIn = computed(() => {
@@ -1055,9 +1101,21 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.session-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .section-label {
   font-size: 0.96rem;
   font-weight: 700;
+}
+
+.session-headline {
+  font-size: 0.88rem;
+  color: var(--color-text-secondary);
 }
 
 .session-list {
@@ -1068,17 +1126,76 @@ onBeforeUnmount(() => {
 
 .session-item {
   display: grid;
-  grid-template-columns: 88px 1fr 1fr;
-  gap: 12px;
-  align-items: center;
-  padding: 12px 14px;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 16px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.76);
   border: 1px solid var(--color-border-light);
 }
 
-.session-index {
+.session-item.active {
+  border-color: rgba(37, 99, 235, 0.22);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.session-marker {
+  width: 10px;
+  height: 10px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.7);
+  box-shadow: 0 0 0 6px rgba(148, 163, 184, 0.12);
+}
+
+.session-item.active .session-marker {
+  background: rgba(37, 99, 235, 0.92);
+  box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.12);
+}
+
+.session-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.session-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.session-range {
+  font-size: 0.96rem;
   font-weight: 700;
+}
+
+.session-state {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.session-state.active {
+  border-color: rgba(37, 99, 235, 0.18);
+  color: #1d4ed8;
+}
+
+.session-meta {
+  font-size: 0.88rem;
+  color: var(--color-text-secondary);
 }
 
 .history-empty {
@@ -1268,7 +1385,6 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
   .action-row,
-  .session-item,
   .leave-form-grid {
     grid-template-columns: 1fr;
   }
@@ -1285,9 +1401,15 @@ onBeforeUnmount(() => {
 
   .today-head,
   .records-header,
-  .mini-week-head {
+  .mini-week-head,
+  .session-head,
+  .session-top {
     display: flex;
     flex-direction: column;
+  }
+
+  .session-state {
+    align-self: flex-start;
   }
 
   .mini-week-grid {
