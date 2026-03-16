@@ -397,7 +397,11 @@ const personalWeeklyEntries = computed(() => {
         todayDate: todayDate.value,
       })
       const workMinutes = daySessions.length
-        ? calcWorkSessionMinutes(daySessions, day.date === todayDate.value ? liveNowIso.value : null)
+        ? calcWorkSessionMinutes(daySessions, {
+            openSessionEndAt: day.date === todayDate.value ? liveNowIso.value : null,
+            overrideStartAt: row?.check_in_at,
+            overrideEndAt: row?.check_out_at,
+          })
         : calcWorkMinutes(row?.check_in_at, row?.check_out_at)
 
       return {
@@ -428,7 +432,11 @@ const weeklyBoardRows = computed(() => {
       })
       const daySessions = sessionMapByUserDate.value.get(`${profile.profile_id}:${day.date}`) || []
       const minutes = daySessions.length
-        ? calcWorkSessionMinutes(daySessions, day.date === todayDate.value ? liveNowIso.value : null)
+        ? calcWorkSessionMinutes(daySessions, {
+            openSessionEndAt: day.date === todayDate.value ? liveNowIso.value : null,
+            overrideStartAt: row?.check_in_at,
+            overrideEndAt: row?.check_out_at,
+          })
         : calcWorkMinutes(row?.check_in_at, row?.check_out_at)
       const timeLabel = leave
         ? getLeaveTypeLabel(leave.leave_type)

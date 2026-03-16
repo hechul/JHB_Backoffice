@@ -192,19 +192,51 @@ export function calcWorkMinutes(checkInAt: string | null | undefined, checkOutAt
   return Math.floor((end - start) / 60000)
 }
 
+type CalcWorkSessionMinutesOptions = {
+  openSessionEndAt?: string | Date | null
+  overrideStartAt?: string | null
+  overrideEndAt?: string | null
+}
+
+function isCalcWorkSessionMinutesOptions(
+  value: string | Date | null | undefined | CalcWorkSessionMinutesOptions,
+): value is CalcWorkSessionMinutesOptions {
+  return Boolean(value) && typeof value === 'object' && !(value instanceof Date)
+}
+
 export function calcWorkSessionMinutes(
   sessions: AttendanceWorkSession[] | null | undefined,
-  openSessionEndAt?: string | Date | null,
+  openSessionEndAtOrOptions?: string | Date | null | CalcWorkSessionMinutesOptions,
 ) {
   if (!sessions?.length) return 0
+  const openSessionEndAt = isCalcWorkSessionMinutesOptions(openSessionEndAtOrOptions)
+    ? openSessionEndAtOrOptions.openSessionEndAt
+    : openSessionEndAtOrOptions
+  const overrideStartAt = isCalcWorkSessionMinutesOptions(openSessionEndAtOrOptions)
+    ? openSessionEndAtOrOptions.overrideStartAt
+    : null
+  const overrideEndAt = isCalcWorkSessionMinutesOptions(openSessionEndAtOrOptions)
+    ? openSessionEndAtOrOptions.overrideEndAt
+    : null
   const fallbackEndTime = openSessionEndAt
     ? new Date(openSessionEndAt).getTime()
     : NaN
 
-  return sessions.reduce((total, session) => {
-    const start = new Date(session.started_at).getTime()
-    const end = session.ended_at
-      ? new Date(session.ended_at).getTime()
+  const sortedSessions = [...sessions].sort((a, b) => a.started_at.localeCompare(b.started_at))
+
+  return sortedSessions.reduce((total, session, index) => {
+    const isFirstSession = index === 0
+    const isLastSession = index === sortedSessions.length - 1
+    const startAt = isFirstSession && overrideStartAt
+      ? overrideStartAt
+      : session.started_at
+    const endAt = isLastSession && overrideEndAt
+      ? overrideEndAt
+      : session.ended_at
+
+    const start = new Date(startAt).getTime()
+    const end = endAt
+      ? new Date(endAt).getTime()
       : fallbackEndTime
 
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {

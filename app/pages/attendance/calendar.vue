@@ -557,7 +557,11 @@ const selectedDateLeaveRows = computed<CalendarLeaveRow[]>(() => {
 function rowWorkMinutes(row: CalendarAttendanceRow) {
   const daySessions = sessionMapByRecord.value.get(row.id) || []
   if (daySessions.length) {
-    return calcWorkSessionMinutes(daySessions, row.work_date === todayDate.value ? liveNowIso.value : null)
+    return calcWorkSessionMinutes(daySessions, {
+      openSessionEndAt: row.work_date === todayDate.value ? liveNowIso.value : null,
+      overrideStartAt: row.check_in_at,
+      overrideEndAt: row.check_out_at,
+    })
   }
   return calcWorkMinutes(row.check_in_at, row.check_out_at)
 }

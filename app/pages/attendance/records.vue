@@ -305,7 +305,11 @@ const todayActionDescription = computed(() => {
 const todayWorkDuration = computed(() => {
   if (!todayRecord.value) return '-'
   const minutes = todaySessions.value.length
-    ? calcWorkSessionMinutes(todaySessions.value, liveNowIso.value)
+    ? calcWorkSessionMinutes(todaySessions.value, {
+        openSessionEndAt: liveNowIso.value,
+        overrideStartAt: todayRecord.value.check_in_at,
+        overrideEndAt: todayRecord.value.check_out_at,
+      })
     : calcWorkMinutes(todayRecord.value.check_in_at, todayRecord.value.check_out_at)
   return formatWorkDuration(minutes)
 })

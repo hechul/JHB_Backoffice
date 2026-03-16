@@ -204,7 +204,11 @@ const todayRows = computed<TodayAttendanceRow[]>(() => {
     }
 
     const workMinutes = sessions.length
-      ? calcWorkSessionMinutes(sessions, liveNowIso.value)
+      ? calcWorkSessionMinutes(sessions, {
+          openSessionEndAt: liveNowIso.value,
+          overrideStartAt: record?.check_in_at,
+          overrideEndAt: record?.check_out_at,
+        })
       : calcWorkMinutes(record?.check_in_at, record?.check_out_at)
 
     const noteParts: string[] = []
