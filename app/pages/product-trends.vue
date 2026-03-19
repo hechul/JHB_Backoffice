@@ -1,15 +1,11 @@
 <template>
   <div class="product-trends-page">
-    <div class="product-trends-hero">
-      <div class="product-trends-copy">
-        <span class="product-trends-period">{{ selectedPeriodLabel }}</span>
-        <h1 class="product-trends-title">상품 구매 추이</h1>
-        <p class="product-trends-description">
-          상품별 실구매 수량은 차트로 보고, 성장률은 1주차 -> 2주차 같은 구간 변화로 바로 읽을 수 있게 정리했습니다.
-        </p>
+    <div class="product-trends-toolbar">
+      <div class="product-trends-toolbar-main">
+        <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
+        <StatusBadge v-if="selectedMonth !== 'all' && productWeekFilter" :label="weekLabelFromCode(selectedMonth, productWeekFilter)" variant="info" />
       </div>
       <div class="product-trends-actions">
-        <StatusBadge :label="trendRangeLabel" variant="neutral" />
         <select v-if="selectedMonth !== 'all'" v-model="productWeekFilter" class="select select-compact">
           <option value="">주차 전체</option>
           <option v-for="week in productWeekOptions" :key="week.value" :value="week.value">{{ week.label }}</option>
@@ -23,10 +19,7 @@
       <div class="product-trends-layout">
         <div class="card product-list-card">
           <div class="card-header product-card-header">
-            <div>
-              <h3 class="card-title">상품 목록</h3>
-              <p class="product-card-caption">현재 기간 실구매 수량 기준으로 정렬했고, 옵션도 함께 보여줍니다.</p>
-            </div>
+            <h3 class="card-title">상품 목록</h3>
             <StatusBadge :label="`${filteredProductSummaries.length}개 상품`" variant="neutral" />
           </div>
           <SearchInput v-model="productSearchQuery" placeholder="상품명 또는 옵션 검색..." width="100%" />
@@ -77,11 +70,11 @@
 
             <div class="card">
               <div class="card-header product-card-header">
-                <div>
-                  <h3 class="card-title">{{ selectedProductSummary.name }}</h3>
-                  <p class="product-card-caption">옵션 {{ selectedProductSummary.optionInfo }} 기준 {{ trendTitle }} 실구매 수량입니다. 성장률은 아래 구간 비교로 확인합니다.</p>
+                <h3 class="card-title">{{ selectedProductSummary.name }}</h3>
+                <div class="product-card-header-meta">
+                  <StatusBadge :label="`옵션 ${selectedProductSummary.optionInfo}`" variant="neutral" />
+                  <StatusBadge :label="trendRangeLabel" variant="neutral" />
                 </div>
-                <StatusBadge :label="trendRangeLabel" variant="neutral" />
               </div>
               <div class="trend-chart">
                 <div class="trend-chart-area">
@@ -92,10 +85,7 @@
 
             <div class="card">
               <div class="card-header product-card-header">
-                <div>
-                  <h3 class="card-title">구간별 성장률</h3>
-                  <p class="product-card-caption">라벨 사이에 바로 붙여서 어느 구간이 뛰고 꺾였는지 빠르게 읽게 했습니다.</p>
-                </div>
+                <h3 class="card-title">구간별 성장률</h3>
               </div>
               <div v-if="selectedProductFlowPoints.length" class="period-flow">
                 <template v-for="(point, index) in selectedProductFlowPoints" :key="point.key">
@@ -737,44 +727,19 @@ onBeforeUnmount(() => {
   gap: var(--space-xl);
 }
 
-.product-trends-hero {
+.product-trends-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-lg);
   flex-wrap: wrap;
 }
 
-.product-trends-copy {
+.product-trends-toolbar-main {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  max-width: 680px;
-}
-
-.product-trends-period {
-  display: inline-flex;
   align-items: center;
-  width: fit-content;
-  border-radius: 999px;
-  background: rgba(37, 99, 235, 0.12);
-  color: #1D4ED8;
-  padding: 6px 12px;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.product-trends-title {
-  margin: 0;
-  font-size: clamp(1.75rem, 2.4vw, 2.25rem);
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}
-
-.product-trends-description {
-  margin: 0;
-  color: var(--color-text-secondary);
-  line-height: 1.6;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
 }
 
 .product-trends-actions {
@@ -810,10 +775,11 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
-.product-card-caption {
-  margin: 4px 0 0;
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
+.product-card-header-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
 }
 
 .product-list-card :deep(.search-input) {
@@ -986,7 +952,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 640px) {
-  .product-trends-hero,
+  .product-trends-toolbar,
   .product-card-header,
   .product-trends-actions {
     align-items: stretch;

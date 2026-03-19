@@ -1,13 +1,7 @@
 <template>
   <div class="growth-page">
-    <div class="growth-hero">
-      <div class="growth-hero-copy">
-        <span class="growth-period">{{ selectedPeriodLabel }}</span>
-        <h1 class="growth-title">고객 성장 단계</h1>
-        <p class="growth-hero-description">
-          누적 구매월 수로 고객 단계를 보고, 지금 바로 챙겨야 할 승급 후보만 빠르게 확인할 수 있게 정리했습니다.
-        </p>
-      </div>
+    <div class="growth-toolbar">
+      <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
       <NuxtLink to="/dashboard" class="btn btn-secondary btn-sm growth-back-link">
         <BarChart3 :size="14" :stroke-width="2" />
         대시보드로 돌아가기
@@ -100,10 +94,7 @@
 
       <div class="card">
         <div class="card-header growth-card-header compact">
-          <div>
-            <h3 class="card-title">승급 후보</h3>
-            <p class="growth-section-caption">다음 단계 직전 고객만 모아봤습니다.</p>
-          </div>
+          <h3 class="card-title">승급 후보</h3>
         </div>
         <div class="candidate-stage-grid">
           <div v-for="group in insights.candidates" :key="group.stage" class="candidate-stage-card">
@@ -325,44 +316,12 @@ onBeforeUnmount(() => {
   gap: var(--space-xl);
 }
 
-.growth-hero {
+.growth-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-xl);
-  padding: 24px 28px;
-  border: 1px solid rgba(37, 99, 235, 0.12);
-  border-radius: var(--radius-xl);
-  background:
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 28%),
-    linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(255, 255, 255, 1) 100%);
-}
-
-.growth-hero-copy {
-  min-width: 0;
-}
-
-.growth-period {
-  display: inline-block;
-  margin-bottom: var(--space-sm);
-  font-size: 0.92rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-
-.growth-title {
-  font-size: 2rem;
-  line-height: 1.16;
-  font-weight: 800;
-  color: var(--color-text);
-}
-
-.growth-hero-description {
-  margin: var(--space-sm) 0 0;
-  max-width: 720px;
-  font-size: 0.98rem;
-  line-height: 1.6;
-  color: var(--color-text-secondary);
+  gap: var(--space-sm);
+  flex-wrap: wrap;
 }
 
 .growth-back-link {
@@ -488,12 +447,6 @@ onBeforeUnmount(() => {
 
 .growth-card-header {
   align-items: flex-start;
-}
-
-.growth-section-caption {
-  margin: 6px 0 0;
-  font-size: 0.88rem;
-  color: var(--color-text-secondary);
 }
 
 .growth-chart-content {
@@ -707,7 +660,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 960px) {
-  .growth-hero,
   .growth-summary-grid,
   .growth-overview-row,
   .growth-chart-content-split,
@@ -716,8 +668,7 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
-  .growth-hero {
-    flex-direction: column;
+  .growth-toolbar {
     align-items: stretch;
   }
 
