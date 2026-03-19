@@ -58,6 +58,7 @@
                 <th>옵션</th>
                 <th>펫 타입</th>
                 <th>성장 단계</th>
+                <th>예상 소비일</th>
                 <th>상품 라인</th>
                 <th>등록일</th>
                 <th></th>
@@ -72,6 +73,7 @@
                   <span class="badge" :class="petBadgeClass(p.pet_type)">{{ petLabel(p.pet_type) }}</span>
                 </td>
                 <td>{{ stageLabel(p.stage) }}</td>
+                <td>{{ formatExpectedConsumptionDays(p.expected_consumption_days) }}</td>
                 <td>{{ p.product_line || '-' }}</td>
                 <td class="text-muted">{{ formatDate(p.created_at) }}</td>
                 <td>
@@ -85,7 +87,7 @@
                 </td>
               </tr>
               <tr v-if="filteredProducts.length === 0">
-                <td colspan="8" class="empty-row">
+                <td colspan="9" class="empty-row">
                   <PackageOpen :size="32" :stroke-width="1.2" />
                   <span>검색 결과가 없습니다.</span>
                 </td>
@@ -153,6 +155,18 @@
           <label class="label">상품 라인</label>
           <input v-model="selectedProduct.product_line" class="input" :disabled="!canModify" />
         </div>
+        <div class="detail-group">
+          <label class="label">예상 소비일</label>
+          <input
+            v-model="selectedProduct.expected_consumption_days"
+            type="number"
+            min="1"
+            class="input"
+            :disabled="!canModify"
+            placeholder="예: 30"
+          />
+          <p class="detail-value">미입력 시 이탈 위험 판단에서 제외됩니다.</p>
+        </div>
       </template>
 
       <template #footer>
@@ -215,6 +229,16 @@
               <label class="label">상품 라인</label>
               <input v-model="newProduct.product_line" class="input" placeholder="예: 관절건강" />
             </div>
+            <div class="detail-group">
+              <label class="label">예상 소비일</label>
+              <input
+                v-model="newProduct.expected_consumption_days"
+                type="number"
+                min="1"
+                class="input"
+                placeholder="예: 30"
+              />
+            </div>
           </div>
           <div v-if="addError" class="login-error" style="margin-bottom: 16px;">
             {{ addError }}
@@ -260,6 +284,7 @@ interface Product {
   option_name: string | null
   pet_type: string
   stage: number | null
+  expected_consumption_days: number | null
   product_line: string | null
   deleted_at: string | null
   created_at: string
@@ -286,6 +311,7 @@ const newProduct = ref<{
   option_name: string
   pet_type: string
   stage: number | null
+  expected_consumption_days: number | null | string
   product_line: string
 }>({
   product_id: '',
@@ -293,6 +319,7 @@ const newProduct = ref<{
   option_name: '',
   pet_type: 'DOG',
   stage: 3,
+  expected_consumption_days: null,
   product_line: '',
 })
 
@@ -316,6 +343,7 @@ function openAddModal() {
     option_name: '',
     pet_type: 'DOG',
     stage: 3,
+    expected_consumption_days: null,
     product_line: '',
   }
   addError.value = ''
@@ -453,6 +481,17 @@ function formatDate(dateStr: string) {
   return dateStr ? dateStr.split('T')[0] : '-'
 }
 
+function normalizeExpectedConsumptionDays(value: unknown): number | null {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return null
+  return Math.round(numeric)
+}
+
+function formatExpectedConsumptionDays(value: number | null | undefined) {
+  const numeric = normalizeExpectedConsumptionDays(value)
+  return numeric ? `${numeric}일` : '-'
+}
+
 function selectProduct(p: Product) {
   selectedProduct.value = { ...p }
 }
@@ -462,7 +501,13 @@ async function saveProduct() {
   saving.value = true
 
   const { product_id, product_name, option_name, pet_type, stage, product_line } = selectedProduct.value
-  const payload: Record<string, any> = { product_name, pet_type, stage, product_line }
+  const payload: Record<string, any> = {
+    product_name,
+    pet_type,
+    stage,
+    product_line,
+    expected_consumption_days: normalizeExpectedConsumptionDays(selectedProduct.value.expected_consumption_days),
+  }
   if (supportsOptionColumn.value) payload.option_name = option_name || null
 
   let { data, error } = await supabase
@@ -476,7 +521,13 @@ async function saveProduct() {
     supportsOptionColumn.value = false
     const fallback = await supabase
       .from('products')
-      .update({ product_name, pet_type, stage, product_line })
+      .update({
+        product_name,
+        pet_type,
+        stage,
+        product_line,
+        expected_consumption_days: normalizeExpectedConsumptionDays(selectedProduct.value.expected_consumption_days),
+      })
       .eq('product_id', product_id)
       .is('deleted_at', null)
       .select('product_id')
@@ -513,6 +564,7 @@ async function addProduct() {
     product_name: newProduct.value.product_name,
     pet_type: newProduct.value.pet_type,
     stage: newProduct.value.stage,
+    expected_consumption_days: normalizeExpectedConsumptionDays(newProduct.value.expected_consumption_days),
     product_line: newProduct.value.product_line || null,
   }
   if (supportsOptionColumn.value) payload.option_name = newProduct.value.option_name || null
@@ -526,6 +578,7 @@ async function addProduct() {
       product_name: newProduct.value.product_name,
       pet_type: newProduct.value.pet_type,
       stage: newProduct.value.stage,
+      expected_consumption_days: normalizeExpectedConsumptionDays(newProduct.value.expected_consumption_days),
       product_line: newProduct.value.product_line || null,
     })
     error = fallback.error
@@ -538,7 +591,15 @@ async function addProduct() {
       addError.value = '상품 등록에 실패했습니다.'
     }
   } else {
-    newProduct.value = { product_id: generateProductId(), product_name: '', option_name: '', pet_type: 'DOG', stage: 3, product_line: '' }
+    newProduct.value = {
+      product_id: generateProductId(),
+      product_name: '',
+      option_name: '',
+      pet_type: 'DOG',
+      stage: 3,
+      expected_consumption_days: null,
+      product_line: '',
+    }
     showAddModal.value = false
     await fetchProducts()
   }

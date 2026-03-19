@@ -15,16 +15,26 @@
 
         <select v-model="filterStage" class="select">
           <option value="">성장 단계 전체</option>
-          <option value="Entry">입문</option>
+          <option value="Entry">신규</option>
           <option value="Growth">성장</option>
+          <option value="Premium">단골</option>
           <option value="Core">핵심</option>
-          <option value="Premium">프리미엄</option>
+        </select>
+
+        <select v-model="filterPurchaseIntensity" class="select">
+          <option value="">구매 강도 전체</option>
+          <option value="Dormant">휴면</option>
+          <option value="Low">낮음</option>
+          <option value="Medium">보통</option>
+          <option value="High">높음</option>
+          <option value="VeryHigh">매우 높음</option>
         </select>
 
         <select v-model="filterChurn" class="select">
           <option value="">이탈 위험 전체</option>
           <option value="true">이탈 위험</option>
           <option value="false">정상</option>
+          <option value="excluded">판단 제외</option>
         </select>
 
         <select v-model="filterPurchaseCount" class="select">
@@ -80,6 +90,7 @@
               <th>ID</th>
               <th>펫 타입</th>
               <th>성장 단계</th>
+              <th>구매 강도</th>
               <th>구매 횟수</th>
               <th>구매 상품 수</th>
               <th v-if="hasProductFilter">검색상품 구매횟수</th>
@@ -105,22 +116,23 @@
                   <span class="text-sm">{{ stageLabel(c.stage) }}</span>
                 </div>
               </td>
+              <td>
+                <StatusBadge :label="intensityLabel(c.purchaseIntensity)" :variant="intensityVariant(c.purchaseIntensity)" />
+              </td>
               <td>{{ c.purchaseCount }}회</td>
               <td>{{ formatQuantityCount(c.productCount) }}개</td>
               <td v-if="hasProductFilter">{{ matchingProductPurchaseCount(c) }}회</td>
               <td class="text-sm text-secondary">{{ c.lastOrder }}</td>
               <td>
                 <StatusBadge
-                  v-if="c.churnRisk"
-                  label="위험"
-                  variant="danger"
-                  dot
+                  :label="churnLabel(c.churnStatus)"
+                  :variant="churnVariant(c.churnStatus)"
+                  :dot="isRiskChurn(c.churnStatus)"
                 />
-                <span v-else class="text-sm text-muted">—</span>
               </td>
             </tr>
             <tr v-if="filteredCustomers.length === 0">
-              <td :colspan="hasProductFilter ? 9 : 8" class="empty-row">조건에 맞는 고객이 없습니다.</td>
+              <td :colspan="hasProductFilter ? 10 : 9" class="empty-row">조건에 맞는 고객이 없습니다.</td>
             </tr>
           </tbody>
         </table>
@@ -150,6 +162,10 @@
               <span class="customer-mobile-value">{{ stageLabel(c.stage) }}</span>
             </div>
             <div class="customer-mobile-item">
+              <span class="customer-mobile-label">구매 강도</span>
+              <StatusBadge :label="intensityLabel(c.purchaseIntensity)" :variant="intensityVariant(c.purchaseIntensity)" />
+            </div>
+            <div class="customer-mobile-item">
               <span class="customer-mobile-label">구매 횟수</span>
               <span class="customer-mobile-value">{{ c.purchaseCount }}회</span>
             </div>
@@ -168,12 +184,10 @@
             <div class="customer-mobile-item">
               <span class="customer-mobile-label">이탈 위험</span>
               <StatusBadge
-                v-if="c.churnRisk"
-                label="위험"
-                variant="danger"
-                dot
+                :label="churnLabel(c.churnStatus)"
+                :variant="churnVariant(c.churnStatus)"
+                :dot="isRiskChurn(c.churnStatus)"
               />
-              <span v-else class="customer-mobile-value customer-mobile-muted">정상</span>
             </div>
           </div>
         </div>
@@ -230,6 +244,14 @@
               <span class="detail-value">{{ stageLabel(selectedCustomer.stage) }}</span>
             </div>
             <div class="detail-item">
+              <span class="detail-label">구매 강도</span>
+              <span class="detail-value">{{ intensityLabel(selectedCustomer.purchaseIntensity) }} (최근 90일 {{ selectedCustomer.recentPurchaseDayCount }}일)</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">누적 구매월</span>
+              <span class="detail-value">{{ selectedCustomer.purchaseMonthCount }}개월</span>
+            </div>
+            <div class="detail-item">
               <span class="detail-label">총 구매 횟수</span>
               <span class="detail-value">{{ selectedCustomer.purchaseCount }}회</span>
             </div>
@@ -239,8 +261,19 @@
             </div>
             <div class="detail-item">
               <span class="detail-label">이탈 위험</span>
-              <StatusBadge v-if="selectedCustomer.churnRisk" label="위험" variant="danger" dot />
-              <span v-else class="detail-value">정상</span>
+              <div class="detail-value detail-value-stack">
+                <StatusBadge
+                  :label="churnLabel(selectedCustomer.churnStatus)"
+                  :variant="churnVariant(selectedCustomer.churnStatus)"
+                  :dot="isRiskChurn(selectedCustomer.churnStatus)"
+                />
+                <span v-if="hasExpectedConsumptionConfig && selectedCustomer.churnExpectedConsumptionDays">
+                  기준 {{ selectedCustomer.churnExpectedConsumptionDays }}일 / 현재 {{ selectedCustomer.daysSinceLastOrder }}일 경과
+                </span>
+                <span v-else>
+                  예상 소비일 미입력 상품만 최근 구매해 현재는 판단하지 않습니다.
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -287,13 +320,30 @@ import {
 } from 'lucide-vue-next'
 import type { LocationQuery } from 'vue-router'
 import * as XLSX from 'xlsx'
-import { customerStageLabel, customerStagePercent, progressiveCustomerStage } from '~/composables/useGrowthStage'
+import {
+  computeCustomerStage,
+  computePurchaseIntensity,
+  countDistinctPurchaseMonths,
+  countRecentPurchaseDays,
+  customerStageLabel,
+  customerStagePercent,
+  purchaseIntensityBadgeVariant,
+  purchaseIntensityLabel,
+  type PurchaseIntensityCode,
+} from '~/composables/useGrowthStage'
+import {
+  computeChurnRisk,
+  normalizeExpectedConsumptionDays,
+  churnStatusBadgeVariant,
+  churnStatusLabel,
+  type ChurnStatusCode,
+} from '~/composables/useChurnRisk'
 import { matchesSearchQuery } from '~/composables/useTextSearch'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
 import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
 import { buildWeekOptions, weekCodeFromDate, weekLabelFromCode } from '~/composables/useWeekFilter'
 
-type CustomerStage = 'Entry' | 'Growth' | 'Core' | 'Premium' | 'Other'
+type CustomerStage = 'Entry' | 'Growth' | 'Premium' | 'Core' | 'Other'
 
 interface CustomerProductStat {
   key: string
@@ -311,10 +361,16 @@ interface CustomerRow {
   buyerId: string
   petType: 'DOG' | 'CAT' | 'BOTH'
   stage: CustomerStage
+  purchaseMonthCount: number
+  purchaseIntensity: PurchaseIntensityCode
+  recentPurchaseDayCount: number
   purchaseCount: number
   productCount: number
   lastOrder: string
+  daysSinceLastOrder: number
   churnRisk: boolean
+  churnStatus: ChurnStatusCode
+  churnExpectedConsumptionDays: number | null
   productStats: CustomerProductStat[]
   purchaseWeeks: string[]
   purchaseDates: string[]
@@ -345,6 +401,7 @@ interface PurchaseRow {
 interface ProductMeta {
   pet_type: 'DOG' | 'CAT' | 'BOTH'
   stage: number | null
+  expected_consumption_days: number | null
 }
 
 const supabase = useSupabaseClient()
@@ -357,6 +414,7 @@ const router = useRouter()
 const searchQuery = ref('')
 const filterPetType = ref('')
 const filterStage = ref('')
+const filterPurchaseIntensity = ref('')
 const filterChurn = ref('')
 const filterPurchaseCount = ref('')
 const filterProductName = ref('')
@@ -374,6 +432,7 @@ const customerOrders = ref<CustomerOrderRow[]>([])
 const customerPurchaseRows = ref<PurchaseRow[]>([])
 const productMetaById = ref<Record<string, ProductMeta>>({})
 const productMetaByName = ref<Record<string, ProductMeta>>({})
+const hasExpectedConsumptionConfig = ref(false)
 const PAGE_SIZE = 10
 const DB_FETCH_PAGE_SIZE = 1000
 const currentPage = ref(1)
@@ -434,6 +493,7 @@ function mergeProductMeta(prev: ProductMeta | undefined, next: ProductMeta): Pro
   return {
     pet_type: mergePetType(prev?.pet_type, next.pet_type),
     stage: Math.max(prev?.stage || 0, next.stage || 0) || null,
+    expected_consumption_days: Math.max(prev?.expected_consumption_days || 0, next.expected_consumption_days || 0) || null,
   }
 }
 
@@ -445,11 +505,6 @@ function inferPetTypeFromName(productName: string): ProductMeta['pet_type'] {
   if (hasDog) return 'DOG'
   if (hasCat) return 'CAT'
   return 'BOTH'
-}
-
-function daysFromNow(dateStr: string): number {
-  const ms = Date.now() - parseOrderDate(dateStr).getTime()
-  return Math.floor(ms / (1000 * 60 * 60 * 24))
 }
 
 function derivePetType(rows: PurchaseRow[]): 'DOG' | 'CAT' | 'BOTH' {
@@ -475,25 +530,30 @@ function derivePetType(rows: PurchaseRow[]): 'DOG' | 'CAT' | 'BOTH' {
 }
 
 function deriveStage(rows: PurchaseRow[]): CustomerStage {
-  const stageByDate = new Map<string, number | null>()
+  const dates = [...new Set(rows.map((row) => purchaseDateKey(row)).filter(Boolean))].sort()
+  if (!dates.length) return 'Other'
+  return computeCustomerStage(countDistinctPurchaseMonths(dates))
+}
 
-  for (const row of rows) {
-    const idKey = String(row.product_id || '').trim()
-    const metaById = idKey ? productMetaById.value[idKey] : null
-    const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
-    const metaByName = nameKey ? productMetaByName.value[nameKey] : undefined
-    const stage = metaById?.stage ?? metaByName?.stage ?? null
-    const dateKey = purchaseDateKey(row) || String(row.order_date || '').trim() || '1970-01-01'
-    const prevStage = stageByDate.get(dateKey)
-    const nextStage = Math.max(prevStage || 0, stage || 0) || null
-    stageByDate.set(dateKey, nextStage)
+function resolveExpectedConsumptionDays(row: Pick<PurchaseRow, 'product_id' | 'product_name'>): number | null {
+  const idKey = String(row.product_id || '').trim()
+  const metaById = idKey ? productMetaById.value[idKey] : null
+  if (metaById?.expected_consumption_days) return metaById.expected_consumption_days
+
+  const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
+  const metaByName = nameKey ? productMetaByName.value[nameKey] : null
+  return metaByName?.expected_consumption_days ?? null
+}
+
+function derivePurchaseIntensity(rows: PurchaseRow[]): { purchaseMonthCount: number; recentPurchaseDayCount: number; purchaseIntensity: PurchaseIntensityCode } {
+  const dates = [...new Set(rows.map((row) => purchaseDateKey(row)).filter(Boolean))].sort()
+  const purchaseMonthCount = countDistinctPurchaseMonths(dates)
+  const recentPurchaseDayCount = countRecentPurchaseDays(dates)
+  return {
+    purchaseMonthCount,
+    recentPurchaseDayCount,
+    purchaseIntensity: computePurchaseIntensity(recentPurchaseDayCount),
   }
-
-  const orderedStages = Array.from(stageByDate.entries())
-    .sort((a, b) => parseOrderDate(a[0]).getTime() - parseOrderDate(b[0]).getTime())
-    .map(([, stage]) => stage)
-
-  return progressiveCustomerStage(orderedStages)
 }
 
 function purchaseDateKey(row: Pick<PurchaseRow, 'order_date'>): string {
@@ -561,26 +621,81 @@ function purchaseDisplayOptionInfo(
   return String(row.source_option_info || row.option_info || '').trim() || '-'
 }
 
+function intensityLabel(intensity: PurchaseIntensityCode | string) {
+  return purchaseIntensityLabel(intensity)
+}
+
+function intensityVariant(intensity: PurchaseIntensityCode | string) {
+  return purchaseIntensityBadgeVariant(intensity)
+}
+
+function effectiveChurnStatus(status: ChurnStatusCode | string): ChurnStatusCode {
+  if (!hasExpectedConsumptionConfig.value) return 'Excluded'
+  return status === 'Risk' || status === 'Normal' || status === 'Excluded'
+    ? status
+    : 'Excluded'
+}
+
+function churnLabel(status: ChurnStatusCode | string) {
+  return churnStatusLabel(effectiveChurnStatus(status))
+}
+
+function churnVariant(status: ChurnStatusCode | string) {
+  return churnStatusBadgeVariant(effectiveChurnStatus(status))
+}
+
+function isRiskChurn(status: ChurnStatusCode | string) {
+  return effectiveChurnStatus(status) === 'Risk'
+}
+
+function applyChurnConfigGuardToCustomers() {
+  if (hasExpectedConsumptionConfig.value) return
+  if (!customers.value.length) return
+
+  customers.value = customers.value.map((customer) => ({
+    ...customer,
+    churnRisk: false,
+    churnStatus: 'Excluded',
+    churnExpectedConsumptionDays: null,
+  }))
+
+  if (selectedCustomer.value) {
+    const nextSelected = customers.value.find((customer) => customer.customerKey === selectedCustomer.value?.customerKey) || null
+    selectedCustomer.value = nextSelected
+  }
+}
+
 async function loadProductMeta() {
   const { data, error } = await supabase
     .from('products')
-    .select('product_id, product_name, pet_type, stage')
+    .select('product_id, product_name, pet_type, stage, expected_consumption_days')
     .is('deleted_at', null)
 
   if (error) {
+    productMetaById.value = {}
+    productMetaByName.value = {}
+    hasExpectedConsumptionConfig.value = false
     console.error('Failed to load product meta:', error)
     return
   }
 
   const map: Record<string, ProductMeta> = {}
   const nameMap: Record<string, ProductMeta> = {}
+  let hasConfiguredExpectedConsumptionDays = false
   for (const row of (data || []) as any[]) {
     const petType = sanitizePetType(row.pet_type)
     const stage = Number.isFinite(Number(row.stage)) ? Number(row.stage) : null
-    const meta: ProductMeta = { pet_type: petType, stage }
+    const expectedConsumptionDays = normalizeExpectedConsumptionDays(row.expected_consumption_days)
+    if (expectedConsumptionDays !== null) hasConfiguredExpectedConsumptionDays = true
+    const meta: ProductMeta = {
+      pet_type: petType,
+      stage,
+      expected_consumption_days: expectedConsumptionDays,
+    }
     map[String(row.product_id)] = {
       pet_type: petType,
       stage,
+      expected_consumption_days: expectedConsumptionDays,
     }
 
     const rawName = String(row.product_name || '').trim()
@@ -597,6 +712,7 @@ async function loadProductMeta() {
   }
   productMetaById.value = map
   productMetaByName.value = nameMap
+  hasExpectedConsumptionConfig.value = hasConfiguredExpectedConsumptionDays
 }
 
 async function fetchCustomers() {
@@ -612,7 +728,7 @@ async function fetchCustomers() {
     const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
     const baseColumns = 'purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month'
     for (let from = 0; ; from += DB_FETCH_PAGE_SIZE) {
-      let query = supabase
+      const query = supabase
         .from('purchases')
         .select(purchaseSelectColumns(baseColumns, includeSourceColumns))
         .not('filter_ver', 'is', null)
@@ -621,8 +737,6 @@ async function fetchCustomers() {
         .order('order_date', { ascending: false })
         .order('purchase_id', { ascending: false })
         .range(from, from + DB_FETCH_PAGE_SIZE - 1)
-
-      if (monthSnapshot !== 'all') query = query.eq('target_month', monthSnapshot)
 
       const { data, error } = await query
       if (error) {
@@ -637,11 +751,23 @@ async function fetchCustomers() {
     }
 
     const rows = collected as PurchaseRow[]
+    const scopeRows = monthSnapshot === 'all'
+      ? rows
+      : rows.filter((row) => row.target_month === monthSnapshot)
+
     if (requestSeq === customersFetchSeq.value) {
-      customerPurchaseRows.value = rows
+      customerPurchaseRows.value = scopeRows
     }
-    const grouped = new Map<string, PurchaseRow[]>()
+
+    const groupedAll = new Map<string, PurchaseRow[]>()
     for (const row of rows) {
+      const key = row.customer_key || `${row.buyer_id}_${row.buyer_name}`
+      if (!groupedAll.has(key)) groupedAll.set(key, [])
+      groupedAll.get(key)!.push(row)
+    }
+
+    const grouped = new Map<string, PurchaseRow[]>()
+    for (const row of scopeRows) {
       const key = row.customer_key || `${row.buyer_id}_${row.buyer_name}`
       if (!grouped.has(key)) grouped.set(key, [])
       grouped.get(key)!.push(row)
@@ -649,6 +775,7 @@ async function fetchCustomers() {
 
     const result: CustomerRow[] = []
     for (const [customerKey, customerRows] of grouped.entries()) {
+      const historyRows = groupedAll.get(customerKey) || customerRows
       const sorted = [...customerRows].sort((a, b) => parseOrderDate(b.order_date).getTime() - parseOrderDate(a.order_date).getTime())
       const latest = sorted[0]
       if (!latest) continue
@@ -660,20 +787,30 @@ async function fetchCustomers() {
         return sum + count
       }, 0)
       const productStats = buildCustomerProductStats(customerRows)
+      const lifecycle = derivePurchaseIntensity(historyRows)
+      const churn = computeChurnRisk(historyRows.map((row) => ({
+        orderDate: row.order_date,
+        expectedConsumptionDays: hasExpectedConsumptionConfig.value ? resolveExpectedConsumptionDays(row) : null,
+      })))
 
-      const lastOrder = String(latest.order_date || '').slice(0, 10)
       result.push({
         customerKey,
         name: latest.buyer_name || '-',
         id: latest.buyer_id || '-',
         buyerName: latest.buyer_name || '',
         buyerId: latest.buyer_id || '',
-        petType: derivePetType(customerRows),
-        stage: deriveStage(customerRows),
+        petType: derivePetType(historyRows),
+        stage: deriveStage(historyRows),
+        purchaseMonthCount: lifecycle.purchaseMonthCount,
+        purchaseIntensity: lifecycle.purchaseIntensity,
+        recentPurchaseDayCount: lifecycle.recentPurchaseDayCount,
         purchaseCount,
         productCount,
-        lastOrder,
-        churnRisk: daysFromNow(lastOrder) > 90,
+        lastOrder: churn.lastOrderDate || String(latest.order_date || '').slice(0, 10),
+        daysSinceLastOrder: churn.daysSinceLastOrder,
+        churnRisk: churn.churnRisk,
+        churnStatus: churn.status,
+        churnExpectedConsumptionDays: churn.expectedConsumptionDays,
         productStats,
         purchaseWeeks: Array.from(new Set(customerRows.map((row) => (
           monthSnapshot !== 'all'
@@ -770,14 +907,17 @@ function matchingProductPurchaseCount(customer: CustomerRow): number {
 
 const filteredCustomers = computed(() => {
   return customers.value.filter((c) => {
-    if (!matchesSearchQuery(searchQuery.value, c.name, c.id, c.buyerName, c.buyerId)) return false
+    if (!matchesSearchQuery(searchQuery.value, c.name, c.id, c.buyerName, c.buyerId, stageLabel(c.stage), intensityLabel(c.purchaseIntensity), churnLabel(c.churnStatus))) return false
     if (hasProductFilter.value) {
       if (matchedProductStats(c).length === 0) return false
     }
     if (filterPetType.value && c.petType !== filterPetType.value) return false
     if (filterStage.value && c.stage !== filterStage.value) return false
-    if (filterChurn.value === 'true' && !c.churnRisk) return false
-    if (filterChurn.value === 'false' && c.churnRisk) return false
+    if (filterPurchaseIntensity.value && c.purchaseIntensity !== filterPurchaseIntensity.value) return false
+    const churnStatus = effectiveChurnStatus(c.churnStatus)
+    if (filterChurn.value === 'true' && churnStatus !== 'Risk') return false
+    if (filterChurn.value === 'false' && churnStatus !== 'Normal') return false
+    if (filterChurn.value === 'excluded' && churnStatus !== 'Excluded') return false
     if (filterPurchaseCount.value) {
       const minCount = Number(filterPurchaseCount.value)
       if (Number.isFinite(minCount) && c.purchaseCount < minCount) return false
@@ -851,7 +991,11 @@ const activeFilters = computed(() => {
   const petMap: Record<string, string> = { DOG: '강아지', CAT: '고양이', BOTH: '모두' }
   if (filterPetType.value) filters.push({ key: 'petType', label: `펫: ${petMap[filterPetType.value]}` })
   if (filterStage.value) filters.push({ key: 'stage', label: `단계: ${customerStageLabel(filterStage.value)}` })
-  if (filterChurn.value) filters.push({ key: 'churn', label: filterChurn.value === 'true' ? '이탈 위험' : '정상' })
+  if (filterPurchaseIntensity.value) filters.push({ key: 'purchaseIntensity', label: `강도: ${intensityLabel(filterPurchaseIntensity.value as PurchaseIntensityCode)}` })
+  if (filterChurn.value) {
+    const churnMap: Record<string, string> = { true: '이탈 위험', false: '정상', excluded: '판단 제외' }
+    filters.push({ key: 'churn', label: churnMap[filterChurn.value] || '이탈 위험' })
+  }
   if (filterPurchaseCount.value) {
     const label = filterPurchaseCount.value === '1' ? '구매: 1회 이상' : `구매: ${filterPurchaseCount.value}회 이상`
     filters.push({ key: 'purchaseCount', label })
@@ -871,6 +1015,7 @@ function clearFilter(key: string) {
     productName: filterProductName,
     petType: filterPetType,
     stage: filterStage,
+    purchaseIntensity: filterPurchaseIntensity,
     churn: filterChurn,
     purchaseCount: filterPurchaseCount,
     week: filterWeek,
@@ -884,6 +1029,7 @@ function clearAllFilters() {
   filterProductName.value = ''
   filterPetType.value = ''
   filterStage.value = ''
+  filterPurchaseIntensity.value = ''
   filterChurn.value = ''
   filterPurchaseCount.value = ''
   filterWeek.value = ''
@@ -914,8 +1060,11 @@ function applyFiltersFromQuery(query: LocationQuery) {
   const stage = asSingleQueryValue(query.stage)
   filterStage.value = stage === 'Entry' || stage === 'Growth' || stage === 'Core' || stage === 'Premium' ? stage : ''
 
+  const intensity = asSingleQueryValue(query.intensity) || asSingleQueryValue(query.purchaseIntensity)
+  filterPurchaseIntensity.value = ['Dormant', 'Low', 'Medium', 'High', 'VeryHigh'].includes(intensity) ? intensity : ''
+
   const churn = asSingleQueryValue(query.churn)
-  filterChurn.value = churn === 'true' || churn === 'false' ? churn : ''
+  filterChurn.value = churn === 'true' || churn === 'false' || churn === 'excluded' ? churn : ''
 
   const purchaseCount = asSingleQueryValue(query.purchaseCount) || asSingleQueryValue(query.purchase_count)
   filterPurchaseCount.value = ['1', '2', '3', '5', '10'].includes(purchaseCount) ? purchaseCount : ''
@@ -950,6 +1099,8 @@ const managedKeys = new Set([
   'petType',
   'pet',
   'stage',
+  'intensity',
+  'purchaseIntensity',
   'churn',
   'month',
   'purchaseCount',
@@ -970,6 +1121,7 @@ function syncFiltersToQuery() {
   if (filterProductName.value.trim()) next.product = filterProductName.value.trim()
   if (filterPetType.value) next.petType = filterPetType.value
   if (filterStage.value) next.stage = filterStage.value
+  if (filterPurchaseIntensity.value) next.intensity = filterPurchaseIntensity.value
   if (filterChurn.value) next.churn = filterChurn.value
   if (selectedMonth.value !== 'all') next.month = selectedMonth.value
   if (filterPurchaseCount.value) next.purchaseCount = filterPurchaseCount.value
@@ -980,6 +1132,7 @@ function syncFiltersToQuery() {
   delete currentCanonical.search
   delete currentCanonical.productName
   delete currentCanonical.pet
+  delete currentCanonical.purchaseIntensity
   delete currentCanonical.purchaseType
   delete currentCanonical.is_fake
   delete currentCanonical.purchase_count
@@ -1016,7 +1169,7 @@ watch(
 )
 
 watch(
-  [searchQuery, filterProductName, filterPetType, filterStage, filterChurn, filterPurchaseCount, filterWeek, filterOrderDate, selectedMonth],
+  [searchQuery, filterProductName, filterPetType, filterStage, filterPurchaseIntensity, filterChurn, filterPurchaseCount, filterWeek, filterOrderDate, selectedMonth],
   () => {
     currentPage.value = 1
     syncFiltersToQuery()
@@ -1044,6 +1197,14 @@ watch(
       currentPage.value = totalPages.value
     }
   },
+)
+
+watch(
+  () => hasExpectedConsumptionConfig.value,
+  () => {
+    applyChurnConfigGuardToCustomers()
+  },
+  { immediate: true },
 )
 
 watch(
@@ -1078,9 +1239,9 @@ async function openCustomerDetail(customer: CustomerRow) {
 }
 
 function downloadFilteredCustomers() {
-  const header = ['이름', 'ID', '펫타입', '성장단계', '구매횟수', '구매상품수']
+  const header = ['이름', 'ID', '펫타입', '성장단계', '누적구매월', '구매강도', '최근90일 구매일수', '구매횟수', '구매상품수']
   if (hasProductFilter.value) header.push('검색상품 구매횟수')
-  header.push('구매일', '상품명', '옵션', '상품 개수', '최근주문', '이탈위험')
+  header.push('구매일', '상품명', '옵션', '상품 개수', '최근주문', '이탈상태', '이탈기준일수')
 
   const customerMap = new Map(filteredCustomers.value.map((customer) => [customer.customerKey, customer]))
   const productQuery = filterProductName.value.trim()
@@ -1122,6 +1283,9 @@ function downloadFilteredCustomers() {
       customer?.id || row.buyer_id || '-',
       customer?.petType === 'DOG' ? '강아지' : customer?.petType === 'CAT' ? '고양이' : '모두',
       stageLabel(customer?.stage || 'Other'),
+      customer?.purchaseMonthCount || 0,
+      intensityLabel(customer?.purchaseIntensity || 'Dormant'),
+      customer?.recentPurchaseDayCount || 0,
       customer?.purchaseCount || 0,
       customer?.productCount || 0,
       ...(hasProductFilter.value ? [customer ? matchingProductPurchaseCount(customer) : 0] : []),
@@ -1130,7 +1294,8 @@ function downloadFilteredCustomers() {
       purchaseDisplayOptionInfo(row),
       quantity,
       customer?.lastOrder || purchaseDateKey(row),
-      customer?.churnRisk ? '위험' : '정상',
+      churnLabel(customer?.churnStatus || 'Excluded'),
+      customer?.churnExpectedConsumptionDays || '',
     ]
   })
 
@@ -1195,6 +1360,13 @@ onMounted(async () => {
   background: var(--color-primary);
   border-radius: 2px;
   transition: width 0.3s ease;
+}
+
+.detail-value-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 
 .customer-card-list {

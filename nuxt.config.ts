@@ -48,7 +48,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     kakaoRestApiKey: process.env.KAKAO_REST_API_KEY || '',
     public: {
-      pwaVersion: process.env.NUXT_PUBLIC_PWA_VERSION || '2026-03-16-phase1',
+      pwaVersion: process.env.NUXT_PUBLIC_PWA_VERSION || '2026-03-19-churn-risk',
     },
   },
 

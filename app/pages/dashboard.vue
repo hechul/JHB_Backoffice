@@ -46,7 +46,7 @@
       <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers({ churn: 'true' })">
         <KpiCard
           label="이탈 위험 고객"
-          :value="currentMetrics.churnCount"
+          :value="effectiveChurnCount"
           :icon="MoveRight"
           icon-bg="#FEF2F2"
           icon-color="#DC2626"
@@ -141,7 +141,7 @@
         <div class="card-header">
           <div class="dashboard-card-head">
             <h3 class="card-title">고객 성장 단계</h3>
-            <p class="card-caption">상품 Stage 규칙으로 계산한 고객 분포입니다.</p>
+            <p class="card-caption">누적 구매월 수 기준으로 계산한 고객 분포입니다.</p>
           </div>
         </div>
         <div class="stage-bars">
@@ -175,7 +175,7 @@
         <div class="card-header">
           <div>
             <h3 class="card-title">이탈 위험 고객</h3>
-            <p class="card-caption">최근 주문 기준 90일 이상 경과한 실구매 고객입니다.</p>
+            <p class="card-caption">마지막 구매 상품의 예상 소비일을 초과한 실구매 고객입니다.</p>
           </div>
           <StatusBadge :label="churnCountLabel" variant="danger" dot />
         </div>
@@ -185,10 +185,10 @@
             <div class="churn-info">
               <span class="churn-name">{{ c.name }}</span>
               <span class="churn-id">{{ c.id }}</span>
-              <span class="churn-date">최근 주문 {{ c.lastOrder }}</span>
+              <span class="churn-date">최근 주문 {{ c.lastOrder }} · 기준 {{ c.expectedDays }}일</span>
             </div>
             <div class="churn-meta">
-              <span class="churn-days">{{ c.days }}일 경과</span>
+              <span class="churn-days">{{ c.days }}일 경과 · {{ c.overdueDays }}일 초과</span>
               <StatusBadge :label="c.pet" :variant="c.pet === '강아지' ? 'primary' : c.pet === '고양이' ? 'warning' : 'neutral'" />
             </div>
           </div>
@@ -210,7 +210,8 @@ import {
   MoveRight,
 } from 'lucide-vue-next'
 import { Chart, DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler, BarController, BarElement } from 'chart.js'
-import { customerStageLabel, progressiveCustomerStage, productStageLabel } from '~/composables/useGrowthStage'
+import { computeCustomerStage, countDistinctPurchaseMonths, customerStageLabel, productStageLabel } from '~/composables/useGrowthStage'
+import { computeChurnRisk, normalizeExpectedConsumptionDays } from '~/composables/useChurnRisk'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
 import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
 import { buildWeekOptions, weekCodeFromDate, weekDateTokensFromCode, weekLabelFromCode } from '~/composables/useWeekFilter'
@@ -238,16 +239,20 @@ interface PurchaseRow {
 interface ProductMeta {
   pet_type: 'DOG' | 'CAT' | 'BOTH'
   stage: number | null
+  expected_consumption_days: number | null
 }
 
 interface CustomerAgg {
   name: string
   id: string
   petType: 'DOG' | 'CAT' | 'BOTH'
-  stage: 'Entry' | 'Growth' | 'Core' | 'Premium' | 'Other'
+  stage: 'Entry' | 'Growth' | 'Premium' | 'Core' | 'Other'
   purchaseCount: number
   lastOrder: string
   daysSinceLastOrder: number
+  churnRisk: boolean
+  churnExpectedConsumptionDays: number | null
+  churnOverdueDays: number | null
 }
 
 interface DashboardMetrics {
@@ -283,6 +288,8 @@ interface ChurnRow {
   name: string
   id: string
   days: number
+  expectedDays: number
+  overdueDays: number
   pet: string
   lastOrder: string
 }
@@ -314,10 +321,10 @@ const petData = ref<PetDatum[]>([
 ])
 const topProducts = ref<TopProductRow[]>([])
 const stageData = ref<StageDatum[]>([
-  { name: '입문', count: 0, percent: 0 },
+  { name: '신규', count: 0, percent: 0 },
   { name: '성장', count: 0, percent: 0 },
+  { name: '단골', count: 0, percent: 0 },
   { name: '핵심', count: 0, percent: 0 },
-  { name: '프리미엄', count: 0, percent: 0 },
 ])
 const churnData = ref<ChurnRow[]>([])
 const trendLabels = ref<string[]>([])
@@ -331,6 +338,7 @@ const dashboardRows = ref<PurchaseRow[]>([])
 
 const productMetaById = ref<Record<string, ProductMeta>>({})
 const productMetaByName = ref<Record<string, ProductMeta>>({})
+const hasExpectedConsumptionConfig = ref(false)
 
 const dashboardWeekOptions = computed(() => {
   if (selectedMonth.value === 'all') return []
@@ -370,14 +378,27 @@ const dailySalesRangeLabel = computed(() => {
 })
 
 const visibleChurnData = computed(() => {
+  if (!hasExpectedConsumptionConfig.value) return []
   return churnData.value.slice(0, 5)
+})
+
+function resetDashboardChurnState() {
+  currentMetrics.value = {
+    ...currentMetrics.value,
+    churnCount: 0,
+  }
+  churnData.value = []
+}
+
+const effectiveChurnCount = computed(() => {
+  return hasExpectedConsumptionConfig.value ? currentMetrics.value.churnCount : 0
 })
 
 const churnCountLabel = computed(() => {
   if (!dashboardWeekFilter.value || selectedMonth.value === 'all') {
-    return `${currentMetrics.value.churnCount}명`
+    return `${effectiveChurnCount.value}명`
   }
-  return `${weekLabelFromCode(selectedMonth.value, dashboardWeekFilter.value)} · ${currentMetrics.value.churnCount}명`
+  return `${weekLabelFromCode(selectedMonth.value, dashboardWeekFilter.value)} · ${effectiveChurnCount.value}명`
 })
 
 function navigateToCustomers(query: Record<string, string> = {}) {
@@ -401,21 +422,16 @@ function navigateToCustomersBySalesKey(key: string) {
 }
 
 function stageQueryByName(stageName: string): string {
-  if (stageName === '입문') return 'Entry'
+  if (stageName === '신규') return 'Entry'
   if (stageName === '성장') return 'Growth'
+  if (stageName === '단골') return 'Premium'
   if (stageName === '핵심') return 'Core'
-  if (stageName === '프리미엄') return 'Premium'
   return ''
 }
 
 function parseOrderDate(value: string): Date {
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? new Date('1970-01-01') : d
-}
-
-function daysFromNow(dateStr: string): number {
-  const ms = Date.now() - parseOrderDate(dateStr).getTime()
-  return Math.floor(ms / (1000 * 60 * 60 * 24))
 }
 
 function normalizeForMatch(value: string): string {
@@ -510,25 +526,33 @@ function derivePetType(rows: PurchaseRow[]): ProductMeta['pet_type'] {
 }
 
 function deriveCustomerStage(rows: PurchaseRow[]): CustomerAgg['stage'] {
-  const stageByDate = new Map<string, number | null>()
+  const dates = [...new Set(rows.map((row) => purchaseDateKey(row)).filter(Boolean))].sort()
+  if (!dates.length) return 'Other'
+  return computeCustomerStage(countDistinctPurchaseMonths(dates))
+}
 
-  for (const row of rows) {
-    const idKey = String(row.product_id || '').trim()
-    const metaById = idKey ? productMetaById.value[idKey] : null
-    const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
-    const metaByName = nameKey ? productMetaByName.value[nameKey] : null
-    const stage = metaById?.stage ?? metaByName?.stage ?? null
-    const dateKey = purchaseDateKey(row) || String(row.order_date || '').trim() || '1970-01-01'
-    const prevStage = stageByDate.get(dateKey)
-    const nextStage = Math.max(prevStage || 0, stage || 0) || null
-    stageByDate.set(dateKey, nextStage)
+function mergePetType(prev: ProductMeta['pet_type'] | undefined, next: ProductMeta['pet_type']): ProductMeta['pet_type'] {
+  if (!prev) return next
+  if (prev === next) return prev
+  return 'BOTH'
+}
+
+function mergeProductMeta(prev: ProductMeta | undefined, next: ProductMeta): ProductMeta {
+  return {
+    pet_type: mergePetType(prev?.pet_type, next.pet_type),
+    stage: Math.max(prev?.stage || 0, next.stage || 0) || null,
+    expected_consumption_days: Math.max(prev?.expected_consumption_days || 0, next.expected_consumption_days || 0) || null,
   }
+}
 
-  const orderedStages = Array.from(stageByDate.entries())
-    .sort((a, b) => parseOrderDate(a[0]).getTime() - parseOrderDate(b[0]).getTime())
-    .map(([, stage]) => stage)
+function resolveExpectedConsumptionDays(row: Pick<PurchaseRow, 'product_id' | 'product_name'>): number | null {
+  const idKey = String(row.product_id || '').trim()
+  const metaById = idKey ? productMetaById.value[idKey] : null
+  if (metaById?.expected_consumption_days) return metaById.expected_consumption_days
 
-  return progressiveCustomerStage(orderedStages)
+  const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
+  const metaByName = nameKey ? productMetaByName.value[nameKey] : null
+  return metaByName?.expected_consumption_days ?? null
 }
 
 function maskBuyerId(raw: string): string {
@@ -674,19 +698,25 @@ function applyDailySalesSeries(scopeRows: PurchaseRow[], monthSnapshot: string, 
 async function loadProductMeta() {
   const { data, error } = await supabase
     .from('products')
-    .select('product_id, product_name, pet_type, stage')
+    .select('product_id, product_name, pet_type, stage, expected_consumption_days')
     .is('deleted_at', null)
 
   if (error) {
+    productMetaById.value = {}
+    productMetaByName.value = {}
+    hasExpectedConsumptionConfig.value = false
     throw error
   }
 
   const byId: Record<string, ProductMeta> = {}
   const byName: Record<string, ProductMeta> = {}
+  let hasConfiguredExpectedConsumptionDays = false
   for (const row of (data || []) as any[]) {
     const petType = sanitizePetType(row.pet_type)
     const stage = Number.isFinite(Number(row.stage)) ? Number(row.stage) : null
-    const meta = { pet_type: petType, stage }
+    const expectedConsumptionDays = normalizeExpectedConsumptionDays(row.expected_consumption_days)
+    if (expectedConsumptionDays !== null) hasConfiguredExpectedConsumptionDays = true
+    const meta = { pet_type: petType, stage, expected_consumption_days: expectedConsumptionDays }
 
     const productId = String(row.product_id || '').trim()
     if (productId) byId[productId] = meta
@@ -695,15 +725,16 @@ async function loadProductMeta() {
     const canonicalName = normalizeMissionProductName(rawName)
     const normalizedRaw = normalizeForMatch(rawName)
     const normalizedCanonical = normalizeForMatch(canonicalName)
-    if (normalizedRaw) byName[normalizedRaw] = meta
-    if (normalizedCanonical) byName[normalizedCanonical] = meta
+    if (normalizedRaw) byName[normalizedRaw] = mergeProductMeta(byName[normalizedRaw], meta)
+    if (normalizedCanonical) byName[normalizedCanonical] = mergeProductMeta(byName[normalizedCanonical], meta)
   }
 
   productMetaById.value = byId
   productMetaByName.value = byName
+  hasExpectedConsumptionConfig.value = hasConfiguredExpectedConsumptionDays
 }
 
-async function fetchPurchases(month: string): Promise<PurchaseRow[]> {
+async function fetchPurchases(): Promise<PurchaseRow[]> {
   const rows: PurchaseRow[] = []
   const PAGE_SIZE = 1000
   const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
@@ -717,8 +748,6 @@ async function fetchPurchases(month: string): Promise<PurchaseRow[]> {
       .order('order_date', { ascending: false })
       .order('purchase_id', { ascending: false })
       .range(from, from + PAGE_SIZE - 1)
-
-    if (month !== 'all') query = query.eq('target_month', month)
 
     const { data, error } = await query
     if (error) throw error
@@ -746,8 +775,16 @@ async function fetchPurchases(month: string): Promise<PurchaseRow[]> {
   return rows
 }
 
-function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
+function applyDashboardMetrics(scopeRows: PurchaseRow[], allRows: PurchaseRow[]) {
   const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
+  const allRealRows = allRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
+
+  const groupedAll = new Map<string, PurchaseRow[]>()
+  for (const row of allRealRows) {
+    const key = customerGroupKey(row)
+    if (!groupedAll.has(key)) groupedAll.set(key, [])
+    groupedAll.get(key)!.push(row)
+  }
 
   const grouped = new Map<string, PurchaseRow[]>()
   for (const row of realRows) {
@@ -757,27 +794,35 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
   }
 
   const customerAggs: CustomerAgg[] = []
-  for (const customerRows of grouped.values()) {
+  for (const [customerKey, customerRows] of grouped.entries()) {
+    const historyRows = groupedAll.get(customerKey) || customerRows
     const sorted = [...customerRows].sort((a, b) => parseOrderDate(b.order_date).getTime() - parseOrderDate(a.order_date).getTime())
     const latest = sorted[0]
     if (!latest) continue
     const purchaseCount = new Set(customerRows.map((row) => purchaseDateKey(row)).filter(Boolean)).size
     if (purchaseCount <= 0) continue
-    const lastOrder = String(latest.order_date || '').slice(0, 10)
+    const churn = computeChurnRisk(historyRows.map((row) => ({
+      orderDate: row.order_date,
+      expectedConsumptionDays: hasExpectedConsumptionConfig.value ? resolveExpectedConsumptionDays(row) : null,
+    })))
+    const lastOrder = churn.lastOrderDate || String(latest.order_date || '').slice(0, 10)
     customerAggs.push({
       name: latest.buyer_name || '-',
       id: latest.buyer_id || '-',
-      petType: derivePetType(customerRows),
-      stage: deriveCustomerStage(customerRows),
+      petType: derivePetType(historyRows),
+      stage: deriveCustomerStage(historyRows),
       purchaseCount,
       lastOrder,
-      daysSinceLastOrder: daysFromNow(lastOrder),
+      daysSinceLastOrder: churn.daysSinceLastOrder,
+      churnRisk: churn.churnRisk,
+      churnExpectedConsumptionDays: churn.expectedConsumptionDays,
+      churnOverdueDays: churn.overdueDays,
     })
   }
 
   // 재구매 고객: 서로 다른 주문일 기준 2회 이상 구매한 고객
   const repeatCustomers = customerAggs.filter((row) => row.purchaseCount >= 2).length
-  const churnCustomers = customerAggs.filter((row) => row.daysSinceLastOrder > 90)
+  const churnCustomers = customerAggs.filter((row) => row.churnRisk)
 
   currentMetrics.value = {
     realCustomers: customerAggs.length,
@@ -797,10 +842,10 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
   ]
 
   const stageCountMap = {
-    입문: 0,
+    신규: 0,
     성장: 0,
+    단골: 0,
     핵심: 0,
-    프리미엄: 0,
   }
   for (const customer of customerAggs) {
     const stageName = customerStageLabel(customer.stage)
@@ -808,12 +853,12 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
       stageCountMap[stageName as keyof typeof stageCountMap] += 1
     }
   }
-  const stageMax = Math.max(stageCountMap.입문, stageCountMap.성장, stageCountMap.핵심, stageCountMap.프리미엄, 1)
+  const stageMax = Math.max(stageCountMap.신규, stageCountMap.성장, stageCountMap.단골, stageCountMap.핵심, 1)
   stageData.value = [
-    { name: '입문', count: stageCountMap.입문, percent: Math.round((stageCountMap.입문 / stageMax) * 100) },
+    { name: '신규', count: stageCountMap.신규, percent: Math.round((stageCountMap.신규 / stageMax) * 100) },
     { name: '성장', count: stageCountMap.성장, percent: Math.round((stageCountMap.성장 / stageMax) * 100) },
+    { name: '단골', count: stageCountMap.단골, percent: Math.round((stageCountMap.단골 / stageMax) * 100) },
     { name: '핵심', count: stageCountMap.핵심, percent: Math.round((stageCountMap.핵심 / stageMax) * 100) },
-    { name: '프리미엄', count: stageCountMap.프리미엄, percent: Math.round((stageCountMap.프리미엄 / stageMax) * 100) },
   ]
 
   const productMap = new Map<string, {
@@ -870,6 +915,8 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
       name: item.name,
       id: maskBuyerId(item.id),
       days: item.daysSinceLastOrder,
+      expectedDays: item.churnExpectedConsumptionDays || 0,
+      overdueDays: item.churnOverdueDays || 0,
       pet: petLabel(item.petType),
       lastOrder: item.lastOrder,
     }))
@@ -877,18 +924,21 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[]) {
 
 async function fetchDashboardData() {
   const requestSeq = ++dashboardFetchSeq.value
-  const monthSnapshot = selectedMonth.value
   if (!profileLoaded.value) return
   dashboardLoading.value = true
   try {
     await loadProductMeta()
 
-    const sourceRows = await fetchPurchases(monthSnapshot)
+    const sourceRows = await fetchPurchases()
 
     if (requestSeq !== dashboardFetchSeq.value) return
     dashboardRows.value = sourceRows
   } catch (error: any) {
     console.error('Failed to fetch dashboard data:', error)
+    if (requestSeq === dashboardFetchSeq.value) {
+      dashboardRows.value = []
+      resetDashboardChurnState()
+    }
     toast.error(`대시보드 데이터를 불러오지 못했습니다: ${error?.message || '알 수 없는 오류'}`)
   } finally {
     if (requestSeq === dashboardFetchSeq.value) {
@@ -900,12 +950,14 @@ async function fetchDashboardData() {
 function applyDashboardScope() {
   const monthSnapshot = selectedMonth.value
   const weekSnapshot = monthSnapshot !== 'all' ? dashboardWeekFilter.value : ''
-  const sourceRows = dashboardRows.value
+  const monthRows = monthSnapshot === 'all'
+    ? dashboardRows.value
+    : dashboardRows.value.filter((row) => row.target_month === monthSnapshot)
   const scopeRows = monthSnapshot !== 'all' && weekSnapshot
-    ? sourceRows.filter((row) => weekCodeFromDate(row.order_date, monthSnapshot) === weekSnapshot)
-    : sourceRows
+    ? monthRows.filter((row) => weekCodeFromDate(row.order_date, monthSnapshot) === weekSnapshot)
+    : monthRows
 
-  applyDashboardMetrics(scopeRows)
+  applyDashboardMetrics(scopeRows, dashboardRows.value)
   applyTrendSeries(scopeRows, monthSnapshot, weekSnapshot)
   applyDailySalesSeries(scopeRows, monthSnapshot, weekSnapshot)
 }
@@ -1099,6 +1151,17 @@ watch(
   () => {
     applyDashboardScope()
   },
+)
+
+watch(
+  () => hasExpectedConsumptionConfig.value,
+  () => {
+    if (!hasExpectedConsumptionConfig.value) {
+      resetDashboardChurnState()
+      applyDashboardScope()
+    }
+  },
+  { immediate: true },
 )
 
 watch(

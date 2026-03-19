@@ -32,6 +32,7 @@ Supabase Auth(`auth.users`)와 1:1 연결. 회원가입 시 트리거로 자동 
 | `option_name` | varchar | ○ | — | 상품 옵션. 예: `북어`, `연어`, `치킨`, `브라이트`, `클린펫`, `컬러: 퍼플` 등. 같은 상품명이라도 옵션이 다르면 별도 행으로 관리 |
 | `pet_type` | varchar | ✕ | `'BOTH'` | 대상 반려동물. `DOG` / `CAT` / `BOTH`. `/customers` 펫타입 집계에 사용 |
 | `stage` | integer | ○ | — | 성장 단계 (1~4). 1=입문, 2=성장, 3=심화, 4=프리미엄. NULL이면 `기타`로 표시 |
+| `expected_consumption_days` | integer | ○ | — | 예상 소비일. 운영자가 상품별로 직접 입력하며, 고객 이탈 위험 판정 시 마지막 구매일 기준으로 사용 |
 | `product_line` | varchar | ○ | — | 상품 라인 (자유 입력). 예: `간식`, `영양제`, `모래` 등 그룹핑용 |
 | `deleted_at` | timestamptz | ○ | — | Soft Delete 시각. NULL이면 활성 상품. 값이 있으면 논리 삭제 상태 |
 | `created_at` | timestamptz | ✕ | `now()` | 상품 등록 시각 |

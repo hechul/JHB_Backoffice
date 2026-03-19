@@ -1,5 +1,15 @@
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
-import { customerStageLabel, progressiveCustomerStage, productStageLabel, type CustomerStageCode } from '~/composables/useGrowthStage'
+import { computeChurnRisk, normalizeExpectedConsumptionDays } from '~/composables/useChurnRisk'
+import {
+  computeCustomerStage,
+  computePurchaseIntensity,
+  countDistinctPurchaseMonths,
+  countRecentPurchaseDays,
+  customerStageLabel,
+  productStageLabel,
+  type CustomerStageCode,
+  type PurchaseIntensityCode,
+} from '~/composables/useGrowthStage'
 import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
 
 export interface GrowthPurchaseRow {
@@ -23,6 +33,7 @@ export interface GrowthPurchaseRow {
 export interface GrowthProductMeta {
   pet_type: 'DOG' | 'CAT' | 'BOTH'
   stage: number | null
+  expected_consumption_days: number | null
 }
 
 export interface GrowthTransition {
@@ -43,8 +54,13 @@ export interface GrowthCustomerInsight {
   petType: 'DOG' | 'CAT' | 'BOTH'
   stage: CustomerStageCode
   purchaseCount: number
+  purchaseMonthCount: number
+  recentPurchaseDayCount: number
+  purchaseIntensity: PurchaseIntensityCode
+  firstOrder: string
   lastOrder: string
   daysSinceLastOrder: number
+  churnRisk: boolean
   transitions: GrowthTransition[]
 }
 
@@ -54,8 +70,10 @@ export interface GrowthStageSummary {
   count: number
   ratio: number
   repeatCustomers: number
+  highIntensityCustomers: number
   churnCustomers: number
   avgPurchaseCount: number
+  avgRecentPurchaseDays: number
 }
 
 export interface GrowthTransitionSummary {
@@ -85,6 +103,8 @@ export interface GrowthStageCandidate {
   name: string
   id: string
   purchaseCount: number
+  purchaseMonthCount: number
+  purchaseIntensity: PurchaseIntensityCode
   lastOrder: string
   pet: string
 }
@@ -108,16 +128,11 @@ export interface GrowthInsightsResult {
 }
 
 const DB_FETCH_PAGE_SIZE = 1000
-const STAGE_ORDER: CustomerStageCode[] = ['Entry', 'Growth', 'Core', 'Premium']
+const STAGE_ORDER: CustomerStageCode[] = ['Entry', 'Growth', 'Premium', 'Core']
 
 function parseOrderDate(value: string): Date {
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? new Date('1970-01-01') : d
-}
-
-function daysFromNow(dateStr: string): number {
-  const ms = Date.now() - parseOrderDate(dateStr).getTime()
-  return Math.floor(ms / (1000 * 60 * 60 * 24))
 }
 
 function normalizeForMatch(value: string): string {
@@ -171,6 +186,7 @@ function mergeProductMeta(prev: GrowthProductMeta | undefined, next: GrowthProdu
   return {
     pet_type: mergePetType(prev?.pet_type, next.pet_type),
     stage: Math.max(prev?.stage || 0, next.stage || 0) || null,
+    expected_consumption_days: Math.max(prev?.expected_consumption_days || 0, next.expected_consumption_days || 0) || null,
   }
 }
 
@@ -198,6 +214,20 @@ function purchaseDateKey(row: Pick<GrowthPurchaseRow, 'order_date'>): string {
   return String(row.order_date || '').slice(0, 10)
 }
 
+function resolveExpectedConsumptionDays(
+  row: Pick<GrowthPurchaseRow, 'product_id' | 'product_name'>,
+  metaById: Record<string, GrowthProductMeta>,
+  metaByName: Record<string, GrowthProductMeta>,
+): number | null {
+  const idKey = String(row.product_id || '').trim()
+  const metaByProductId = idKey ? metaById[idKey] : null
+  if (metaByProductId?.expected_consumption_days) return metaByProductId.expected_consumption_days
+
+  const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
+  const metaByProductName = nameKey ? metaByName[nameKey] : null
+  return metaByProductName?.expected_consumption_days ?? null
+}
+
 function derivePetType(rows: GrowthPurchaseRow[], metaById: Record<string, GrowthProductMeta>, metaByName: Record<string, GrowthProductMeta>): GrowthProductMeta['pet_type'] {
   let hasDog = false
   let hasCat = false
@@ -220,60 +250,27 @@ function derivePetType(rows: GrowthPurchaseRow[], metaById: Record<string, Growt
   return 'BOTH'
 }
 
-function buildStageJourney(rows: GrowthPurchaseRow[], metaById: Record<string, GrowthProductMeta>, metaByName: Record<string, GrowthProductMeta>) {
-  const stageByDate = new Map<string, number | null>()
+function buildStageJourney(sortedDates: string[]) {
+  if (!sortedDates.length) return { finalStage: 'Other' as CustomerStageCode, transitions: [] }
 
-  for (const row of rows) {
-    const idKey = String(row.product_id || '').trim()
-    const metaByProductId = idKey ? metaById[idKey] : null
-    const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
-    const metaByProductName = nameKey ? metaByName[nameKey] : null
-    const stage = metaByProductId?.stage ?? metaByProductName?.stage ?? null
-    const dateKey = purchaseDateKey(row) || String(row.order_date || '').trim() || '1970-01-01'
-    const prevStage = stageByDate.get(dateKey)
-    stageByDate.set(dateKey, Math.max(prevStage || 0, stage || 0) || null)
-  }
-
-  const orderedEvents = Array.from(stageByDate.entries())
-    .sort((a, b) => parseOrderDate(a[0]).getTime() - parseOrderDate(b[0]).getTime())
-    .map(([date, stage]) => ({ date, stage }))
-
-  const orderedStages = orderedEvents.map((event) => event.stage)
-  const finalStage = progressiveCustomerStage(orderedStages)
-
-  let currentStage = 1
-  let hasPurchase = false
   const transitions: Array<{ date: string; fromStage: CustomerStageCode; toStage: CustomerStageCode }> = []
+  let prevStage: CustomerStageCode = 'Other'
+  const seenMonths = new Set<string>()
 
-  for (const event of orderedEvents) {
-    const observedStage = Number.isFinite(Number(event.stage)) ? Number(event.stage) : null
+  for (const date of sortedDates) {
+    const monthToken = String(date || '').slice(0, 7)
+    if (!monthToken) continue
+    seenMonths.add(monthToken)
 
-    if (!hasPurchase) {
-      hasPurchase = true
-      currentStage = 1
-      continue
+    const stage = computeCustomerStage(seenMonths.size)
+    if (prevStage !== 'Other' && stage !== prevStage) {
+      transitions.push({ date, fromStage: prevStage, toStage: stage })
     }
-
-    if (currentStage === 1 && observedStage !== null && observedStage >= 2) {
-      transitions.push({ date: event.date, fromStage: 'Entry', toStage: 'Growth' })
-      currentStage = 2
-      continue
-    }
-
-    if (currentStage === 2 && observedStage !== null && observedStage >= 3) {
-      transitions.push({ date: event.date, fromStage: 'Growth', toStage: 'Core' })
-      currentStage = 3
-      continue
-    }
-
-    if (currentStage === 3 && observedStage !== null && observedStage >= 4) {
-      transitions.push({ date: event.date, fromStage: 'Core', toStage: 'Premium' })
-      currentStage = 4
-    }
+    prevStage = stage
   }
 
   return {
-    finalStage,
+    finalStage: prevStage === 'Other' ? ('Entry' as CustomerStageCode) : prevStage,
     transitions,
   }
 }
@@ -281,18 +278,21 @@ function buildStageJourney(rows: GrowthPurchaseRow[], metaById: Record<string, G
 async function loadProductMeta(supabase: any) {
   const { data, error } = await supabase
     .from('products')
-    .select('product_id, product_name, pet_type, stage')
+    .select('product_id, product_name, pet_type, stage, expected_consumption_days')
     .is('deleted_at', null)
 
   if (error) throw error
 
   const byId: Record<string, GrowthProductMeta> = {}
   const byName: Record<string, GrowthProductMeta> = {}
+  let hasExpectedConsumptionConfig = false
 
   for (const row of (data || []) as any[]) {
     const petType = sanitizePetType(row.pet_type)
     const stage = Number.isFinite(Number(row.stage)) ? Number(row.stage) : null
-    const meta: GrowthProductMeta = { pet_type: petType, stage }
+    const expectedConsumptionDays = normalizeExpectedConsumptionDays(row.expected_consumption_days)
+    if (expectedConsumptionDays !== null) hasExpectedConsumptionConfig = true
+    const meta: GrowthProductMeta = { pet_type: petType, stage, expected_consumption_days: expectedConsumptionDays }
 
     const productId = String(row.product_id || '').trim()
     if (productId) byId[productId] = meta
@@ -306,10 +306,10 @@ async function loadProductMeta(supabase: any) {
     if (canonicalNameKey) byName[canonicalNameKey] = mergeProductMeta(byName[canonicalNameKey], meta)
   }
 
-  return { byId, byName }
+  return { byId, byName, hasExpectedConsumptionConfig }
 }
 
-async function fetchRealPurchases(supabase: any, month: string): Promise<GrowthPurchaseRow[]> {
+async function fetchRealPurchases(supabase: any): Promise<GrowthPurchaseRow[]> {
   const rows: GrowthPurchaseRow[] = []
   const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
   const baseColumns = 'purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month, is_fake, needs_review, filter_ver'
@@ -324,8 +324,6 @@ async function fetchRealPurchases(supabase: any, month: string): Promise<GrowthP
       .order('order_date', { ascending: true })
       .order('purchase_id', { ascending: true })
       .range(from, from + DB_FETCH_PAGE_SIZE - 1)
-
-    if (month !== 'all') query = query.eq('target_month', month)
 
     const { data, error } = await query
     if (error) throw error
@@ -356,13 +354,24 @@ async function fetchRealPurchases(supabase: any, month: string): Promise<GrowthP
 }
 
 export async function fetchGrowthInsights(supabase: any, month: string): Promise<GrowthInsightsResult> {
-  const [{ byId, byName }, rows] = await Promise.all([
+  const [{ byId, byName, hasExpectedConsumptionConfig }, rows] = await Promise.all([
     loadProductMeta(supabase),
-    fetchRealPurchases(supabase, month),
+    fetchRealPurchases(supabase),
   ])
 
-  const grouped = new Map<string, GrowthPurchaseRow[]>()
+  const scopeRows = month === 'all'
+    ? rows
+    : rows.filter((row) => row.target_month === month)
+
+  const groupedAll = new Map<string, GrowthPurchaseRow[]>()
   for (const row of rows) {
+    const key = customerGroupKey(row)
+    if (!groupedAll.has(key)) groupedAll.set(key, [])
+    groupedAll.get(key)!.push(row)
+  }
+
+  const grouped = new Map<string, GrowthPurchaseRow[]>()
+  for (const row of scopeRows) {
     const key = customerGroupKey(row)
     if (!grouped.has(key)) grouped.set(key, [])
     grouped.get(key)!.push(row)
@@ -372,22 +381,31 @@ export async function fetchGrowthInsights(supabase: any, month: string): Promise
   const recentTransitions: GrowthTransition[] = []
   const transitionCounts = new Map<string, number>([
     ['Entry->Growth', 0],
-    ['Growth->Core', 0],
-    ['Core->Premium', 0],
+    ['Growth->Premium', 0],
+    ['Premium->Core', 0],
   ])
   const productBuckets = new Map<CustomerStageCode, Map<string, GrowthTopProduct>>(
     STAGE_ORDER.map((stage) => [stage, new Map()]),
   )
 
   for (const [key, customerRows] of grouped.entries()) {
-    const sortedRows = [...customerRows].sort((a, b) => parseOrderDate(a.order_date).getTime() - parseOrderDate(b.order_date).getTime())
-    const latest = [...customerRows].sort((a, b) => parseOrderDate(b.order_date).getTime() - parseOrderDate(a.order_date).getTime())[0]
+    const historyRows = groupedAll.get(key) || customerRows
+    const latest = [...historyRows].sort((a, b) => parseOrderDate(b.order_date).getTime() - parseOrderDate(a.order_date).getTime())[0]
     if (!latest) continue
 
-    const purchaseCount = new Set(customerRows.map((row) => purchaseDateKey(row)).filter(Boolean)).size
-    const lastOrder = String(latest.order_date || '').slice(0, 10)
-    const petType = derivePetType(customerRows, byId, byName)
-    const { finalStage, transitions } = buildStageJourney(sortedRows, byId, byName)
+    const sortedDates = [...new Set(historyRows.map((row) => purchaseDateKey(row)).filter(Boolean))].sort()
+    const purchaseCount = sortedDates.length
+    const purchaseMonthCount = countDistinctPurchaseMonths(sortedDates)
+    const recentPurchaseDayCount = countRecentPurchaseDays(sortedDates)
+    const purchaseIntensity = computePurchaseIntensity(recentPurchaseDayCount)
+    const firstOrder = sortedDates[0] || ''
+    const lastOrder = sortedDates[sortedDates.length - 1] || String(latest.order_date || '').slice(0, 10)
+    const petType = derivePetType(historyRows, byId, byName)
+    const { finalStage, transitions } = buildStageJourney(sortedDates)
+    const churn = computeChurnRisk(historyRows.map((row) => ({
+      orderDate: row.order_date,
+      expectedConsumptionDays: hasExpectedConsumptionConfig ? resolveExpectedConsumptionDays(row, byId, byName) : null,
+    })))
 
     const customerTransitions = transitions.map((transition) => ({
       customerKey: key,
@@ -413,8 +431,13 @@ export async function fetchGrowthInsights(supabase: any, month: string): Promise
       petType,
       stage: finalStage,
       purchaseCount,
+      purchaseMonthCount,
+      recentPurchaseDayCount,
+      purchaseIntensity,
+      firstOrder,
       lastOrder,
-      daysSinceLastOrder: daysFromNow(lastOrder),
+      daysSinceLastOrder: churn.daysSinceLastOrder,
+      churnRisk: churn.churnRisk,
       transitions: customerTransitions,
     })
 
@@ -455,17 +478,21 @@ export async function fetchGrowthInsights(supabase: any, month: string): Promise
       count,
       ratio: customers.length > 0 ? Math.round((count / customers.length) * 100) : 0,
       repeatCustomers: stageCustomers.filter((customer) => customer.purchaseCount >= 2).length,
-      churnCustomers: stageCustomers.filter((customer) => customer.daysSinceLastOrder > 90).length,
+      highIntensityCustomers: stageCustomers.filter((customer) => customer.purchaseIntensity === 'High' || customer.purchaseIntensity === 'VeryHigh').length,
+      churnCustomers: stageCustomers.filter((customer) => customer.churnRisk).length,
       avgPurchaseCount: count > 0
         ? Math.round((stageCustomers.reduce((sum, customer) => sum + customer.purchaseCount, 0) / count) * 10) / 10
+        : 0,
+      avgRecentPurchaseDays: count > 0
+        ? Math.round((stageCustomers.reduce((sum, customer) => sum + customer.recentPurchaseDayCount, 0) / count) * 10) / 10
         : 0,
     }
   })
 
   const transitions: GrowthTransitionSummary[] = [
-    { key: 'Entry->Growth', label: '입문 → 성장', count: transitionCounts.get('Entry->Growth') || 0, fromStage: 'Entry', toStage: 'Growth' },
-    { key: 'Growth->Core', label: '성장 → 핵심', count: transitionCounts.get('Growth->Core') || 0, fromStage: 'Growth', toStage: 'Core' },
-    { key: 'Core->Premium', label: '핵심 → 프리미엄', count: transitionCounts.get('Core->Premium') || 0, fromStage: 'Core', toStage: 'Premium' },
+    { key: 'Entry->Growth', label: '신규 → 성장', count: transitionCounts.get('Entry->Growth') || 0, fromStage: 'Entry', toStage: 'Growth' },
+    { key: 'Growth->Premium', label: '성장 → 단골', count: transitionCounts.get('Growth->Premium') || 0, fromStage: 'Growth', toStage: 'Premium' },
+    { key: 'Premium->Core', label: '단골 → 핵심', count: transitionCounts.get('Premium->Core') || 0, fromStage: 'Premium', toStage: 'Core' },
   ]
 
   const stageProducts = STAGE_ORDER.map((stage) => ({
@@ -480,50 +507,56 @@ export async function fetchGrowthInsights(supabase: any, month: string): Promise
     {
       stage: 'Entry',
       label: '성장 승급 후보',
-      description: '입문 단계에 머물러 있지만 반복 구매가 있어 다음 단계 전환 가능성이 높은 고객입니다.',
+      description: '구매월 수 2개월로 성장 단계(3개월) 직전인 고객입니다. 한 달만 더 재구매하면 단계가 올라갑니다.',
       customers: customers
-        .filter((customer) => customer.stage === 'Entry' && customer.purchaseCount >= 2)
-        .sort((a, b) => b.purchaseCount - a.purchaseCount || parseOrderDate(b.lastOrder).getTime() - parseOrderDate(a.lastOrder).getTime())
+        .filter((customer) => customer.stage === 'Entry' && customer.purchaseMonthCount === 2)
+        .sort((a, b) => parseOrderDate(b.lastOrder).getTime() - parseOrderDate(a.lastOrder).getTime())
         .slice(0, 8)
         .map((customer) => ({
           customerKey: customer.customerKey,
           name: customer.name,
           id: customer.id,
           purchaseCount: customer.purchaseCount,
+          purchaseMonthCount: customer.purchaseMonthCount,
+          purchaseIntensity: customer.purchaseIntensity,
           lastOrder: customer.lastOrder,
           pet: petLabel(customer.petType),
         })),
     },
     {
       stage: 'Growth',
-      label: '핵심 승급 후보',
-      description: '성장 단계 고객 중 재구매가 누적된 고객입니다. 핵심 상품 제안 대상으로 볼 수 있습니다.',
+      label: '단골 승급 후보',
+      description: '구매월 수 5개월로 단골 단계(6개월) 직전인 고객입니다. 한 달만 더 재구매하면 단계 전환됩니다.',
       customers: customers
-        .filter((customer) => customer.stage === 'Growth' && customer.purchaseCount >= 2)
-        .sort((a, b) => b.purchaseCount - a.purchaseCount || parseOrderDate(b.lastOrder).getTime() - parseOrderDate(a.lastOrder).getTime())
+        .filter((customer) => customer.stage === 'Growth' && customer.purchaseMonthCount === 5)
+        .sort((a, b) => parseOrderDate(b.lastOrder).getTime() - parseOrderDate(a.lastOrder).getTime())
         .slice(0, 8)
         .map((customer) => ({
           customerKey: customer.customerKey,
           name: customer.name,
           id: customer.id,
           purchaseCount: customer.purchaseCount,
+          purchaseMonthCount: customer.purchaseMonthCount,
+          purchaseIntensity: customer.purchaseIntensity,
           lastOrder: customer.lastOrder,
           pet: petLabel(customer.petType),
         })),
     },
     {
-      stage: 'Core',
-      label: '프리미엄 승급 후보',
-      description: '핵심 단계에서 반복 구매 중인 고객입니다. 프리미엄 상품이 정의되면 바로 확장 대상입니다.',
+      stage: 'Premium',
+      label: '핵심 승급 후보',
+      description: '구매월 수 11개월인 단골 고객입니다. 한 달만 더 재구매하면 핵심 단계로 올라갑니다.',
       customers: customers
-        .filter((customer) => customer.stage === 'Core' && customer.purchaseCount >= 2)
-        .sort((a, b) => b.purchaseCount - a.purchaseCount || parseOrderDate(b.lastOrder).getTime() - parseOrderDate(a.lastOrder).getTime())
+        .filter((customer) => customer.stage === 'Premium' && customer.purchaseMonthCount === 11)
+        .sort((a, b) => parseOrderDate(b.lastOrder).getTime() - parseOrderDate(a.lastOrder).getTime())
         .slice(0, 8)
         .map((customer) => ({
           customerKey: customer.customerKey,
           name: customer.name,
           id: customer.id,
           purchaseCount: customer.purchaseCount,
+          purchaseMonthCount: customer.purchaseMonthCount,
+          purchaseIntensity: customer.purchaseIntensity,
           lastOrder: customer.lastOrder,
           pet: petLabel(customer.petType),
         })),
@@ -540,15 +573,15 @@ export async function fetchGrowthInsights(supabase: any, month: string): Promise
     candidates,
     customers: customers.sort((a, b) => parseOrderDate(b.lastOrder).getTime() - parseOrderDate(a.lastOrder).getTime()),
     totalCustomers: customers.length,
-    realPurchases: rows.length,
+    realPurchases: scopeRows.length,
   }
 }
 
 export function growthStageBadgeVariant(stage: CustomerStageCode): 'primary' | 'info' | 'warning' | 'success' | 'neutral' {
   if (stage === 'Entry') return 'neutral'
   if (stage === 'Growth') return 'primary'
-  if (stage === 'Core') return 'info'
-  if (stage === 'Premium') return 'success'
+  if (stage === 'Premium') return 'info'
+  if (stage === 'Core') return 'success'
   return 'neutral'
 }
 

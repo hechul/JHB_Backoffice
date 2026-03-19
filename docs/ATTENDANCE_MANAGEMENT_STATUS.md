@@ -76,6 +76,28 @@
   - `SUPABASE_SERVICE_KEY` deprecation warning
 - 이번 변경은 UI/UX 및 화면 보강 중심이며 로그인/회원가입 로직은 수정하지 않음
 
+## 롤백 기준점
+
+- 기준일: 2026-03-13 (Asia/Seoul)
+- 기준 커밋: `5e1cc86`
+- 기준 상태: 현재 워크트리 clean 상태를 근태 UI/UX 추가 개선 전 롤백 기준점으로 사용
+- 롤백 원칙:
+  - 로그인/회원가입, 매출분석, 자동화 영역은 건드리지 않음
+  - 근태 관련 변경은 attendance 범위 파일에서만 진행
+  - 롤백이 필요하면 아래 명령으로 attendance 범위만 기준 커밋 상태로 복원 가능
+
+```bash
+git restore --source 5e1cc86 -- \
+  app/layouts/attendance.vue \
+  app/pages/attendance \
+  app/composables/useAttendance.ts \
+  docs/ATTENDANCE_MANAGEMENT_STATUS.md
+```
+
+```bash
+git diff -- app/layouts/attendance.vue app/pages/attendance app/composables/useAttendance.ts
+```
+
 ## 운영 메모
 
 - 현재 근태 변경은 attendance 범위에만 한정되어 있음
