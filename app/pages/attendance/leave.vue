@@ -3,6 +3,7 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">휴가 · 반차 신청</h1>
+        <div class="page-subtitle">모바일에서는 빠르게 신청하고, 내역은 카드로 바로 확인할 수 있습니다.</div>
       </div>
       <input v-model="selectedMonth" type="month" class="input month-input" />
     </div>
@@ -28,6 +29,16 @@
       <div class="card form-card">
         <div class="section-head">
           <h2>신청하기</h2>
+        </div>
+
+        <div class="leave-draft-card">
+          <span class="leave-draft-label">지금 신청 예정</span>
+          <strong class="leave-draft-title">{{ leaveDraftTypeLabel }}</strong>
+          <div class="leave-draft-meta">
+            <span>{{ leaveDraftPeriodLabel }}</span>
+            <span v-if="leaveForm.reason">{{ leaveForm.reason }}</span>
+            <span v-else>사유는 비워둘 수 있습니다.</span>
+          </div>
         </div>
 
         <div class="form-grid">
@@ -69,27 +80,42 @@
           <h2>신청 내역</h2>
         </div>
         <div v-if="visibleLeaveRequests.length === 0" class="table-empty">해당 월 신청 내역이 없습니다.</div>
-        <div v-else class="table-wrap">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>유형</th>
-                <th>기간</th>
-                <th>상태</th>
-                <th>사유</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in visibleLeaveRequests" :key="row.id">
-                <td>{{ getLeaveTypeLabel(row.leave_type) }}</td>
-                <td>{{ row.start_date }}<span v-if="row.end_date !== row.start_date"> ~ {{ row.end_date }}</span></td>
-                <td>
-                  <span class="status-chip" :class="getLeaveStatusClass(row.status)">{{ getLeaveStatusLabel(row.status) }}</span>
-                </td>
-                <td>{{ row.reason || '-' }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-else class="leave-history-content">
+          <div class="leave-history-cards">
+            <article v-for="row in visibleLeaveRequests" :key="`card-${row.id}`" class="leave-history-card">
+              <div class="leave-history-head">
+                <strong class="leave-history-type">{{ getLeaveTypeLabel(row.leave_type) }}</strong>
+                <span class="status-chip" :class="getLeaveStatusClass(row.status)">{{ getLeaveStatusLabel(row.status) }}</span>
+              </div>
+              <div class="leave-history-period">
+                {{ row.start_date }}<span v-if="row.end_date !== row.start_date"> ~ {{ row.end_date }}</span>
+              </div>
+              <div class="leave-history-reason">{{ row.reason || '사유 없음' }}</div>
+            </article>
+          </div>
+
+          <div class="table-wrap desktop-history-table">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>유형</th>
+                  <th>기간</th>
+                  <th>상태</th>
+                  <th>사유</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in visibleLeaveRequests" :key="row.id">
+                  <td>{{ getLeaveTypeLabel(row.leave_type) }}</td>
+                  <td>{{ row.start_date }}<span v-if="row.end_date !== row.start_date"> ~ {{ row.end_date }}</span></td>
+                  <td>
+                    <span class="status-chip" :class="getLeaveStatusClass(row.status)">{{ getLeaveStatusLabel(row.status) }}</span>
+                  </td>
+                  <td>{{ row.reason || '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </template>
@@ -135,6 +161,14 @@ const leaveSummaryCards = computed(() => {
     { label: '승인 완료', value: `${countBy('approved')}건`, tone: 'summary-tone-green', icon: CheckCircle2 },
     { label: '반려', value: `${countBy('rejected')}건`, tone: 'summary-tone-red', icon: XCircle },
   ]
+})
+
+const leaveDraftTypeLabel = computed(() => getLeaveTypeLabel(leaveForm.leave_type))
+
+const leaveDraftPeriodLabel = computed(() => {
+  if (!leaveForm.start_date) return '날짜를 선택하세요.'
+  if (!leaveForm.end_date || leaveForm.end_date === leaveForm.start_date) return leaveForm.start_date
+  return `${leaveForm.start_date} ~ ${leaveForm.end_date}`
 })
 
 function isMissingTableError(error: any) {
@@ -288,6 +322,44 @@ watch(selectedMonth, async () => {
   gap: var(--space-lg);
 }
 
+.leave-draft-card {
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.leave-draft-label {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.leave-draft-title {
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+
+.leave-draft-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.leave-draft-meta span {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -384,6 +456,49 @@ watch(selectedMonth, async () => {
   color: var(--color-text-secondary);
 }
 
+.leave-history-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.leave-history-cards {
+  display: none;
+}
+
+.leave-history-card {
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.leave-history-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.leave-history-type {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.leave-history-period {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.leave-history-reason {
+  padding-top: 10px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.22);
+  line-height: 1.5;
+}
+
 @media (max-width: 768px) {
   .page-header,
   .section-head {
@@ -391,12 +506,26 @@ watch(selectedMonth, async () => {
     align-items: stretch;
   }
 
+  .page-subtitle,
   .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: none;
   }
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .form-actions :deep(.btn) {
+    width: 100%;
+  }
+
+  .desktop-history-table {
+    display: none;
+  }
+
+  .leave-history-cards {
+    display: grid;
+    gap: 12px;
   }
 }
 </style>

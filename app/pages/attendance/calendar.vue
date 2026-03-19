@@ -1,5 +1,5 @@
 <template>
-  <div class="calendar-page">
+  <div class="calendar-page" :class="{ 'viewer-mode': !isAdmin }">
     <div class="page-header">
       <div>
         <h1 class="page-title">월별 근태 캘린더</h1>
@@ -57,6 +57,14 @@
         <button v-if="selectedCalendarDate" type="button" class="btn btn-ghost btn-sm" @click="openDateModal(selectedCalendarDate)">선택한 날짜 다시 보기</button>
       </div>
 
+      <div v-if="selectedCalendarDate" class="calendar-selected-banner">
+        <div class="calendar-selected-copy">
+          <span class="calendar-selected-label">선택한 날짜</span>
+          <strong>{{ selectedCalendarDateLabel }}</strong>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" @click="openDateModal(selectedCalendarDate)">상세 보기</button>
+      </div>
+
       <div class="calendar-legend">
         <span class="legend-item"><span class="legend-dot legend-working"></span>근무</span>
         <span class="legend-item"><span class="legend-dot legend-late"></span>지각</span>
@@ -64,36 +72,63 @@
         <span class="legend-item"><span class="legend-dot legend-absent"></span>결근</span>
       </div>
 
-      <div class="calendar-grid">
-        <div v-for="weekday in calendarWeekdayLabels" :key="weekday" class="calendar-weekday">{{ weekday }}</div>
-        <button
-          v-for="cell in calendarCells"
-          :key="cell.date"
-          type="button"
-          class="calendar-day"
-          :class="{ outside: !cell.inMonth, selected: cell.date === selectedCalendarDate, today: cell.date === todayDate }"
-          :disabled="!cell.inMonth"
-          @click="openDateModal(cell.date)"
-        >
-          <div class="calendar-day-head">
-            <span class="calendar-day-number">{{ cell.dayNumber }}</span>
-            <span v-if="cell.totalCount > 0" class="calendar-day-total">{{ cell.totalCount }}</span>
+      <div v-if="!isAdmin" class="calendar-mobile-week-list">
+        <section v-for="week in mobileCalendarWeeks" :key="week.key" class="calendar-mobile-week-card">
+          <div class="calendar-mobile-week-head">
+            <strong>{{ week.label }}</strong>
           </div>
-          <template v-if="isAdmin">
-            <div class="calendar-day-stats">
-              <span class="calendar-stat present">근무 {{ cell.presentCount }}</span>
-              <span class="calendar-stat late">지각 {{ cell.lateCount }}</span>
-              <span class="calendar-stat leave">휴가 {{ cell.leaveCount }}</span>
-              <span class="calendar-stat absent">결근 {{ cell.absentCount }}</span>
-            </div>
-          </template>
-          <template v-else>
-            <div class="calendar-day-single">
+          <button
+            v-for="cell in week.days"
+            :key="`mobile-${cell.date}`"
+            type="button"
+            class="calendar-mobile-day-row"
+            :class="{ today: cell.date === todayDate, selected: cell.date === selectedCalendarDate }"
+            @click="openDateModal(cell.date)"
+          >
+            <div class="calendar-mobile-day-main">
+              <div class="calendar-mobile-day-date">
+                <span>{{ cell.weekdayLabel }}</span>
+                <strong>{{ cell.shortLabel }}</strong>
+              </div>
               <span class="status-chip" :class="cell.status.className">{{ cell.status.label }}</span>
-              <span class="calendar-single-note">{{ cell.timeLabel }}</span>
             </div>
-          </template>
-        </button>
+            <div class="calendar-mobile-day-time">{{ cell.timeLabel }}</div>
+          </button>
+        </section>
+      </div>
+
+      <div class="calendar-scroll-shell">
+        <div class="calendar-grid">
+          <div v-for="weekday in calendarWeekdayLabels" :key="weekday" class="calendar-weekday">{{ weekday }}</div>
+          <button
+            v-for="cell in calendarCells"
+            :key="cell.date"
+            type="button"
+            class="calendar-day"
+            :class="{ outside: !cell.inMonth, selected: cell.date === selectedCalendarDate, today: cell.date === todayDate }"
+            :disabled="!cell.inMonth"
+            @click="openDateModal(cell.date)"
+          >
+            <div class="calendar-day-head">
+              <span class="calendar-day-number">{{ cell.dayNumber }}</span>
+              <span v-if="cell.totalCount > 0" class="calendar-day-total">{{ cell.totalCount }}</span>
+            </div>
+            <template v-if="isAdmin">
+              <div class="calendar-day-stats">
+                <span class="calendar-stat present">근무 {{ cell.presentCount }}</span>
+                <span class="calendar-stat late">지각 {{ cell.lateCount }}</span>
+                <span class="calendar-stat leave">휴가 {{ cell.leaveCount }}</span>
+                <span class="calendar-stat absent">결근 {{ cell.absentCount }}</span>
+              </div>
+            </template>
+            <template v-else>
+              <div class="calendar-day-single">
+                <span class="status-chip" :class="cell.status.className">{{ cell.status.label }}</span>
+                <span class="calendar-single-note">{{ cell.timeLabel }}</span>
+              </div>
+            </template>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -321,6 +356,11 @@ function getWeekStart(dateKey: string) {
 function formatMonthLabel(monthKey: string) {
   const [year, month] = String(monthKey || '').split('-')
   return `${year}년 ${Number(month || 0)}월`
+}
+
+function formatMonthDayLabel(dateKey: string) {
+  const [, month = '', day = ''] = String(dateKey || '').split('-')
+  return `${month}.${day}`
 }
 
 function isMissingTableError(error: any, tableName: string) {
@@ -552,6 +592,42 @@ const calendarCells = computed(() => {
   }
 
   return cells
+})
+
+const mobileCalendarWeeks = computed(() => {
+  if (isAdmin.value) return []
+
+  const weeks: Array<{
+    key: string
+    label: string
+    days: Array<{
+      date: string
+      status: { label: string, className: string, code?: string }
+      timeLabel: string
+      weekdayLabel: string
+      shortLabel: string
+    }>
+  }> = []
+
+  for (let index = 0; index < calendarCells.value.length; index += 7) {
+    const slice = calendarCells.value.slice(index, index + 7)
+    const days = slice.filter((cell) => cell.inMonth)
+    if (!days.length) continue
+
+    weeks.push({
+      key: slice[0]?.date || `week-${index}`,
+      label: `${weeks.length + 1}주차 · ${formatMonthDayLabel(days[0].date)} ~ ${formatMonthDayLabel(days[days.length - 1].date)}`,
+      days: days.map((cell) => ({
+        date: cell.date,
+        status: cell.status,
+        timeLabel: cell.timeLabel,
+        weekdayLabel: calendarWeekdayLabels[(parseDateKey(cell.date).getDay() + 6) % 7],
+        shortLabel: formatMonthDayLabel(cell.date),
+      })),
+    })
+  }
+
+  return weeks
 })
 
 const selectedCalendarDateLabel = computed(() => {
@@ -1217,6 +1293,108 @@ function handleEscape(event: KeyboardEvent) {
   gap: 10px;
 }
 
+.calendar-selected-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.calendar-selected-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calendar-selected-label {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.calendar-scroll-shell {
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+
+.calendar-scroll-shell::-webkit-scrollbar {
+  display: none;
+}
+
+.calendar-mobile-week-list {
+  display: none;
+}
+
+.calendar-mobile-week-card {
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.calendar-mobile-week-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.calendar-mobile-day-row {
+  padding: 12px 0 0;
+  border-top: 1px dashed rgba(148, 163, 184, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  background: transparent;
+  appearance: none;
+  outline: none;
+}
+
+.calendar-mobile-day-row:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.calendar-mobile-day-row.today {
+  color: #1d4ed8;
+}
+
+.calendar-mobile-day-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.calendar-mobile-day-date {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.calendar-mobile-day-date span {
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+}
+
+.calendar-mobile-day-date strong {
+  font-size: 0.98rem;
+  font-weight: 800;
+}
+
+.calendar-mobile-day-time {
+  color: var(--color-text-secondary);
+  font-size: 0.88rem;
+}
+
 .legend-item {
   display: inline-flex;
   align-items: center;
@@ -1561,7 +1739,7 @@ function handleEscape(event: KeyboardEvent) {
   }
 
   .calendar-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 860px;
   }
 }
 
@@ -1598,8 +1776,33 @@ function handleEscape(event: KeyboardEvent) {
     min-width: 0;
   }
 
+  .viewer-mode .summary-grid,
+  .viewer-mode .calendar-legend,
+  .viewer-mode .calendar-scroll-shell {
+    display: none;
+  }
+
+  .viewer-mode .calendar-mobile-week-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .calendar-selected-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .calendar-grid {
-    grid-template-columns: 1fr;
+    min-width: 820px;
+  }
+
+  .calendar-day {
+    min-height: 116px;
+  }
+
+  .calendar-day-stats {
+    gap: 4px;
   }
 }
 </style>

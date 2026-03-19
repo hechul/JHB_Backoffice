@@ -1,7 +1,7 @@
 <template>
   <div class="home-page">
     <div class="welcome">
-      <p class="welcome-greeting">JHBioFarm</p>
+      <p class="welcome-greeting">{{ greeting }}, {{ user.name }}님</p>
       <h1 class="welcome-title">업무를 선택하세요</h1>
     </div>
 
@@ -46,7 +46,15 @@ import {
 
 definePageMeta({ layout: 'home' })
 
-const { isViewer, isAdmin } = useCurrentUser()
+const { isViewer, isAdmin, user } = useCurrentUser()
+
+const greeting = computed(() => {
+  const h = new Date().getHours()
+  if (h < 12) return '좋은 아침이에요'
+  if (h < 18) return '안녕하세요'
+  if (h < 22) return '좋은 저녁이에요'
+  return '좋은 밤이에요'
+})
 </script>
 
 <style scoped>
@@ -67,10 +75,10 @@ const { isViewer, isAdmin } = useCurrentUser()
 }
 
 .welcome-greeting {
-  font-size: 0.9rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--color-text-secondary);
   margin-bottom: var(--space-xs);
 }
 

@@ -13,6 +13,7 @@
       <div class="page-header">
         <div>
           <h1 class="page-title">휴가 승인</h1>
+          <div class="page-subtitle">모바일에서는 대기 건을 먼저 보고, 카드에서 바로 승인 또는 반려할 수 있습니다.</div>
         </div>
         <div class="page-actions">
           <input v-model="selectedMonth" type="month" class="input month-input" />
@@ -31,6 +32,14 @@
             <span class="summary-label">{{ item.label }}</span>
             <strong class="summary-value">{{ item.value }}</strong>
           </div>
+        </div>
+
+        <div class="approval-focus-banner">
+          <div class="approval-focus-copy">
+            <span class="approval-focus-label">현재 보기</span>
+            <strong>{{ currentStatusFilterLabel }}</strong>
+          </div>
+          <span class="approval-focus-count">{{ visibleRequests.length }}건</span>
         </div>
 
         <div class="card table-card">
@@ -149,6 +158,11 @@ const summaryCards = computed(() => {
     { label: '승인 완료', value: `${countBy('approved')}건`, tone: 'tone-green' },
     { label: '반려', value: `${countBy('rejected')}건`, tone: 'tone-red' },
   ]
+})
+
+const currentStatusFilterLabel = computed(() => {
+  const entry = statusFilters.find((filter) => filter.value === selectedStatusFilter.value)
+  return entry?.label || '전체'
 })
 
 function splitEmailLoginId(email: string) {
@@ -314,6 +328,41 @@ watch(selectedMonth, async () => {
 .page-subtitle {
   margin-top: 4px;
   color: var(--color-text-muted);
+}
+
+.approval-focus-banner {
+  padding: 15px 18px;
+  border-radius: 20px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.approval-focus-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.approval-focus-label {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.approval-focus-count {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  font-size: 0.84rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .page-actions {
@@ -530,6 +579,17 @@ watch(selectedMonth, async () => {
   .approval-card-list,
   .approval-metric-grid {
     grid-template-columns: 1fr;
+  }
+
+  .approval-focus-banner,
+  .approval-card-head,
+  .approval-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .approval-actions :deep(.btn) {
+    width: 100%;
   }
 }
 </style>

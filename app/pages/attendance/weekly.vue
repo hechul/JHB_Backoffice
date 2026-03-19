@@ -1,5 +1,5 @@
 <template>
-  <div class="weekly-page">
+  <div class="weekly-page" :class="{ 'viewer-mode': !isAdmin }">
     <div class="page-header">
       <div>
         <h1 class="page-title">{{ isAdmin ? '주별 근태 기록' : '내 근태 기록' }}</h1>
@@ -131,43 +131,45 @@
             </div>
           </div>
 
-          <div class="weekly-day-grid">
-            <article
-              v-for="cell in row.days"
-              :key="`${row.profile_id}-${cell.date}`"
-              class="weekly-day-card"
-              :class="[dayCardTone(cell.status.code), { muted: !cell.inMonth, today: cell.date === todayDate }]"
-            >
-              <div class="weekly-day-head">
-                <div>
-                  <div class="day-card-weekday">{{ getWeekdayLabel(cell.date) }}</div>
-                  <strong class="day-card-date">{{ formatCardDate(cell.date) }}</strong>
+          <div class="weekly-day-scroll">
+            <div class="weekly-day-grid">
+              <article
+                v-for="cell in row.days"
+                :key="`${row.profile_id}-${cell.date}`"
+                class="weekly-day-card"
+                :class="[dayCardTone(cell.status.code), { muted: !cell.inMonth, today: cell.date === todayDate }]"
+              >
+                <div class="weekly-day-head">
+                  <div>
+                    <div class="day-card-weekday">{{ getWeekdayLabel(cell.date) }}</div>
+                    <strong class="day-card-date">{{ formatCardDate(cell.date) }}</strong>
+                  </div>
+                  <span class="status-chip" :class="cell.status.className">{{ cell.status.label }}</span>
                 </div>
-                <span class="status-chip" :class="cell.status.className">{{ cell.status.label }}</span>
-              </div>
-              <div class="weekly-day-body">
-                <span class="weekly-day-time">{{ cell.timeLabel }}</span>
-                <span class="weekly-day-note">{{ cell.note }}</span>
-              </div>
-              <div v-if="cell.recordId" class="weekly-day-actions">
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-sm"
-                  :disabled="savingRecordId === cell.recordId || deletingRecordId === cell.recordId"
-                  @click.stop="openWeeklyEditModal(row, cell)"
-                >
-                  수정
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-sm btn-danger"
-                  :disabled="deletingRecordId === cell.recordId || savingRecordId === cell.recordId"
-                  @click.stop="openWeeklyDeleteModal(row, cell)"
-                >
-                  삭제
-                </button>
-              </div>
-            </article>
+                <div class="weekly-day-body">
+                  <span class="weekly-day-time">{{ cell.timeLabel }}</span>
+                  <span class="weekly-day-note">{{ cell.note }}</span>
+                </div>
+                <div v-if="cell.recordId" class="weekly-day-actions">
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    :disabled="savingRecordId === cell.recordId || deletingRecordId === cell.recordId"
+                    @click.stop="openWeeklyEditModal(row, cell)"
+                  >
+                    수정
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm btn-danger"
+                    :disabled="deletingRecordId === cell.recordId || savingRecordId === cell.recordId"
+                    @click.stop="openWeeklyDeleteModal(row, cell)"
+                  >
+                    삭제
+                  </button>
+                </div>
+              </article>
+            </div>
           </div>
         </article>
       </div>
@@ -1338,6 +1340,16 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
 }
 
+.weekly-day-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+
+.weekly-day-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 .weekly-day-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -1524,7 +1536,8 @@ onBeforeUnmount(() => {
   }
 
   .weekly-day-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 840px;
+    grid-template-columns: repeat(7, minmax(108px, 1fr));
   }
 
   .weekly-self-row,
@@ -1545,8 +1558,62 @@ onBeforeUnmount(() => {
     gap: 12px;
   }
 
+  .weekly-day-card {
+    min-height: 132px;
+  }
+
+  .weekly-day-actions {
+    flex-direction: column;
+  }
+
+  .weekly-day-actions :deep(.btn) {
+    width: 100%;
+  }
+
   .search-input {
     min-width: 0;
+  }
+
+  .viewer-mode .summary-grid {
+    display: none;
+  }
+
+  .viewer-mode .weekly-self-row {
+    grid-template-columns: 88px minmax(0, 1fr);
+    grid-template-areas:
+      "date status"
+      "main main"
+      "duration duration";
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .viewer-mode .weekly-self-date {
+    grid-area: date;
+  }
+
+  .viewer-mode .weekly-self-status {
+    grid-area: status;
+    justify-content: flex-end;
+    align-self: start;
+  }
+
+  .viewer-mode .weekly-self-main {
+    grid-area: main;
+  }
+
+  .viewer-mode .weekly-self-duration {
+    grid-area: duration;
+    justify-self: start;
+  }
+
+  .viewer-mode .weekly-self-meta {
+    gap: 6px;
+  }
+
+  .viewer-mode .weekly-self-meta-pill {
+    min-height: 28px;
+    font-size: 0.78rem;
   }
 
   .modal-backdrop {

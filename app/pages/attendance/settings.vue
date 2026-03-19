@@ -23,37 +23,65 @@
       </div>
 
       <div class="card form-card">
-        <div class="form-grid">
-          <label class="field">
-            <span>기본 출근 시간</span>
-            <input v-model="form.work_start_time" type="time" class="input" :disabled="saving || tableMissing" />
-          </label>
+        <section class="settings-group">
+          <div class="settings-group-head">
+            <h2>출퇴근 기준</h2>
+            <p>하루 기본 시작과 종료 시각입니다.</p>
+          </div>
+          <div class="form-grid">
+            <label class="field">
+              <span>기본 출근 시간</span>
+              <input v-model="form.work_start_time" type="time" class="input" :disabled="saving || tableMissing" />
+              <small class="field-help">직원 출근 판정의 기준 시각입니다.</small>
+            </label>
 
-          <label class="field">
-            <span>기본 퇴근 시간</span>
-            <input v-model="form.work_end_time" type="time" class="input" :disabled="saving || tableMissing" />
-          </label>
+            <label class="field">
+              <span>기본 퇴근 시간</span>
+              <input v-model="form.work_end_time" type="time" class="input" :disabled="saving || tableMissing" />
+              <small class="field-help">정상 퇴근 기준으로 사용됩니다.</small>
+            </label>
+          </div>
+        </section>
 
-          <label class="field">
-            <span>지각 허용 분</span>
-            <input v-model.number="form.late_grace_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
-          </label>
+        <section class="settings-group">
+          <div class="settings-group-head">
+            <h2>판정 기준</h2>
+            <p>지각과 조퇴를 언제부터 볼지 정합니다.</p>
+          </div>
+          <div class="form-grid">
+            <label class="field">
+              <span>지각 허용 분</span>
+              <input v-model.number="form.late_grace_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
+              <small class="field-help">이 분까지는 지각으로 보지 않습니다.</small>
+            </label>
 
-          <label class="field">
-            <span>조퇴 기준 분</span>
-            <input v-model.number="form.early_leave_grace_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
-          </label>
+            <label class="field">
+              <span>조퇴 기준 분</span>
+              <input v-model.number="form.early_leave_grace_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
+              <small class="field-help">이 분 이상 일찍 퇴근하면 조퇴로 봅니다.</small>
+            </label>
+          </div>
+        </section>
 
-          <label class="field">
-            <span>점심 차감 분</span>
-            <input v-model.number="form.lunch_break_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
-          </label>
+        <section class="settings-group">
+          <div class="settings-group-head">
+            <h2>근무시간 기준</h2>
+            <p>자동 집계에 반영할 휴게시간과 기준 근무시간입니다.</p>
+          </div>
+          <div class="form-grid">
+            <label class="field">
+              <span>점심 차감 분</span>
+              <input v-model.number="form.lunch_break_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
+              <small class="field-help">자동 계산 시 점심시간으로 차감할 분입니다.</small>
+            </label>
 
-          <label class="field">
-            <span>기준 근무시간(분)</span>
-            <input v-model.number="form.standard_work_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
-          </label>
-        </div>
+            <label class="field">
+              <span>기준 근무시간(분)</span>
+              <input v-model.number="form.standard_work_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
+              <small class="field-help">하루 기준 근무시간으로 사용할 값입니다.</small>
+            </label>
+          </div>
+        </section>
 
         <div class="form-actions">
           <button class="btn btn-primary" :disabled="saving || tableMissing" @click="saveSettings">저장</button>
@@ -192,6 +220,33 @@ watch(
   gap: var(--space-lg);
 }
 
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-group + .settings-group {
+  padding-top: 4px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.22);
+}
+
+.settings-group-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-group-head h2 {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.settings-group-head p {
+  color: var(--color-text-secondary);
+  font-size: 0.88rem;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -210,6 +265,12 @@ watch(
   color: var(--color-text);
 }
 
+.field-help {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;
@@ -218,6 +279,10 @@ watch(
 @media (max-width: 768px) {
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .form-actions :deep(.btn) {
+    width: 100%;
   }
 }
 </style>

@@ -70,6 +70,13 @@
             {{ filter.label }}
           </button>
         </div>
+        <div class="admin-focus-strip">
+          <div class="admin-focus-copy">
+            <span class="admin-focus-label">현재 보기</span>
+            <strong>{{ currentStatusFilterLabel }}</strong>
+          </div>
+          <span class="admin-focus-count">{{ filteredTodayRows.length }}명</span>
+        </div>
         <div v-if="filteredTodayRows.length === 0" class="table-empty">표시할 오늘 근태가 없습니다.</div>
         <div v-else class="today-card-grid">
           <article
@@ -380,6 +387,11 @@ const adminStatusFilters = [
   { label: '퇴근 완료', value: 'done' },
   { label: '휴가/반차', value: 'leave' },
 ] as const
+
+const currentStatusFilterLabel = computed(() => {
+  const entry = adminStatusFilters.find((filter) => filter.value === selectedStatusFilter.value)
+  return entry?.label || '전체'
+})
 
 const lastRefreshedLabel = computed(() => {
   if (!lastRefreshedAt.value) return ''
@@ -1064,6 +1076,41 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
+.admin-focus-strip {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-focus-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-focus-label {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.admin-focus-count {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  font-size: 0.82rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .status-filter-chip {
   min-height: 38px;
   padding: 0 14px;
@@ -1174,6 +1221,31 @@ onBeforeUnmount(() => {
   .today-card-action-buttons {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .today-metric-grid {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(140px, 62vw);
+    overflow-x: auto;
+    padding: 2px 2px 8px;
+    margin: 0 -2px;
+    scrollbar-width: none;
+  }
+
+  .today-metric-grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  .today-note-row,
+  .absent-banner,
+  .admin-focus-strip {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .today-note-value {
+    text-align: left;
   }
 
   .search-input {

@@ -102,6 +102,23 @@
       </main>
     </div>
 
+    <nav class="mobile-quick-nav" aria-label="근태 빠른 이동">
+      <NuxtLink
+        v-for="item in mobileQuickNavItems"
+        :key="`mobile-${item.path}`"
+        :to="item.path"
+        class="mobile-quick-link"
+        :class="{ active: isActive(item.path) }"
+        @click="mobileMenuOpen = false"
+      >
+        <span class="mobile-quick-icon-wrap">
+          <component :is="item.icon" :size="18" :stroke-width="1.9" />
+        </span>
+        <span class="mobile-quick-label">{{ item.label }}</span>
+        <span v-if="item.badge" class="mobile-quick-badge">{{ item.badge }}</span>
+      </NuxtLink>
+    </nav>
+
     <ToastContainer />
   </div>
 </template>
@@ -157,6 +174,30 @@ const attendanceMenuItems = computed(() => {
     { path: '/attendance/leave', label: '휴가 · 반차 신청', icon: Umbrella },
     { path: '/attendance/weekly', label: '주별 근태 기록', icon: ListChecks },
     { path: '/attendance/calendar', label: '월별 근태 캘린더', icon: CalendarRange },
+  ]
+})
+
+const mobileQuickNavItems = computed(() => {
+  if (isAdmin.value) {
+    return [
+      { path: '/attendance/records', label: '출퇴근', icon: Clock3 },
+      { path: '/attendance/admin', label: '금일', icon: ClipboardCheck },
+      {
+        path: '/attendance/leave-approvals',
+        label: '승인',
+        icon: Umbrella,
+        badge: pendingLeaveApprovalCount.value > 0 ? String(pendingLeaveApprovalCount.value) : '',
+      },
+      { path: '/attendance/weekly', label: '주별', icon: ListChecks },
+      { path: '/attendance/calendar', label: '월별', icon: CalendarRange },
+    ]
+  }
+
+  return [
+    { path: '/attendance/records', label: '출퇴근', icon: Clock3 },
+    { path: '/attendance/leave', label: '휴가', icon: Umbrella },
+    { path: '/attendance/weekly', label: '주별', icon: ListChecks },
+    { path: '/attendance/calendar', label: '월별', icon: CalendarRange },
   ]
 })
 
@@ -875,6 +916,10 @@ onBeforeUnmount(() => {
   color: var(--color-text-muted);
 }
 
+.mobile-quick-nav {
+  display: none;
+}
+
 .content-shell :deep(.section-head),
 .content-shell :deep(.compact-head),
 .content-shell :deep(.mini-week-head) {
@@ -1260,12 +1305,163 @@ onBeforeUnmount(() => {
   }
 
   .content {
-    padding: var(--space-md);
+    padding: var(--space-md) var(--space-md) calc(96px + env(safe-area-inset-bottom));
   }
 
   .content-shell::before {
     inset: -20px 2% auto;
     height: 160px;
+  }
+
+  .mobile-quick-nav {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    z-index: 95;
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.86);
+    background: rgba(255, 255, 255, 0.84);
+    box-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
+    backdrop-filter: blur(calc(var(--liquid-blur) + 10px)) saturate(170%);
+    -webkit-backdrop-filter: blur(calc(var(--liquid-blur) + 10px)) saturate(170%);
+  }
+
+  .mobile-quick-link {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 4px 7px;
+    border-radius: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    color: var(--color-text-muted);
+    position: relative;
+    transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+  }
+
+  .mobile-quick-link.active {
+    background: linear-gradient(160deg, rgba(236, 244, 255, 0.96) 0%, rgba(221, 234, 254, 0.84) 100%);
+    color: var(--color-sidebar-text-active);
+  }
+
+  .mobile-quick-link:active {
+    transform: scale(0.98);
+  }
+
+  .mobile-quick-icon-wrap {
+    width: 34px;
+    height: 34px;
+    border-radius: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.92);
+    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.05);
+  }
+
+  .mobile-quick-link.active .mobile-quick-icon-wrap {
+    background: rgba(255, 255, 255, 0.94);
+    border-color: rgba(191, 219, 254, 0.96);
+  }
+
+  .mobile-quick-label {
+    max-width: 100%;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mobile-quick-badge {
+    position: absolute;
+    top: 4px;
+    right: calc(50% - 24px);
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: linear-gradient(160deg, #4f8fff 0%, #2563eb 100%);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 16px rgba(37, 99, 235, 0.2);
+  }
+}
+
+@media (max-width: 768px) {
+  .content-shell :deep(.summary-grid) {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(168px, 76vw);
+    overflow-x: auto;
+    gap: 12px;
+    padding: 2px 2px 8px;
+    margin: 0 -2px;
+    scrollbar-width: none;
+  }
+
+  .content-shell :deep(.summary-grid::-webkit-scrollbar) {
+    display: none;
+  }
+
+  .content-shell :deep(.status-filter-row),
+  .content-shell :deep(.week-nav),
+  .content-shell :deep(.calendar-tools) {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+
+  .content-shell :deep(.status-filter-row::-webkit-scrollbar),
+  .content-shell :deep(.week-nav::-webkit-scrollbar),
+  .content-shell :deep(.calendar-tools::-webkit-scrollbar) {
+    display: none;
+  }
+
+  .content-shell :deep(.status-filter-chip),
+  .content-shell :deep(.week-nav .btn),
+  .content-shell :deep(.calendar-tools .btn) {
+    flex: 0 0 auto;
+  }
+
+  .content-shell :deep(.page-header),
+  .content-shell :deep(.records-header),
+  .content-shell :deep(.admin-header),
+  .content-shell :deep(.settings-header) {
+    padding: 16px 18px;
+    border-radius: 24px;
+  }
+
+  .content-shell :deep(.modal-backdrop),
+  .content-shell :deep(.detail-modal) {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .content-shell :deep(.confirm-modal),
+  .content-shell :deep(.leave-modal),
+  .content-shell :deep(.detail-dialog) {
+    width: 100%;
+    max-width: none;
+    max-height: min(88vh, 920px);
+    margin-top: auto;
+    border-radius: 26px 26px 0 0;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
   }
 }
 </style>

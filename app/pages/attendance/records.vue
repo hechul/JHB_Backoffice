@@ -765,11 +765,6 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 
-.records-subtitle {
-  color: var(--color-text-secondary);
-  font-size: 0.94rem;
-}
-
 .records-header-btn {
   min-height: 40px;
   white-space: nowrap;
@@ -1194,8 +1189,23 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
+  .records-header-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
   .today-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(148px, 72vw);
+    overflow-x: auto;
+    padding: 2px 2px 8px;
+    margin: 0 -2px;
+    scrollbar-width: none;
+  }
+
+  .today-grid::-webkit-scrollbar {
+    display: none;
   }
 
   .action-main,
@@ -1214,6 +1224,21 @@ onBeforeUnmount(() => {
 
   .session-state {
     align-self: flex-start;
+  }
+
+  .today-item {
+    min-height: 96px;
+  }
+
+  .session-list {
+    max-height: 248px;
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+  }
+
+  .session-item {
+    padding: 13px 14px;
   }
 
   .modal-backdrop {
