@@ -202,6 +202,7 @@ import {
   Home,
   BarChart3,
   TrendingUp,
+  LineChart,
   Package,
   CalendarDays,
   ChevronLeft,
@@ -221,12 +222,13 @@ const { selectedMonth, selectedPeriodLabel, availableMonths, monthsLoading, mont
 const sidebarCollapsed = ref(false)
 const mobileMenuOpen = ref(false)
 const periodSelectorRef = ref<HTMLElement | null>(null)
-const periodEnabledPaths = ['/dashboard', '/growth-stages', '/customers', '/logs', '/upload', '/filter']
+const periodEnabledPaths = ['/dashboard', '/growth-stages', '/product-trends', '/customers', '/logs', '/upload', '/filter']
 
 const analysisMenuItems = computed(() => {
   return [
     { path: '/dashboard', label: '대시보드', icon: BarChart3, disabled: false },
     { path: '/growth-stages', label: '고객 성장 단계', icon: TrendingUp, disabled: false },
+    { path: '/product-trends', label: '상품 구매 추이', icon: LineChart, disabled: false },
   ]
 })
 
@@ -250,6 +252,7 @@ const allMenuItems = computed(() => {
   const items = [
     { path: '/dashboard', label: '대시보드', group: '매출분석' },
     { path: '/growth-stages', label: '고객 성장 단계', group: '매출분석' },
+    { path: '/product-trends', label: '상품 구매 추이', group: '매출분석' },
     { path: '/customers', label: '고객 분석', group: '고객 관리' },
     { path: '/logs', label: '실행 이력', group: '고객 관리' },
   ]
@@ -257,6 +260,7 @@ const allMenuItems = computed(() => {
   return [
     { path: '/dashboard', label: '대시보드', group: '매출분석' },
     { path: '/growth-stages', label: '고객 성장 단계', group: '매출분석' },
+    { path: '/product-trends', label: '상품 구매 추이', group: '매출분석' },
     { path: '/customers', label: '고객 분석', group: '고객 관리' },
     { path: '/upload', label: '데이터 업로드', group: '고객 관리' },
     { path: '/filter', label: '필터링', group: '고객 관리' },

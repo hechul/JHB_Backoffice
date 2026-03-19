@@ -59,7 +59,7 @@
         <div class="card-header">
           <div class="dashboard-card-head">
             <h3 class="card-title">{{ trendTitle }}</h3>
-            <p class="card-caption">선택한 기간 기준 실구매 건수 흐름을 한눈에 확인합니다.</p>
+            <p class="card-caption">차트는 실구매 건수만 보여주고, 아래에서 구간 간 변화율을 바로 읽을 수 있게 정리했습니다.</p>
           </div>
           <StatusBadge :label="trendRangeLabel" variant="neutral" />
         </div>
@@ -67,6 +67,26 @@
           <div class="trend-chart-area">
             <canvas ref="trendChartCanvas"></canvas>
           </div>
+        </div>
+        <div class="trend-growth-strip">
+          <div class="trend-growth-summary">
+            <span class="trend-growth-heading">구간별 성장률</span>
+            <span class="trend-growth-caption">라벨 사이 숫자로 바로 읽을 수 있게 붙였습니다.</span>
+          </div>
+          <div v-if="trendFlowPoints.length" class="trend-growth-flow">
+            <template v-for="(point, index) in trendFlowPoints" :key="point.key">
+              <div class="trend-flow-point">
+                <span class="trend-flow-point-label">{{ point.label }}</span>
+                <strong class="trend-flow-point-value">{{ point.valueLabel }}</strong>
+              </div>
+              <div v-if="trendTransitionRows[index]" class="trend-flow-bridge">
+                <strong class="trend-growth-rate" :class="`is-${trendTransitionRows[index]?.variant}`">
+                  {{ trendTransitionRows[index]?.rateLabel }}
+                </strong>
+              </div>
+            </template>
+          </div>
+          <div v-else class="trend-growth-empty">비교할 이전 구간이 없습니다.</div>
         </div>
       </div>
 
@@ -214,6 +234,7 @@ import { computeCustomerStage, countDistinctPurchaseMonths, customerStageLabel, 
 import { computeChurnRisk, normalizeExpectedConsumptionDays } from '~/composables/useChurnRisk'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
 import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
+import { computeTrendGrowthRates, formatTrendGrowthRate, trendGrowthVariant } from '~/composables/useTrendGrowth'
 import { buildWeekOptions, weekCodeFromDate, weekDateTokensFromCode, weekLabelFromCode } from '~/composables/useWeekFilter'
 
 Chart.register(DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler, BarController, BarElement)
@@ -294,6 +315,20 @@ interface ChurnRow {
   lastOrder: string
 }
 
+interface TrendTransitionRow {
+  key: string
+  label: string
+  rateLabel: string
+  valueLabel: string
+  variant: 'success' | 'danger' | 'neutral'
+}
+
+interface TrendFlowPoint {
+  key: string
+  label: string
+  valueLabel: string
+}
+
 const router = useRouter()
 const supabase = useSupabaseClient()
 const toast = useToast()
@@ -329,6 +364,7 @@ const stageData = ref<StageDatum[]>([
 const churnData = ref<ChurnRow[]>([])
 const trendLabels = ref<string[]>([])
 const trendValues = ref<number[]>([])
+const trendGrowthRates = ref<Array<number | null>>([])
 const dailySalesLabels = ref<string[]>([])
 const dailySalesValues = ref<number[]>([])
 const dailySalesKeys = ref<string[]>([])
@@ -359,6 +395,33 @@ const trendRangeLabel = computed(() => {
   }
   if (dashboardWeekFilter.value) return weekLabelFromCode(selectedMonth.value, dashboardWeekFilter.value)
   return `${selectedPeriodLabel.value} 기준`
+})
+
+const trendTransitionRows = computed<TrendTransitionRow[]>(() => {
+  const rows: TrendTransitionRow[] = []
+  for (let index = 1; index < trendLabels.value.length; index += 1) {
+    const previousLabel = trendLabels.value[index - 1]
+    const currentLabel = trendLabels.value[index]
+    const previousValue = trendValues.value[index - 1] || 0
+    const currentValue = trendValues.value[index] || 0
+    const rate = trendGrowthRates.value[index] ?? null
+    rows.push({
+      key: `${previousLabel}-${currentLabel}-${index}`,
+      label: `${previousLabel} -> ${currentLabel}`,
+      rateLabel: formatTrendGrowthRate(rate),
+      valueLabel: `${previousValue.toLocaleString()}건 -> ${currentValue.toLocaleString()}건`,
+      variant: trendGrowthVariant(rate),
+    })
+  }
+  return rows
+})
+
+const trendFlowPoints = computed<TrendFlowPoint[]>(() => {
+  return trendLabels.value.map((label, index) => ({
+    key: `${label}-${index}`,
+    label,
+    valueLabel: `${(trendValues.value[index] || 0).toLocaleString()}건`,
+  }))
 })
 
 const dailySalesTitle = computed(() => {
@@ -586,14 +649,43 @@ function formatDayLabel(dateToken: string): string {
   return `${day}일`
 }
 
-function buildTrendMonths(monthSnapshot: string): string[] {
+function isMonthToken(value: string): boolean {
+  return /^\d{4}-\d{2}$/.test(value)
+}
+
+function buildMonthTokenRange(fromMonth: string, toMonth: string): string[] {
+  if (!isMonthToken(fromMonth) || !isMonthToken(toMonth) || fromMonth > toMonth) return []
+  const result: string[] = []
+  let cursor = fromMonth
+  let guard = 0
+  while (cursor <= toMonth && guard < 240) {
+    result.push(cursor)
+    if (cursor === toMonth) break
+    cursor = shiftMonthToken(cursor, 1)
+    guard += 1
+  }
+  return result
+}
+
+function buildTrendMonths(monthSnapshot: string, rows: Array<Pick<PurchaseRow, 'target_month'>> = []): string[] {
+  const dataMonths = Array.from(new Set(
+    rows
+      .map((row) => String(row.target_month || '').trim())
+      .filter(isMonthToken),
+  )).sort((a, b) => a.localeCompare(b))
+
+  if (dataMonths.length > 0) {
+    return buildMonthTokenRange(dataMonths[0]!, dataMonths[dataMonths.length - 1]!)
+  }
+
   const monthTokens = availableMonths.value
+    .filter((item) => Number(item.count || 0) > 0)
     .map((item) => String(item.value || ''))
     .filter((token) => /^\d{4}-\d{2}$/.test(token))
     .sort((a, b) => a.localeCompare(b))
 
   if (monthTokens.length > 0) {
-    return monthTokens
+    return buildMonthTokenRange(monthTokens[0]!, monthTokens[monthTokens.length - 1]!)
   }
 
   const pivot = monthSnapshot !== 'all' && /^\d{4}-\d{2}$/.test(monthSnapshot)
@@ -625,7 +717,7 @@ function applyTrendSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekS
   const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
 
   if (monthSnapshot === 'all') {
-    const monthTokens = buildTrendMonths(monthSnapshot)
+    const monthTokens = buildTrendMonths(monthSnapshot, realRows)
     const countMap = new Map<string, number>(monthTokens.map((token) => [token, 0]))
     for (const row of realRows) {
       const monthToken = String(row.target_month || '')
@@ -635,6 +727,7 @@ function applyTrendSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekS
     }
     trendLabels.value = monthTokens.map((token) => formatMonthLabel(token))
     trendValues.value = monthTokens.map((token) => countMap.get(token) || 0)
+    trendGrowthRates.value = computeTrendGrowthRates(trendValues.value)
     return
   }
 
@@ -649,6 +742,7 @@ function applyTrendSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekS
     }
     trendLabels.value = dateTokens.map((token) => formatDayLabel(token))
     trendValues.value = dateTokens.map((token) => countMap.get(token) || 0)
+    trendGrowthRates.value = computeTrendGrowthRates(trendValues.value)
     return
   }
 
@@ -662,13 +756,14 @@ function applyTrendSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekS
   }
   trendLabels.value = weekOptions.map((option) => option.label.split(' ')[0])
   trendValues.value = weekOptions.map((option) => countMap.get(option.value) || 0)
+  trendGrowthRates.value = computeTrendGrowthRates(trendValues.value)
 }
 
 function applyDailySalesSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekSnapshot: string) {
   const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
 
   if (monthSnapshot === 'all') {
-    const monthTokens = buildTrendMonths(monthSnapshot)
+    const monthTokens = buildTrendMonths(monthSnapshot, realRows)
     const countMap = new Map<string, number>(monthTokens.map((token) => [token, 0]))
     for (const row of realRows) {
       const monthToken = String(row.target_month || '')
@@ -1005,25 +1100,39 @@ function renderTrendChart() {
     type: 'line',
     data: {
       labels: trendLabels.value,
-      datasets: [{
-        data: trendValues.value,
-        borderColor: '#2563EB',
-        backgroundColor: 'rgba(37, 99, 235, 0.08)',
-        borderWidth: 2.5,
-        pointBackgroundColor: '#2563EB',
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        tension: 0.3,
-        fill: true,
-      }],
+      datasets: [
+        {
+          label: '실구매 건수',
+          data: trendValues.value,
+          borderColor: '#2563EB',
+          backgroundColor: 'rgba(37, 99, 235, 0.08)',
+          borderWidth: 2.5,
+          pointBackgroundColor: '#2563EB',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.3,
+          fill: true,
+        },
+      ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false,
+      },
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          labels: {
+            usePointStyle: true,
+            boxWidth: 8,
+            color: '#6B7280',
+          },
+        },
         tooltip: {
           backgroundColor: '#1E293B',
           titleFont: { size: 12 },
@@ -1031,7 +1140,7 @@ function renderTrendChart() {
           padding: 10,
           cornerRadius: 6,
           callbacks: {
-            label: (ctx) => `${Number(ctx.parsed.y || 0).toLocaleString()}건`,
+            label: (ctx) => `실구매 ${Number(ctx.parsed.y || 0).toLocaleString()}건`,
           },
         },
       },
@@ -1273,6 +1382,95 @@ onBeforeUnmount(() => {
 
 .trend-chart-area {
   height: 228px;
+}
+
+.trend-growth-strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.trend-growth-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.trend-growth-heading {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.trend-growth-caption {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.trend-growth-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.trend-flow-point {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 64px;
+}
+
+.trend-flow-point-label {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.trend-flow-point-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.trend-flow-bridge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.trend-flow-bridge::before,
+.trend-flow-bridge::after {
+  content: '';
+  width: 14px;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.trend-growth-rate {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.trend-growth-rate.is-success {
+  color: #16A34A;
+}
+
+.trend-growth-rate.is-danger {
+  color: #DC2626;
+}
+
+.trend-growth-rate.is-neutral {
+  color: var(--color-text);
+}
+
+.trend-growth-empty {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
 }
 
 .pet-chart {
