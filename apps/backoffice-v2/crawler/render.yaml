@@ -1,0 +1,14 @@
+# Render.com 배포 설정
+services:
+  - type: web
+    name: jhb-blog-crawler
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # 무료 플랜 (15분 비활성 시 슬립, 월 750시간 무료)
+    plan: free
+    envVars:
+      - key: SUPABASE_URL
+        sync: false   # Render 대시보드에서 직접 입력
+      - key: SUPABASE_SERVICE_KEY
+        sync: false   # Render 대시보드에서 직접 입력
+    healthCheckPath: /ping
