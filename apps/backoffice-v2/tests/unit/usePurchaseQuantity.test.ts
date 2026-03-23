@@ -99,6 +99,28 @@ describe('usePurchaseQuantity', () => {
     expect(result.totalCount).toBe(4)
   })
 
+  it('prefers source product id over 엔자이츄 raw name heuristics', () => {
+    const result = computePurchaseQuantity({
+      productName: '엔자이츄 10g, 20개',
+      optionInfo: '',
+      sourceProductId: '12565223228',
+      quantity: 2,
+    })
+
+    expect(result.totalCount).toBe(2)
+  })
+
+  it('uses 엔자이츄 2개 SKU source product id as pack multiplier', () => {
+    const result = computePurchaseQuantity({
+      productName: '엔자이츄 100g',
+      optionInfo: '',
+      sourceProductId: '13031643891',
+      quantity: 1,
+    })
+
+    expect(result.totalCount).toBe(2)
+  })
+
   it('applies 이즈바이트 13g exception and divisor-7 rule', () => {
     const result = computePurchaseQuantity({
       productName: '이즈바이트 13g, 14개',
@@ -107,6 +129,17 @@ describe('usePurchaseQuantity', () => {
     })
 
     expect(result.totalCount).toBe(4)
+  })
+
+  it('prefers source product id over 이즈바이트 raw name heuristics', () => {
+    const result = computePurchaseQuantity({
+      productName: '이즈바이트 13g, 14개',
+      optionInfo: '',
+      sourceProductId: '12565154404',
+      quantity: 2,
+    })
+
+    expect(result.totalCount).toBe(2)
   })
 
   it('applies 케어푸/두부모래 n개 * quantity rule', () => {
@@ -123,6 +156,33 @@ describe('usePurchaseQuantity', () => {
 
     expect(carefu.totalCount).toBe(6)
     expect(tofu.totalCount).toBe(12)
+  })
+
+  it('uses source product id metadata for 두부모래 pack quantity', () => {
+    const result = computePurchaseQuantity({
+      productName: '프리미엄 두부모래',
+      optionInfo: '',
+      sourceProductId: '11750107226',
+      quantity: 2,
+    })
+
+    expect(result.totalCount).toBe(12)
+  })
+
+  it('splits 애착트릿 3종세트 by source product id even if raw name changed', () => {
+    const result = computePurchaseQuantity({
+      productName: '굿포펫 애착트릿 대용량 동결건조간식 330g',
+      optionInfo: '',
+      sourceProductId: '12825618625',
+      quantity: 2,
+    })
+
+    expect(result.totalCount).toBe(6)
+    expect(result.dashboardBreakdown).toEqual([
+      { optionLabel: '북어', count: 2 },
+      { optionLabel: '연어', count: 2 },
+      { optionLabel: '치킨', count: 2 },
+    ])
   })
 
   it('uses raw quantity for dispenser/treatbag/sample/fallback', () => {

@@ -1,9 +1,16 @@
 import { extractProductKeyword } from './useFilterMatching'
+import {
+  getCanonicalGroupBySourceProductId,
+  getPackMultiplierBySourceProductId,
+  isThreeFlavorSetSourceProduct,
+} from './useCommerceProductCatalog'
 
 export interface PurchaseQuantityInput {
   productName: string
   optionInfo?: string | null
   quantity?: number | null
+  sourceProductId?: string | null
+  sourceOptionCode?: string | null
 }
 
 export interface QuantityBreakdownRow {
@@ -73,7 +80,19 @@ function countOccurrences(source: string, keyword: string): number {
   return count
 }
 
-function detectProductGroup(productName: string): string {
+function detectProductGroup(productName: string, sourceProductId?: string | null): string {
+  const groupByProductId = getCanonicalGroupBySourceProductId(sourceProductId)
+  if (groupByProductId === '맛보기') return '맛보기'
+  if (groupByProductId === '도시락샘플') return '샘플팩'
+  if (groupByProductId === '트릿백') return '트릿백'
+  if (groupByProductId === '츄르짜개') return '츄르짜개'
+  if (groupByProductId === '애착트릿') return '애착트릿'
+  if (groupByProductId === '엔자이츄') return '엔자이츄'
+  if (groupByProductId === '이즈바이트') return '이즈바이트'
+  if (groupByProductId === '케어푸') return '케어푸'
+  if (groupByProductId === '두부모래') return '두부모래'
+  if (groupByProductId === '츄라잇') return '츄라잇'
+
   const kw = extractProductKeyword(productName)
   if (kw) return kw
   const normalized = normalizeText(productName)
@@ -152,12 +171,14 @@ export function computePurchaseQuantity(input: PurchaseQuantityInput): PurchaseQ
   const productName = String(input.productName || '')
   const optionInfo = String(input.optionInfo || '')
   const quantity = safeQuantity(input.quantity)
-  const group = detectProductGroup(productName)
+  const sourceProductId = String(input.sourceProductId || '').trim()
+  const group = detectProductGroup(productName, sourceProductId)
   const normalizedProduct = normalizeText(productName)
+  const packMultiplier = getPackMultiplierBySourceProductId(sourceProductId)
 
   // 츄라잇: 박스 상품은 옵션 내 맛 조합 기준으로 분해 집계
   if (group === '츄라잇') {
-    const boxCount = extractBoxCount(productName)
+    const boxCount = extractBoxCount(productName) || packMultiplier
     if (boxCount) {
       const optionBreakdown = buildChuraitBoxBreakdown(optionInfo, quantity)
       if (optionBreakdown.length > 0) {
@@ -172,13 +193,13 @@ export function computePurchaseQuantity(input: PurchaseQuantityInput): PurchaseQ
   }
 
   // 디스펜서 / 트릿백 / 전제품 맛보기 샘플
-  if (group === '츄르짜개' || group === '트릿백' || group === '맛보기') {
+  if (group === '츄르짜개' || group === '트릿백' || group === '맛보기' || group === '샘플팩') {
     return fallbackResult(optionInfo, quantity)
   }
 
   // 애착트릿
   if (group === '애착트릿') {
-    if (normalizedProduct.includes('3종세트')) {
+    if (normalizedProduct.includes('3종세트') || isThreeFlavorSetSourceProduct(sourceProductId)) {
       const perFlavor = normalizeCount(quantity)
       return {
         totalCount: normalizeCount(perFlavor * 3),
@@ -191,7 +212,11 @@ export function computePurchaseQuantity(input: PurchaseQuantityInput): PurchaseQ
     }
 
     const pieceCount = extractLastPieceCount(productName)
-    const total = pieceCount ? pieceCount * quantity : quantity
+    const total = packMultiplier
+      ? packMultiplier * quantity
+      : pieceCount
+        ? pieceCount * quantity
+        : quantity
     const flavor = detectAttachmentFlavor(productName, optionInfo)
     return {
       totalCount: normalizeCount(total),
@@ -206,21 +231,29 @@ export function computePurchaseQuantity(input: PurchaseQuantityInput): PurchaseQ
 
   // 엔자이츄
   if (group === '엔자이츄') {
-    const total = resolveEnzaichuCount(productName, quantity)
+    const total = packMultiplier
+      ? packMultiplier * quantity
+      : resolveEnzaichuCount(productName, quantity)
     return fallbackResult(optionInfo, total)
   }
 
   // 이즈바이트
   if (group === '이즈바이트') {
-    const total = resolveEaseBiteCount(productName, quantity)
+    const total = packMultiplier
+      ? packMultiplier * quantity
+      : resolveEaseBiteCount(productName, quantity)
     return fallbackResult(optionInfo, total)
   }
 
   // 케어푸 / 두부모래
   if (group === '케어푸' || group === '두부모래') {
     const pieceCount = extractLastPieceCount(productName)
-    const total = (pieceCount || 1) * quantity
+    const total = (packMultiplier || pieceCount || 1) * quantity
     return fallbackResult(optionInfo, total)
+  }
+
+  if (packMultiplier) {
+    return fallbackResult(optionInfo, packMultiplier * quantity)
   }
 
   // 그 외 상품은 수량 그대로

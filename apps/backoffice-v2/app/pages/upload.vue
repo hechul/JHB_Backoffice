@@ -247,6 +247,7 @@ import {
   type ColumnValidation,
 } from '~/composables/useExcelParser'
 import { purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
+import { resolveCommerceSourceProduct } from '~/composables/useCommerceProductCatalog'
 import { matchesSearchQuery } from '~/composables/useTextSearch'
 import * as XLSX from 'xlsx'
 
@@ -290,6 +291,8 @@ interface PurchaseDbRow {
   option_info: string | null
   source_product_name?: string | null
   source_option_info?: string | null
+  source_product_id?: string | null
+  source_option_code?: string | null
   quantity: number
   order_date: string
   order_status: string
@@ -550,6 +553,8 @@ function toPurchaseRestorePayload(row: PurchaseDbRow) {
   }
   if ('source_product_name' in row) payload.source_product_name = row.source_product_name || ''
   if ('source_option_info' in row) payload.source_option_info = row.source_option_info || ''
+  if ('source_product_id' in row) payload.source_product_id = row.source_product_id || ''
+  if ('source_option_code' in row) payload.source_option_code = row.source_option_code || ''
   return payload
 }
 
@@ -1272,7 +1277,16 @@ async function startUpload() {
 
       // 스마트스토어 주문 상품도 상품목록 기준으로 미등록 여부를 먼저 체크한다.
       for (const row of valid) {
-        const resolved = resolveMappedProduct(row.product_name, row.option_info, productLookup)
+        const sourceProductMatch = resolveCommerceSourceProduct({
+          sourceProductId: row.product_id,
+          productName: row.product_name,
+          optionInfo: row.option_info,
+        })
+        const resolved = resolveMappedProduct(
+          sourceProductMatch?.canonicalProductName || row.product_name,
+          sourceProductMatch?.canonicalOptionInfo ?? row.option_info,
+          productLookup,
+        )
         resolvedOrderMap.set(row.purchase_id, resolved)
         if (!resolved.mappedProductId) {
           const serialized = serializeUnmappedItem(resolved.normalizedName, resolved.normalizedOption)
@@ -1308,6 +1322,8 @@ async function startUpload() {
           if (includeSourceColumns) {
             payload.source_product_name = row.product_name
             payload.source_option_info = row.option_info || ''
+            payload.source_product_id = row.product_id || ''
+            payload.source_option_code = ''
           }
           return payload
         })
