@@ -11,16 +11,6 @@
       </div>
     </div>
 
-    <div class="sync-card-copy">
-      <p class="text-sm text-secondary">
-        회사 Wi-Fi에서만 네이버 커머스 API를 호출해 주문 데이터를 불러옵니다. 드라이런은 저장 없이 결과만 미리 확인하고, 동기화 실행은 실제 주문 데이터를 DB에 반영합니다.
-      </p>
-      <div class="sync-endpoint-pill">
-        <Terminal :size="14" :stroke-width="2" />
-        <span>{{ naverSyncEndpoint }}</span>
-      </div>
-    </div>
-
     <div class="sync-date-grid">
       <label class="sync-field">
         <span>시작일</span>
@@ -30,24 +20,6 @@
         <span>종료일</span>
         <input v-model="naverSyncEndDate" type="date" class="sync-date-input" :disabled="isNaverSyncRunning" />
       </label>
-    </div>
-
-    <div class="sync-preset-row">
-      <button class="btn btn-ghost btn-sm" :disabled="isNaverSyncRunning" @click="applyNaverSyncPreset('2025-12')">2025-12</button>
-      <button class="btn btn-ghost btn-sm" :disabled="isNaverSyncRunning" @click="applyNaverSyncPreset('2026-01')">2026-01</button>
-      <button class="btn btn-ghost btn-sm" :disabled="isNaverSyncRunning" @click="applyNaverSyncPreset('2026-02')">2026-02</button>
-      <button class="btn btn-ghost btn-sm" :disabled="isNaverSyncRunning" @click="applyNaverSyncPreset('2025-12-2026-02')">12~02월 전체</button>
-    </div>
-
-    <div class="sync-mode-guide">
-      <div class="sync-mode-item">
-        <strong>드라이런 실행</strong>
-        <span>네이버에서 읽어만 보고 DB에는 저장하지 않습니다.</span>
-      </div>
-      <div class="sync-mode-item">
-        <strong>동기화 실행</strong>
-        <span>주문 raw 데이터와 분석용 주문 데이터를 실제로 반영합니다.</span>
-      </div>
     </div>
 
     <div class="sync-actions">
@@ -99,13 +71,6 @@
         <span>{{ naverSyncError }}</span>
       </div>
 
-      <div v-if="naverSyncSummaryEntries.length > 0" class="sync-summary-grid">
-        <div v-for="entry in naverSyncSummaryEntries" :key="entry.label" class="sync-summary-item" :class="entry.tone ? `tone-${entry.tone}` : ''">
-          <span class="sync-summary-label">{{ entry.label }}</span>
-          <strong class="sync-summary-value">{{ entry.value }}</strong>
-        </div>
-      </div>
-
       <div v-if="naverSyncLogs.length > 0" class="sync-log-panel">
         <div class="sync-log-title">실행 로그</div>
         <div class="sync-log-list">
@@ -128,7 +93,6 @@ import {
   Loader2,
   Play,
   RefreshCw,
-  Terminal,
 } from 'lucide-vue-next'
 
 type NaverSyncMode = 'dry-run' | 'live'
@@ -138,12 +102,6 @@ interface NaverSyncLogEntry {
   time: string
   level: SyncLogLevel
   message: string
-}
-
-interface NaverSyncSummaryEntry {
-  label: string
-  value: string
-  tone?: 'info' | 'success' | 'warning' | 'danger'
 }
 
 interface NaverSyncSummary {
@@ -162,6 +120,15 @@ interface NaverSyncSummary {
   deletedCount?: number
   unresolvedCount?: number
   mappingRowCount?: number
+  affectedTargetMonths?: string[]
+}
+
+interface NaverSyncBackgroundRefilter {
+  affectedMonths: string[]
+  queuedMonths: string[]
+  skippedMonths: string[]
+  status: 'not_requested' | 'queued' | 'no_experience_months' | 'schedule_failed'
+  errorMessage: string | null
 }
 
 interface NaverSyncResponse {
@@ -179,20 +146,11 @@ interface NaverSyncResponse {
   signal: string | null
   durationMs: number
   summary: NaverSyncSummary | null
+  backgroundRefilter?: NaverSyncBackgroundRefilter | null
   stdout: string
   stderr: string
 }
-
-const NAVER_SYNC_PRESETS = {
-  '2025-12': { start: '2025-12-01', end: '2025-12-31' },
-  '2026-01': { start: '2026-01-01', end: '2026-01-31' },
-  '2026-02': { start: '2026-02-01', end: '2026-02-28' },
-  '2025-12-2026-02': { start: '2025-12-01', end: '2026-02-28' },
-} as const
-
 const naverSyncEndpoint = '/api/commerce/naver/sync'
-const NAVER_SYNC_DEFAULT_START = '2025-12-01'
-const NAVER_SYNC_DEFAULT_END = '2026-02-28'
 
 const toast = useToast()
 const { user, isViewer } = useCurrentUser()
@@ -200,8 +158,8 @@ const { createNotification } = useNotifications()
 const { refreshMonths, selectMonth } = useAnalysisPeriod()
 const { setUploadResult } = useMonthlyWorkflow()
 
-const naverSyncStartDate = ref(NAVER_SYNC_DEFAULT_START)
-const naverSyncEndDate = ref(NAVER_SYNC_DEFAULT_END)
+const naverSyncStartDate = ref(getCurrentMonthStartDate())
+const naverSyncEndDate = ref(getTodayDate())
 const naverSyncMode = ref<NaverSyncMode>('dry-run')
 const naverSyncProgress = ref(0)
 const naverSyncProgressLabel = ref('대기 중')
@@ -232,45 +190,6 @@ const canRunNaverSync = computed(() => naverSyncBlockReason.value === '')
 const naverSyncProgressIndeterminate = computed(() => isNaverSyncRunning.value && naverSyncProgress.value >= 92)
 const naverSyncProgressText = computed(() => naverSyncProgressIndeterminate.value ? '응답 대기 중' : `${naverSyncProgress.value}%`)
 
-const naverSyncSummaryEntries = computed<NaverSyncSummaryEntry[]>(() => {
-  const source = naverSyncSummary.value
-  if (!source || typeof source !== 'object') return []
-
-  const valueOf = (keys: string[]) => {
-    for (const key of keys) {
-      const value = (source as Record<string, any>)[key]
-      if (value !== undefined && value !== null && `${value}`.trim() !== '') return value
-    }
-    return undefined
-  }
-
-  const candidates: Array<[string, string[], NaverSyncSummaryEntry['tone']?]> = [
-    ['조회 기간', ['rangeLabel', 'range', 'period', 'syncRange'], 'info'],
-    ['처리일', ['windows', 'windowCount', 'batchCount'], 'info'],
-    ['변경 주문', ['changed', 'changedCount', 'changedItems', 'changedOrderCount'], 'success'],
-    ['상세 주문', ['detail', 'detailCount', 'productOrderCount', 'detailItems'], 'success'],
-    ['반영 대상', ['projected', 'projectedCount', 'upserted', 'appliedCount', 'purchaseCount'], 'success'],
-    ['미매핑', ['unresolved', 'unresolvedCount', 'needsReviewCount'], 'warning'],
-    ['제외 대상', ['excluded', 'excludedCount', 'skippedCount'], 'warning'],
-    ['실행 시간', ['duration', 'elapsed', 'elapsedMs', 'durationMs'], 'info'],
-  ]
-
-  const rows = candidates
-    .map(([label, keys, tone]) => {
-      const value = valueOf(keys)
-      if (value === undefined) return null
-      return { label, value: formatNaverSyncSummaryValue(label, value), tone }
-    })
-    .filter((entry): entry is NaverSyncSummaryEntry => entry !== null)
-
-  if (rows.length > 0) return rows
-
-  return Object.entries(source)
-    .filter(([, value]) => value !== undefined && value !== null && typeof value !== 'object')
-    .slice(0, 8)
-    .map(([label, value]) => ({ label, value: String(value) }))
-})
-
 function formatUploadTimestamp(value: string): string {
   if (!value) return ''
   const d = new Date(value)
@@ -287,6 +206,22 @@ function formatUploadTimestamp(value: string): string {
 
 function isValidDateInput(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim())
+}
+
+function toDateInputValue(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getTodayDate(): string {
+  return toDateInputValue(new Date())
+}
+
+function getCurrentMonthStartDate(): string {
+  const today = new Date()
+  return toDateInputValue(new Date(today.getFullYear(), today.getMonth(), 1))
 }
 
 function appendNaverSyncLog(message: string, level: SyncLogLevel = 'info', time = '') {
@@ -318,17 +253,6 @@ function formatDurationValue(value: unknown): string {
   const remainSeconds = Math.round((seconds % 60) * 10) / 10
   if (remainSeconds === 0) return `${minutes}분`
   return `${minutes}분 ${remainSeconds}초`
-}
-
-function formatNaverSyncSummaryValue(label: string, value: unknown): string {
-  if (label === '처리일') {
-    const count = Number.parseInt(String(value ?? ''), 10)
-    return Number.isFinite(count) ? `${count}일` : String(value ?? '')
-  }
-  if (label === '실행 시간') {
-    return formatDurationValue(value)
-  }
-  return String(value ?? '')
 }
 
 function parseNaverSyncKeyValueLine(line: string): Record<string, number> {
@@ -503,13 +427,6 @@ function startNaverSyncPulse() {
   }, 1200)
 }
 
-function applyNaverSyncPreset(preset: keyof typeof NAVER_SYNC_PRESETS) {
-  const selected = NAVER_SYNC_PRESETS[preset]
-  if (!selected) return
-  naverSyncStartDate.value = selected.start
-  naverSyncEndDate.value = selected.end
-}
-
 function expandMonthRange(start: string, end: string): string[] {
   if (!isValidDateInput(start) || !isValidDateInput(end) || start > end) return []
   const startDate = new Date(`${start}T00:00:00`)
@@ -523,6 +440,49 @@ function expandMonthRange(start: string, end: string): string[] {
   }
 
   return months
+}
+
+function resolveAffectedMonths(response: NaverSyncResponse): string[] {
+  const months = Array.isArray(response.summary?.affectedTargetMonths)
+    ? response.summary?.affectedTargetMonths.filter((month): month is string => isValidDateInput(`${String(month)}-01`))
+    : []
+
+  if (months.length > 0) {
+    return Array.from(new Set(months)).sort()
+  }
+
+  return expandMonthRange(naverSyncStartDate.value, naverSyncEndDate.value)
+}
+
+function formatMonthLabel(month: string): string {
+  const matched = String(month || '').match(/^(\d{4})-(\d{2})$/)
+  if (!matched) return month
+  return `${Number.parseInt(matched[2] || '0', 10)}월`
+}
+
+function appendBackgroundRefilterLogs(input?: NaverSyncBackgroundRefilter | null) {
+  if (!input) return
+
+  if (input.status === 'queued' && input.queuedMonths.length > 0) {
+    appendNaverSyncLog(
+      `체험단이 있는 ${input.queuedMonths.map(formatMonthLabel).join(', ')} 데이터는 백그라운드에서 다시 계산합니다.`,
+      'success',
+    )
+  }
+
+  if (input.status === 'no_experience_months' && input.affectedMonths.length > 0) {
+    appendNaverSyncLog(
+      '체험단이 없는 월만 바뀌어서 추가 필터링은 실행하지 않았습니다.',
+      'info',
+    )
+  }
+
+  if (input.status === 'schedule_failed') {
+    appendNaverSyncLog(
+      `자동 재필터 예약에 실패했습니다. ${input.errorMessage || '수동으로 필터링을 다시 실행해 주세요.'}`,
+      'error',
+    )
+  }
 }
 
 async function startNaverSync(mode: NaverSyncMode) {
@@ -553,16 +513,18 @@ async function startNaverSync(mode: NaverSyncMode) {
     naverSyncProgressLabel.value = '응답 정리 중'
     naverSyncSummary.value = response.summary || null
     naverSyncLogs.value = buildNaverSyncLogs(response.stdout, response.stderr)
+    appendBackgroundRefilterLogs(response.backgroundRefilter)
     naverSyncLastRunAt.value = formatUploadTimestamp(new Date().toISOString())
 
     if (mode === 'live') {
-      for (const month of expandMonthRange(naverSyncStartDate.value, naverSyncEndDate.value)) {
+      const affectedMonths = resolveAffectedMonths(response)
+      for (const month of affectedMonths) {
         setUploadResult(month, {
           orderUploadDone: true,
         })
       }
       await refreshMonths()
-      const latestSyncedMonth = naverSyncEndDate.value.slice(0, 7)
+      const latestSyncedMonth = affectedMonths[affectedMonths.length - 1] || naverSyncEndDate.value.slice(0, 7)
       if (latestSyncedMonth) {
         selectMonth(latestSyncedMonth)
       }
@@ -636,26 +598,6 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
-.sync-card-copy {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  margin-top: var(--space-md);
-}
-
-.sync-endpoint-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  width: fit-content;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(59, 130, 246, 0.08);
-  color: #1D4ED8;
-  font-size: 0.75rem;
-  font-family: var(--font-mono);
-}
-
 .sync-date-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -679,37 +621,6 @@ onBeforeUnmount(() => {
   background: var(--color-surface);
   color: var(--color-text);
   font-size: 0.875rem;
-}
-
-.sync-preset-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-  margin-top: var(--space-md);
-}
-
-.sync-mode-guide {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-sm);
-  margin-top: var(--space-md);
-}
-
-.sync-mode-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid var(--color-border-light);
-  font-size: 0.8125rem;
-  color: var(--color-text-secondary);
-}
-
-.sync-mode-item strong {
-  font-size: 0.75rem;
-  color: var(--color-text);
 }
 
 .sync-actions {
@@ -761,50 +672,6 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: var(--space-sm);
   margin-top: var(--space-xs);
-}
-
-.sync-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--space-sm);
-  margin-top: var(--space-md);
-}
-
-.sync-summary-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  border: 1px solid var(--color-border-light);
-}
-
-.sync-summary-item.tone-info {
-  background: rgba(59, 130, 246, 0.06);
-}
-
-.sync-summary-item.tone-success {
-  background: rgba(16, 185, 129, 0.08);
-}
-
-.sync-summary-item.tone-warning {
-  background: rgba(245, 158, 11, 0.1);
-}
-
-.sync-summary-item.tone-danger {
-  background: rgba(239, 68, 68, 0.08);
-}
-
-.sync-summary-label {
-  font-size: 0.6875rem;
-  color: var(--color-text-muted);
-}
-
-.sync-summary-value {
-  font-size: 0.9375rem;
-  color: var(--color-text);
-  word-break: break-word;
 }
 
 .sync-log-panel {
@@ -862,8 +729,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px) {
-  .sync-date-grid,
-  .sync-mode-guide {
+  .sync-date-grid {
     grid-template-columns: 1fr;
   }
 }

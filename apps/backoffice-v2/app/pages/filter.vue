@@ -499,6 +499,7 @@ import {
   deduplicateExperiences,
 } from '~/composables/useFilterMatching'
 import { matchesSearchQuery } from '~/composables/useTextSearch'
+import { FILTER_VER } from '../../shared/filterVersion'
 
 type BadgeVariant = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral'
 type SourceType = 'rank' | 'realPurchase' | 'manual' | 'unmatched'
@@ -608,7 +609,6 @@ interface PurchaseFilterSnapshot {
   quantity_warning: boolean
 }
 
-const FILTER_VER = 'v5.1.0'
 const UPDATE_CONCURRENCY = 10
 const FETCH_PAGE_SIZE = 1000
 
@@ -1188,6 +1188,7 @@ async function runFilter() {
   revealResultSection.value = true
 
   const month = selectedMonth.value
+  let monthFilterLockToken: string | null = null
   const startedAt = Date.now()
   let loadedPurchases: PurchaseRow[] = []
   let loadedExperiences: ExperienceRow[] = []
@@ -1200,6 +1201,24 @@ async function runFilter() {
   progressLabel.value = '분석 대상 데이터를 불러오는 중...'
 
   try {
+    try {
+      const lockResponse = await $fetch<{ token: string }>('/api/filter/lock', {
+        method: 'POST',
+        body: {
+          action: 'acquire',
+          month,
+          owner: user.value.name || user.value.email || '수동 필터링',
+        },
+      })
+      monthFilterLockToken = String(lockResponse.token || '')
+    } catch (lockError: any) {
+      filterState.value = 'idle'
+      progressPercent.value = 0
+      progressLabel.value = ''
+      toast.info(lockError?.data?.message || `${month} 필터링이 이미 실행 중입니다.`)
+      return
+    }
+
     const { purchases, experiences } = await loadRawData(month)
     loadedPurchases = purchases
     loadedExperiences = experiences
@@ -1415,6 +1434,19 @@ async function runFilter() {
       },
     })
   } finally {
+    if (monthFilterLockToken) {
+      await $fetch('/api/filter/lock', {
+        method: 'POST',
+        body: {
+          action: 'release',
+          month,
+          token: monthFilterLockToken,
+        },
+      }).catch((error) => {
+        console.warn('Failed to release month filter lock:', error)
+      })
+    }
+
     if (filterState.value !== 'failed') syncFilterState()
   }
 }

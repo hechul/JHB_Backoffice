@@ -30,6 +30,15 @@ const DEFAULT_MAX_RETRIES = 5
 const DEFAULT_RETRY_BASE_DELAY_MS = 10000
 const AUTH_HELPER_PATH = resolve(process.cwd(), 'scripts', 'lib', 'naver-commerce-auth.py')
 
+function extractTargetMonth(...values) {
+  for (const value of values) {
+    const normalized = String(value || '').trim()
+    const month = normalized.match(/^(\d{4}-\d{2})/)
+    if (month?.[1]) return month[1]
+  }
+  return null
+}
+
 function printHelp() {
   console.log(`
 Usage:
@@ -593,7 +602,9 @@ async function main() {
     deletedCount: 0,
     unresolvedCount: 0,
     mappingRowCount: productMappings.length,
+    affectedTargetMonths: [],
   }
+  const affectedTargetMonths = new Set()
 
   try {
     let syntheticWindowId = 1
@@ -645,6 +656,19 @@ async function main() {
         const purchaseRows = records.filter((record) => record.purchase).map((record) => record.purchase)
         const excludedIds = records.filter((record) => !record.eligible).map((record) => record.rawLine.source_line_id)
         const unresolvedRecords = records.filter((record) => record.eligible && !record.purchase)
+        const unresolvedIds = unresolvedRecords.map((record) => record.rawLine.source_line_id)
+        const deletedPurchaseIds = [...new Set([...excludedIds, ...unresolvedIds])]
+
+        for (const record of records) {
+          const targetMonth = record.purchase?.target_month || extractTargetMonth(
+            record.rawLine.order_date,
+            record.rawLine.payment_date,
+            record.rawLine.last_event_at,
+          )
+          if (targetMonth) {
+            affectedTargetMonths.add(targetMonth)
+          }
+        }
 
         for (const item of changedItems) {
           if (!item?.lastChangedDate) continue
@@ -659,8 +683,9 @@ async function main() {
         summary.rawLineCount += rawLineRows.length
         summary.projectedCount += purchaseRows.length
         summary.excludedCount += excludedIds.length
-        summary.deletedCount += excludedIds.length
+        summary.deletedCount += deletedPurchaseIds.length
         summary.unresolvedCount += unresolvedRecords.length
+        summary.affectedTargetMonths = Array.from(affectedTargetMonths).sort()
 
         if (!args.dryRun) {
           await upsertRows(
@@ -676,13 +701,13 @@ async function main() {
             rawLineRows,
           )
           await upsertRows(targetConfig, 'purchases', 'purchase_id', purchaseRows)
-          await deleteProjectedPurchases(targetConfig, excludedIds, args.accountKey)
+          await deleteProjectedPurchases(targetConfig, deletedPurchaseIds, args.accountKey)
           await updateSyncWindow(targetConfig, windowRow.id, {
             status: 'done',
             changed_count: changedItems.length,
             detail_count: detailInfos.length,
             upserted_count: purchaseRows.length,
-            excluded_count: excludedIds.length,
+            excluded_count: deletedPurchaseIds.length,
             pagination_json: { pages },
           })
         } else {

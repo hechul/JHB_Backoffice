@@ -2,6 +2,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import { serverSupabaseUser } from '#supabase/server'
+import {
+  findMonthsWithExperiences,
+  normalizeTargetMonths,
+} from '../../../utils/filter/runMonthlyFilter.ts'
 
 interface NaverSyncRequestBody {
   start?: unknown
@@ -24,8 +28,17 @@ interface ScriptResult {
   durationMs: number
 }
 
+interface BackgroundRefilterResult {
+  affectedMonths: string[]
+  queuedMonths: string[]
+  skippedMonths: string[]
+  status: 'not_requested' | 'queued' | 'no_experience_months' | 'schedule_failed'
+  errorMessage: string | null
+}
+
 const APP_ROOT = resolve(process.cwd())
 const SYNC_SCRIPT_PATH = resolve(APP_ROOT, 'scripts', 'sync-naver-orders.mjs')
+const FILTER_SCRIPT_PATH = resolve(APP_ROOT, 'scripts', 'run-filter-months.ts')
 const APP_ENV_PATH = resolve(APP_ROOT, '.env')
 
 function normalizeString(value: unknown): string {
@@ -180,6 +193,39 @@ function runNodeScript(scriptPath: string, args: string[], cwd: string): Promise
   })
 }
 
+function spawnBackgroundFilterProcess(input: {
+  months: string[]
+  actorId: string | null
+}) {
+  if (!existsSync(FILTER_SCRIPT_PATH)) {
+    throw new Error('월별 필터 재실행 스크립트를 찾을 수 없습니다.')
+  }
+
+  const args = [
+    '--experimental-strip-types',
+    FILTER_SCRIPT_PATH,
+    `--months=${input.months.join(',')}`,
+    `--env=${APP_ENV_PATH}`,
+    '--actor-name=자동 재필터(sync)',
+  ]
+
+  if (input.actorId) {
+    args.push(`--actor-id=${input.actorId}`)
+  }
+
+  const child = spawn(process.execPath, args, {
+    cwd: APP_ROOT,
+    env: {
+      ...process.env,
+      FORCE_COLOR: '0',
+    },
+    detached: true,
+    stdio: 'ignore',
+  })
+
+  child.unref()
+}
+
 export default defineEventHandler(async (event) => {
   const body = (await readBody<NaverSyncRequestBody>(event).catch(() => ({}))) || {}
   const start = normalizeString(body.start || body.from)
@@ -265,6 +311,48 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  let backgroundRefilter: BackgroundRefilterResult = {
+    affectedMonths: [],
+    queuedMonths: [],
+    skippedMonths: [],
+    status: 'not_requested',
+    errorMessage: null,
+  }
+
+  if (!dryRun) {
+    const affectedMonths = normalizeTargetMonths(
+      Array.isArray(summary?.affectedTargetMonths) ? summary.affectedTargetMonths : [],
+    )
+    if (affectedMonths.length > 0) {
+      try {
+        const queuedMonths = await findMonthsWithExperiences(affectedMonths)
+        const skippedMonths = affectedMonths.filter((month) => !queuedMonths.includes(month))
+        backgroundRefilter = {
+          affectedMonths,
+          queuedMonths,
+          skippedMonths,
+          status: queuedMonths.length > 0 ? 'queued' : 'no_experience_months',
+          errorMessage: null,
+        }
+
+        if (queuedMonths.length > 0) {
+          spawnBackgroundFilterProcess({
+            months: queuedMonths,
+            actorId: requestedByAccountId || null,
+          })
+        }
+      } catch (error) {
+        backgroundRefilter = {
+          affectedMonths,
+          queuedMonths: [],
+          skippedMonths: affectedMonths,
+          status: 'schedule_failed',
+          errorMessage: error instanceof Error ? error.message : String(error),
+        }
+      }
+    }
+  }
+
   return {
     ok: true,
     dryRun,
@@ -280,6 +368,7 @@ export default defineEventHandler(async (event) => {
     signal: result.signal,
     durationMs: result.durationMs,
     summary,
+    backgroundRefilter,
     stdout: result.stdout,
     stderr: result.stderr,
   }
