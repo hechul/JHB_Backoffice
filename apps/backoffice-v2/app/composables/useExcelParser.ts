@@ -182,6 +182,33 @@ export function detectSheetByColumns(
     return bestScore > 0 ? best : null
 }
 
+export function detectLegacyExperienceSheet(
+    sheets: ParsedWorkbookSheet[],
+    excludedNames: string[] = [],
+): ParsedWorkbookSheet | null {
+    const excluded = new Set(excludedNames)
+    let best: ParsedWorkbookSheet | null = null
+    let bestScore = 0
+
+    for (const sheet of sheets) {
+        if (excluded.has(sheet.name)) continue
+        const matrix = sheet.matrix || []
+        let score = 0
+
+        for (const cells of matrix) {
+            if (isLikelyLegacyExperienceRow(cells)) score += 1
+            if (score >= 3) break
+        }
+
+        if (score > bestScore) {
+            bestScore = score
+            best = sheet
+        }
+    }
+
+    return bestScore > 0 ? best : null
+}
+
 function findHeaderRowIndex(matrix: string[][]): number {
     const headerCandidates = new Set(['미션상품명', '옵션정보', '수취인명', '수취인', '아이디', '구매인증일', '캠페인명', '구매날짜'])
     const maxScan = Math.min(matrix.length, 40)

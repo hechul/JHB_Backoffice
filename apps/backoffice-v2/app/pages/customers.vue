@@ -95,6 +95,7 @@
               <th>구매 상품 수</th>
               <th v-if="hasProductFilter">검색상품 구매횟수</th>
               <th>최근 주문</th>
+              <th>현재 상태</th>
               <th>이탈 위험</th>
             </tr>
           </thead>
@@ -125,6 +126,12 @@
               <td class="text-sm text-secondary">{{ c.lastOrder }}</td>
               <td>
                 <StatusBadge
+                  :label="c.currentOrderStatus"
+                  :variant="orderStatusBadgeVariant(c.currentOrderStatusCode, c.currentClaimStatusCode)"
+                />
+              </td>
+              <td>
+                <StatusBadge
                   :label="churnLabel(c.churnStatus)"
                   :variant="churnVariant(c.churnStatus)"
                   :dot="isRiskChurn(c.churnStatus)"
@@ -132,7 +139,7 @@
               </td>
             </tr>
             <tr v-if="filteredCustomers.length === 0">
-              <td :colspan="hasProductFilter ? 10 : 9" class="empty-row">조건에 맞는 고객이 없습니다.</td>
+              <td :colspan="hasProductFilter ? 11 : 10" class="empty-row">조건에 맞는 고객이 없습니다.</td>
             </tr>
           </tbody>
         </table>
@@ -180,6 +187,13 @@
             <div class="customer-mobile-item">
               <span class="customer-mobile-label">최근 주문</span>
               <span class="customer-mobile-value customer-mobile-muted">{{ c.lastOrder }}</span>
+            </div>
+            <div class="customer-mobile-item">
+              <span class="customer-mobile-label">현재 상태</span>
+              <StatusBadge
+                :label="c.currentOrderStatus"
+                :variant="orderStatusBadgeVariant(c.currentOrderStatusCode, c.currentClaimStatusCode)"
+              />
             </div>
             <div class="customer-mobile-item">
               <span class="customer-mobile-label">이탈 위험</span>
@@ -260,6 +274,13 @@
               <span class="detail-value">{{ formatQuantityCount(selectedCustomer.productCount) }}개</span>
             </div>
             <div class="detail-item">
+              <span class="detail-label">현재 상태</span>
+              <StatusBadge
+                :label="selectedCustomer.currentOrderStatus"
+                :variant="orderStatusBadgeVariant(selectedCustomer.currentOrderStatusCode, selectedCustomer.currentClaimStatusCode)"
+              />
+            </div>
+            <div class="detail-item">
               <span class="detail-label">이탈 위험</span>
               <div class="detail-value detail-value-stack">
                 <StatusBadge
@@ -286,6 +307,7 @@
                 <th>날짜</th>
                 <th>상품</th>
                 <th>옵션</th>
+                <th>상태</th>
                 <th>상품 개수</th>
               </tr>
             </thead>
@@ -294,6 +316,9 @@
                 <td class="text-sm">{{ order.date }}</td>
                 <td class="text-sm">{{ order.product }}</td>
                 <td class="text-sm">{{ order.optionInfo }}</td>
+                <td class="text-sm">
+                  <StatusBadge :label="order.status" :variant="orderStatusBadgeVariant(order.orderStatus, order.claimStatus)" />
+                </td>
                 <td class="text-sm">{{ formatQuantityCount(order.itemCount) }}개</td>
               </tr>
             </tbody>
@@ -339,6 +364,7 @@ import {
   type ChurnStatusCode,
 } from '~/composables/useChurnRisk'
 import { matchesSearchQuery } from '~/composables/useTextSearch'
+import { formatOrderStatusLabel, orderStatusBadgeVariant } from '~/composables/useOrderStatusLabel'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
 import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
 import { buildWeekOptions, weekCodeFromDate, weekLabelFromCode } from '~/composables/useWeekFilter'
@@ -367,6 +393,9 @@ interface CustomerRow {
   purchaseCount: number
   productCount: number
   lastOrder: string
+  currentOrderStatus: string
+  currentOrderStatusCode: string
+  currentClaimStatusCode: string
   daysSinceLastOrder: number
   churnRisk: boolean
   churnStatus: ChurnStatusCode
@@ -380,6 +409,9 @@ interface CustomerOrderRow {
   date: string
   product: string
   optionInfo: string
+  status: string
+  orderStatus: string
+  claimStatus: string
   itemCount: number
 }
 
@@ -396,6 +428,8 @@ interface PurchaseRow {
   quantity: number
   order_date: string
   target_month: string
+  order_status: string | null
+  claim_status: string | null
 }
 
 interface ProductMeta {
@@ -726,7 +760,7 @@ async function fetchCustomers() {
 
     const collected: any[] = []
     const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
-    const baseColumns = 'purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month'
+    const baseColumns = 'purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month, order_status, claim_status'
     for (let from = 0; ; from += DB_FETCH_PAGE_SIZE) {
       const query = supabase
         .from('purchases')
@@ -777,7 +811,9 @@ async function fetchCustomers() {
     for (const [customerKey, customerRows] of grouped.entries()) {
       const historyRows = groupedAll.get(customerKey) || customerRows
       const sorted = [...customerRows].sort((a, b) => parseOrderDate(b.order_date).getTime() - parseOrderDate(a.order_date).getTime())
+      const historySorted = [...historyRows].sort((a, b) => parseOrderDate(b.order_date).getTime() - parseOrderDate(a.order_date).getTime())
       const latest = sorted[0]
+      const latestHistory = historySorted[0] || latest
       if (!latest) continue
 
       const purchaseCount = new Set(customerRows.map((row) => purchaseDateKey(row)).filter(Boolean)).size
@@ -807,6 +843,9 @@ async function fetchCustomers() {
         purchaseCount,
         productCount,
         lastOrder: churn.lastOrderDate || String(latest.order_date || '').slice(0, 10),
+        currentOrderStatus: formatOrderStatusLabel(latestHistory?.order_status, latestHistory?.claim_status),
+        currentOrderStatusCode: String(latestHistory?.order_status || ''),
+        currentClaimStatusCode: String(latestHistory?.claim_status || ''),
         daysSinceLastOrder: churn.daysSinceLastOrder,
         churnRisk: churn.churnRisk,
         churnStatus: churn.status,
@@ -836,7 +875,7 @@ async function fetchCustomerOrders(customer: CustomerRow) {
   const weekSnapshot = filterWeek.value
   const orderDateSnapshot = filterOrderDate.value
   const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
-  const baseColumns = 'order_date, product_name, option_info, quantity, target_month'
+  const baseColumns = 'order_date, product_name, option_info, quantity, target_month, order_status, claim_status'
   let query = supabase
     .from('purchases')
     .select(purchaseSelectColumns(baseColumns, includeSourceColumns))
@@ -871,6 +910,9 @@ async function fetchCustomerOrders(customer: CustomerRow) {
     date: String(row.order_date || '').slice(0, 10),
     product: row.product_name || '-',
     optionInfo: String(row.option_info || '').trim() || '-',
+    status: formatOrderStatusLabel(row.order_status, row.claim_status),
+    orderStatus: String(row.order_status || ''),
+    claimStatus: String(row.claim_status || ''),
     itemCount: computePurchaseQuantity(purchaseQuantityInput({
       product_name: String(row.product_name || ''),
       option_info: String(row.option_info || ''),

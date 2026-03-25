@@ -225,4 +225,5 @@ export {
   chunk,
   parseArgs,
   parseEnvFile,
+  restRequest,
 }

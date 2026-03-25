@@ -236,12 +236,14 @@ const customerMenuItems = computed(() => {
   if (isViewer.value) {
     return [
       { path: '/customers', label: '고객 분석', icon: Users },
+      { path: '/naver-sync', label: '주문 동기화', icon: RefreshCw },
       { path: '/logs', label: '실행 이력', icon: FileText },
     ]
   }
 
   return [
     { path: '/customers', label: '고객 분석', icon: Users },
+    { path: '/naver-sync', label: '주문 동기화', icon: RefreshCw },
     { path: '/upload', label: '데이터 업로드', icon: Upload },
     { path: '/filter', label: '필터링', icon: Filter },
     { path: '/logs', label: '실행 이력', icon: FileText },
@@ -254,6 +256,7 @@ const allMenuItems = computed(() => {
     { path: '/growth-stages', label: '고객 성장 단계', group: '매출분석' },
     { path: '/product-trends', label: '상품 구매 추이', group: '매출분석' },
     { path: '/customers', label: '고객 분석', group: '고객 관리' },
+    { path: '/naver-sync', label: '주문 동기화', group: '고객 관리' },
     { path: '/logs', label: '실행 이력', group: '고객 관리' },
   ]
   if (isViewer.value) return items
@@ -262,6 +265,7 @@ const allMenuItems = computed(() => {
     { path: '/growth-stages', label: '고객 성장 단계', group: '매출분석' },
     { path: '/product-trends', label: '상품 구매 추이', group: '매출분석' },
     { path: '/customers', label: '고객 분석', group: '고객 관리' },
+    { path: '/naver-sync', label: '주문 동기화', group: '고객 관리' },
     { path: '/upload', label: '데이터 업로드', group: '고객 관리' },
     { path: '/filter', label: '필터링', group: '고객 관리' },
     { path: '/logs', label: '실행 이력', group: '고객 관리' },

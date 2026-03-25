@@ -22,7 +22,7 @@ const SOURCE_PRODUCT_RULES: CommerceSourceProductRule[] = [
   { sourceProductId: '12320752331', canonicalGroup: '케어푸', packMultiplier: 1 },
   { sourceProductId: '13041293177', canonicalGroup: '케어푸', packMultiplier: 3 },
   { sourceProductId: '12417368947', canonicalGroup: '츄라잇', optionSensitive: true },
-  { sourceProductId: '13074780587', canonicalGroup: '츄라잇', packMultiplier: 3 },
+  { sourceProductId: '13074780587', canonicalGroup: '츄라잇', packMultiplier: 3, optionSensitive: true },
   { sourceProductId: '12565154404', canonicalGroup: '이즈바이트', packMultiplier: 1 },
   { sourceProductId: '13035043593', canonicalGroup: '이즈바이트', packMultiplier: 2 },
   { sourceProductId: '13035043594', canonicalGroup: '이즈바이트', packMultiplier: 3 },
@@ -131,6 +131,14 @@ function detectSpeciesVariant(productName: string, optionInfo: string): string {
   ], true)
 }
 
+function detectChuraitVariant(productName: string, optionInfo: string): string {
+  return detectKeywordVariant(productName, optionInfo, [
+    { canonical: '데일리핏', keywords: ['데일리핏', '데일리펫'] },
+    { canonical: '브라이트', keywords: ['브라이트'] },
+    { canonical: '클린펫', keywords: ['클린펫'] },
+  ], true)
+}
+
 function resolveCanonicalOption(canonicalGroup: string, productName: string, optionInfo: string): string {
   if (canonicalGroup === '애착트릿' || canonicalGroup === '동결건조리뉴얼전') {
     return detectFlavorVariant(productName, optionInfo)
@@ -166,7 +174,7 @@ function resolveCanonicalOption(canonicalGroup: string, productName: string, opt
   }
 
   if (canonicalGroup === '츄라잇') {
-    return trimOption(optionInfo)
+    return detectChuraitVariant(productName, optionInfo) || trimOption(optionInfo)
   }
 
   return trimOption(optionInfo)

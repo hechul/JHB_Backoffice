@@ -740,6 +740,10 @@ function maskId(value: string): string {
   return `${v.slice(0, 4)}****`
 }
 
+function normalizeNameText(value: unknown): string {
+  return String(value || '').trim().toLowerCase().replace(/[^0-9a-z가-힣*]/g, '')
+}
+
 function idPrefix(value: unknown): string {
   return normalizeText(value).slice(0, 4)
 }
@@ -765,11 +769,26 @@ function idsMatch(purchase: PurchaseRow, exp: ExperienceRow): boolean {
 }
 
 function namesMatch(purchase: PurchaseRow, exp: ExperienceRow): boolean {
-  const target = normalizeText(exp.receiver_name)
+  const target = normalizeNameText(exp.receiver_name)
   if (!target) return false
-  const buyer = normalizeText(purchase.buyer_name)
-  const receiver = normalizeText(purchase.receiver_name || '')
-  return target === buyer || target === receiver
+  const buyer = normalizeNameText(purchase.buyer_name)
+  const receiver = normalizeNameText(purchase.receiver_name || '')
+  return namesEquivalent(target, buyer) || namesEquivalent(target, receiver)
+}
+
+function namesEquivalent(left: string, right: string): boolean {
+  if (!left || !right) return false
+  if (left === right) return true
+  if (!left.includes('*') && !right.includes('*')) return false
+  if (left.length !== right.length) return false
+
+  for (let i = 0; i < left.length; i += 1) {
+    const leftChar = left[i]
+    const rightChar = right[i]
+    if (leftChar === '*' || rightChar === '*') continue
+    if (leftChar !== rightChar) return false
+  }
+  return true
 }
 
 function productMatches(purchase: PurchaseRow, exp: ExperienceRow): boolean {

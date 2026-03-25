@@ -76,6 +76,17 @@ describe('useCommerceProductCatalog', () => {
     expect(result?.canonicalOptionInfo).toBe('엔자이츄')
   })
 
+  it('canonicalizes churait API option aliases to the internal variant labels', () => {
+    const result = resolveCommerceSourceProduct({
+      sourceProductId: '12417368947',
+      productName: '굿포펫 츄라잇 14포입',
+      optionInfo: '맛 선택: 데일리펫(참치) 1개',
+    })
+
+    expect(result?.canonicalProductName).toBe('츄라잇')
+    expect(result?.canonicalOptionInfo).toBe('데일리핏')
+  })
+
   it('returns null for unknown source product ids', () => {
     expect(resolveCommerceSourceProduct({
       sourceProductId: '99999999999',

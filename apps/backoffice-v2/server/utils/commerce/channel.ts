@@ -1,4 +1,4 @@
-import type { CommerceChannel } from './types'
+import type { CommerceChannel } from './types.ts'
 
 export const SUPPORTED_COMMERCE_CHANNELS: CommerceChannel[] = [
   'naver',

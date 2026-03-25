@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
+  detectSheetByColumns,
+  detectLegacyExperienceSheet,
   extractExperienceRows,
   normalizeExperienceHeader,
   preprocessExperiences,
   preprocessOrders,
+  type ParsedWorkbookSheet,
 } from '../../app/composables/useExcelParser'
 
 describe('useExcelParser', () => {
@@ -152,5 +155,58 @@ describe('useExcelParser', () => {
 
     const processed = preprocessExperiences(rows as any)
     expect(processed).toHaveLength(2)
+  })
+
+  it('detects an experience sheet without requiring an order sheet', () => {
+    const sheets: ParsedWorkbookSheet[] = [
+      {
+        name: '웨이프로젝트',
+        headers: ['미션상품명', '옵션정보', '수취인명', '아이디', '구매인증일', '캠페인명'],
+        rows: [],
+        matrix: [],
+      },
+    ]
+
+    const detected = detectSheetByColumns(sheets, ['미션상품명', '옵션정보', '수취인명', '아이디', '구매인증일', '캠페인명'])
+
+    expect(detected?.name).toBe('웨이프로젝트')
+  })
+
+  it('detects a legacy single-sheet experience workbook without headers', () => {
+    const sheets: ParsedWorkbookSheet[] = [
+      {
+        name: 'Sheet1',
+        headers: ['81', '11일차-1', '2025. 12. 1'],
+        rows: [],
+        matrix: [
+          [
+            '81',
+            '11일차-1',
+            '2025. 12. 1',
+            '스스/굿포펫 츄라잇 고양이 츄르영양제 국내산 10g x 14개입',
+            '클린펫',
+            '빈/텍스트',
+            '닉네임A',
+            '수취인A',
+            'id_a',
+          ],
+          [
+            '82',
+            '11일차-2',
+            '2025. 12. 2',
+            '스스/굿포펫 츄라잇 고양이 츄르영양제 국내산 10g x 14개입',
+            '브라이트',
+            '빈/텍스트',
+            '닉네임B',
+            '수취인B',
+            'id_b',
+          ],
+        ],
+      },
+    ]
+
+    const detected = detectLegacyExperienceSheet(sheets)
+
+    expect(detected?.name).toBe('Sheet1')
   })
 })

@@ -1,4 +1,4 @@
-import type { CommerceOrderEligibility } from './types'
+import type { CommerceOrderEligibility } from './types.ts'
 
 const INCLUDED_ORDER_STATUSES = new Set([
   'PAYED',
@@ -14,7 +14,9 @@ const EXCLUDED_ORDER_STATUSES = new Set([
   'CANCELED_BY_NOPAYMENT',
 ])
 
-const EXCLUDED_CLAIM_KEYWORDS = ['cancel', 'return', 'exchange', 'reject', 'withdraw']
+const EXCLUDED_CLAIM_KEYWORDS = ['cancel', 'return', 'exchange']
+const INCLUDED_CLAIM_KEYWORDS = ['reject', 'withdraw']
+const FINALIZED_CLAIM_KEYWORDS = ['done', 'complete', 'completed', 'approve', 'approved']
 
 function normalizeCode(value?: string | null): string {
   return (value ?? '').trim().toUpperCase()
@@ -26,6 +28,7 @@ export function isEligibleCommerceOrderLine(input: {
 }): CommerceOrderEligibility {
   const orderStatus = normalizeCode(input.orderStatus)
   const claimStatus = normalizeCode(input.claimStatus)
+  const normalizedClaim = claimStatus.toLowerCase()
 
   if (EXCLUDED_ORDER_STATUSES.has(orderStatus)) {
     return { eligible: false, reason: `excluded order status: ${orderStatus}` }
@@ -33,7 +36,15 @@ export function isEligibleCommerceOrderLine(input: {
 
   if (
     claimStatus &&
-    EXCLUDED_CLAIM_KEYWORDS.some((keyword) => claimStatus.toLowerCase().includes(keyword))
+    INCLUDED_CLAIM_KEYWORDS.some((keyword) => normalizedClaim.includes(keyword))
+  ) {
+    return { eligible: true, reason: `included claim status: ${claimStatus}` }
+  }
+
+  if (
+    claimStatus &&
+    EXCLUDED_CLAIM_KEYWORDS.some((keyword) => normalizedClaim.includes(keyword)) &&
+    FINALIZED_CLAIM_KEYWORDS.some((keyword) => normalizedClaim.includes(keyword))
   ) {
     return { eligible: false, reason: `excluded claim status: ${claimStatus}` }
   }

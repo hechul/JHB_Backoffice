@@ -2,7 +2,7 @@ import type {
   CommerceMappingDecision,
   CommerceMappingRuleConfig,
   NameOptionRuleConfig,
-} from './types'
+} from './types.ts'
 
 function normalizeText(value?: string | null): string {
   return (value ?? '')

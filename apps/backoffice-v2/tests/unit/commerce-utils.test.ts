@@ -73,13 +73,25 @@ describe('commerce order eligibility', () => {
     })
   })
 
-  it('excludes return-like claim statuses', () => {
+  it('excludes finalized return claim statuses', () => {
     const result = isEligibleCommerceOrderLine({
       orderStatus: 'DELIVERED',
-      claimStatus: 'return_requested',
+      claimStatus: 'RETURN_DONE',
     })
 
     expect(result.eligible).toBe(false)
     expect(result.reason).toContain('excluded claim status')
+  })
+
+  it('keeps rejected return claim statuses', () => {
+    const result = isEligibleCommerceOrderLine({
+      orderStatus: 'PURCHASE_DECIDED',
+      claimStatus: 'RETURN_REJECT',
+    })
+
+    expect(result).toEqual({
+      eligible: true,
+      reason: 'included claim status: RETURN_REJECT',
+    })
   })
 })

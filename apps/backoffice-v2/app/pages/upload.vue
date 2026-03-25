@@ -18,14 +18,10 @@
         <div class="card-header">
           <h3 class="card-title">
             <FileSpreadsheet :size="18" :stroke-width="1.8" style="color: var(--color-primary)" />
-            통합 엑셀 업로드 (2개 시트)
+            체험단 엑셀 업로드
           </h3>
           <div class="upload-header-actions">
-            <button class="btn btn-ghost btn-sm" @click="downloadTemplate('order')">
-              <Download :size="14" :stroke-width="2" />
-              주문 양식
-            </button>
-            <button class="btn btn-ghost btn-sm" @click="downloadTemplate('influencer')">
+            <button class="btn btn-ghost btn-sm" @click="downloadTemplate">
               <Download :size="14" :stroke-width="2" />
               체험단 양식
             </button>
@@ -54,38 +50,19 @@
         <input ref="sourceInput" type="file" accept=".xlsx,.xls" hidden @change="onSourceSelect" />
 
         <p class="text-xs text-muted mt-sm">
-          하나의 엑셀 안에 시트 2개를 포함해야 합니다:
-          <strong>네이버 스스(주문)</strong>, <strong>웨이프로젝트(체험단)</strong>
+          웨이프로젝트 체험단 시트 1개만 포함된 엑셀을 업로드하세요.
+          주문 데이터는 <strong>고객 관리 &gt; 주문 동기화</strong> 메뉴에서 불러옵니다.
         </p>
 
         <div v-if="sourceFile" class="sheet-map">
-          <StatusBadge
-            :label="`주문 시트: ${isSourceParsing ? '탐지 중...' : (detectedOrderSheetName || '미탐지')}`"
-            :variant="isSourceParsing ? 'info' : (detectedOrderSheetName ? 'success' : 'danger')"
-          />
           <StatusBadge
             :label="`체험단 시트: ${isSourceParsing ? '탐지 중...' : (detectedExperienceSheetName || '미탐지')}`"
             :variant="isSourceParsing ? 'info' : (detectedExperienceSheetName ? 'success' : 'danger')"
           />
         </div>
 
-        <div v-if="orderValidation" class="validation-block">
-          <div class="validation-title">네이버 스스(주문) 시트 검증</div>
-          <div class="validation-preview" :class="{ error: orderValidation.missing.length > 0 }">
-            <AlertTriangle v-if="orderValidation.missing.length > 0" :size="14" :stroke-width="2" />
-            <CheckCircle v-else :size="14" :stroke-width="2" style="color: var(--color-success)" />
-            <span>필수 컬럼 {{ orderValidation.total }}개 중 <strong>{{ orderValidation.total - orderValidation.missing.length }}개</strong> 확인됨</span>
-          </div>
-          <div v-if="orderValidation.missing.length" class="missing-columns">
-            <span class="missing-columns-label">누락 컬럼:</span>
-            <div class="missing-columns-list">
-              <span v-for="column in orderValidation.missing" :key="`order-${column}`" class="missing-column-chip">{{ column }}</span>
-            </div>
-          </div>
-        </div>
-
         <div v-if="influencerValidation" class="validation-block">
-          <div class="validation-title">웨이프로젝트(체험단) 시트 검증</div>
+          <div class="validation-title">체험단 시트 검증</div>
           <div class="validation-preview" :class="{ error: influencerValidation.missing.length > 0 }">
             <AlertTriangle v-if="influencerValidation.missing.length > 0" :size="14" :stroke-width="2" />
             <CheckCircle v-else :size="14" :stroke-width="2" style="color: var(--color-success)" />
@@ -97,6 +74,25 @@
               <span v-for="column in influencerValidation.missing" :key="`influencer-${column}`" class="missing-column-chip">{{ column }}</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div v-if="!isViewer" class="card naver-sync-card">
+        <div class="card-header">
+          <h3 class="card-title">
+            <CloudDownload :size="18" :stroke-width="1.8" style="color: var(--color-primary)" />
+            주문 동기화 페이지
+          </h3>
+          <StatusBadge label="분리됨" variant="info" dot />
+        </div>
+
+        <div class="sync-card-copy">
+          <p class="text-sm text-secondary">
+            주문 API 호출은 고객 관리 메뉴의 <strong>주문 동기화</strong> 페이지에서만 실행합니다. 체험단 업로드와 주문 동기화를 분리해서 사용하세요.
+          </p>
+          <NuxtLink to="/naver-sync" class="btn btn-primary btn-lg sync-link-btn">
+            주문 동기화 페이지 열기
+          </NuxtLink>
         </div>
       </div>
     </div>
@@ -152,7 +148,7 @@
       <div class="card-header">
         <h3 class="card-title">
           <AlertTriangle :size="16" :stroke-width="2" style="color: var(--color-warning)" />
-          새 상품 연결 필요 (주문/체험단)
+          새 상품 연결 필요 (체험단)
         </h3>
         <div class="mapping-header-actions">
           <StatusBadge :label="`남은 ${remainingMappingCount}건`" variant="warning" />
@@ -162,7 +158,7 @@
 
       <div class="alert alert-warning mb-lg">
         <AlertTriangle :size="16" :stroke-width="2" />
-        <span>주문/체험단 데이터의 상품/옵션 조합 중 등록되지 않은 항목입니다. 기존 상품 검색으로 연결하거나 새로 등록해 주세요.</span>
+        <span>체험단 데이터의 상품/옵션 조합 중 등록되지 않은 항목입니다. 기존 상품 검색으로 연결하거나 새로 등록해 주세요.</span>
       </div>
 
       <div class="table-wrapper">
@@ -215,7 +211,7 @@
     <div v-if="!hasResult && !isUploading" class="card">
       <EmptyState
         title="업로드 이력이 없습니다"
-        description="시트 2개가 포함된 통합 엑셀을 업로드하면 결과가 여기에 표시됩니다."
+        description="체험단 엑셀을 업로드하면 결과가 여기에 표시됩니다."
         :icon="FileUp"
       />
     </div>
@@ -233,22 +229,32 @@ import {
   ArrowRight,
   Download,
   Info,
+  CloudDownload,
+  Terminal,
+  Play,
+  RefreshCw,
+  Loader2,
+  Clock3,
 } from 'lucide-vue-next'
 import {
   parseExcelWorkbook,
   findSheetByPreferredNames,
   detectSheetByColumns,
+  detectLegacyExperienceSheet,
   validateColumns,
-  preprocessOrders,
   preprocessExperiences,
   extractExperienceRows,
   normalizeExperienceHeader,
   type ParsedWorkbookSheet,
   type ColumnValidation,
 } from '~/composables/useExcelParser'
-import { purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
-import { resolveCommerceSourceProduct } from '~/composables/useCommerceProductCatalog'
 import { matchesSearchQuery } from '~/composables/useTextSearch'
+import {
+  buildProductLookup,
+  normalizeForMatch,
+  resolveMappedProduct,
+  type ProductCatalogItem,
+} from '../../shared/productCatalog'
 import * as XLSX from 'xlsx'
 
 interface MappingItem {
@@ -258,12 +264,6 @@ interface MappingItem {
   mappedProduct: string
   mappedProductId: string
   isProcessing?: boolean
-}
-
-interface ProductCatalogItem {
-  product_id: string
-  product_name: string
-  option_name: string | null
 }
 
 interface ExperienceInsertRow {
@@ -276,36 +276,6 @@ interface ExperienceInsertRow {
   receiver_name: string
   naver_id: string
   purchase_date: string
-}
-
-interface PurchaseDbRow {
-  purchase_id: string
-  upload_batch_id: string
-  target_month: string
-  buyer_id: string
-  buyer_name: string
-  receiver_name: string | null
-  customer_key: string
-  product_id: string
-  product_name: string
-  option_info: string | null
-  source_product_name?: string | null
-  source_option_info?: string | null
-  source_product_id?: string | null
-  source_option_code?: string | null
-  quantity: number
-  order_date: string
-  order_status: string
-  claim_status: string | null
-  delivery_type: string | null
-  is_fake: boolean
-  match_reason: string | null
-  match_rank: number | null
-  matched_exp_id: number | null
-  needs_review: boolean
-  is_manual: boolean
-  filter_ver: string | null
-  quantity_warning: boolean
 }
 
 interface ExperienceDbRow {
@@ -323,28 +293,24 @@ interface ExperienceDbRow {
 }
 
 interface MappingApplyResult {
-  purchaseUpdated: number
   experienceUpdated: number
 }
 
 const supabase = useSupabaseClient()
 const toast = useToast()
-const { isViewer, profileLoaded, profileRevision } = useCurrentUser()
+const { user, isViewer, profileLoaded, profileRevision } = useCurrentUser()
 const { createNotification } = useNotifications()
 const { selectedMonth, refreshMonths } = useAnalysisPeriod()
-const { getWorkflow, setUploadResult, setMappingPending, setUnmappedProducts, resetMonth } = useMonthlyWorkflow()
+const { getWorkflow, setUploadResult, setMappingPending, setUnmappedProducts } = useMonthlyWorkflow()
 
 const sourceFile = ref<File | null>(null)
-const orderValidation = ref<ColumnValidation | null>(null)
 const influencerValidation = ref<ColumnValidation | null>(null)
 const sourceDragOver = ref(false)
-const detectedOrderSheetName = ref('')
 const detectedExperienceSheetName = ref('')
 const inferredCampaignName = ref('')
 const uploadProgress = ref(0)
 const sourceInput = ref<HTMLInputElement | null>(null)
 
-const parsedOrderRows = ref<Record<string, string>[]>([])
 const parsedExpRows = ref<Record<string, string>[]>([])
 const monthSyncSeq = ref(0)
 const isSourceParsing = ref(false)
@@ -362,7 +328,137 @@ const needsMapping = computed(() => uploadState.value === 'mapping_required')
 const mappedCount = computed(() => mappingFailedItems.value.filter((item) => !!item.mappedProductId).length)
 const remainingMappingCount = computed(() => Math.max(0, mappingFailedItems.value.length - mappedCount.value))
 
+type NaverSyncMode = 'dry-run' | 'live'
+type SyncLogLevel = 'info' | 'success' | 'warning' | 'error'
 
+interface NaverSyncLogEntry {
+  time: string
+  level: SyncLogLevel
+  message: string
+}
+
+interface NaverSyncSummaryEntry {
+  label: string
+  value: string
+  tone?: 'info' | 'success' | 'warning' | 'danger'
+}
+
+interface NaverSyncSummary {
+  dryRun?: boolean
+  sourceChannel?: string
+  sourceAccountKey?: string
+  requestedFrom?: string
+  requestedTo?: string
+  windowCount?: number
+  changedCount?: number
+  detailCount?: number
+  rawEventCount?: number
+  rawLineCount?: number
+  projectedCount?: number
+  excludedCount?: number
+  deletedCount?: number
+  unresolvedCount?: number
+  mappingRowCount?: number
+}
+
+interface NaverSyncResponse {
+  ok: boolean
+  dryRun: boolean
+  start: string
+  end: string
+  accountKey: string
+  runType: string
+  requestedByAccountId: string | null
+  limitCount: number
+  detailBatchSize: number
+  scriptPath: string
+  exitCode: number | null
+  signal: string | null
+  durationMs: number
+  summary: NaverSyncSummary | null
+  stdout: string
+  stderr: string
+}
+
+const NAVER_SYNC_PRESETS = {
+  '2025-12': { start: '2025-12-01', end: '2025-12-31' },
+  '2026-01': { start: '2026-01-01', end: '2026-01-31' },
+  '2026-02': { start: '2026-02-01', end: '2026-02-28' },
+  '2025-12-2026-02': { start: '2025-12-01', end: '2026-02-28' },
+} as const
+
+const naverSyncEndpoint = '/api/commerce/naver/sync'
+const NAVER_SYNC_DEFAULT_START = '2025-12-01'
+const NAVER_SYNC_DEFAULT_END = '2026-02-28'
+
+const naverSyncStartDate = ref(NAVER_SYNC_DEFAULT_START)
+const naverSyncEndDate = ref(NAVER_SYNC_DEFAULT_END)
+const naverSyncMode = ref<NaverSyncMode>('dry-run')
+const naverSyncProgress = ref(0)
+const naverSyncProgressLabel = ref('대기 중')
+const naverSyncLogs = ref<NaverSyncLogEntry[]>([])
+const naverSyncSummary = ref<Record<string, any> | null>(null)
+const naverSyncError = ref('')
+const naverSyncLastRunAt = ref('')
+let naverSyncPulseTimer: ReturnType<typeof setInterval> | null = null
+const isNaverSyncRunning = ref(false)
+
+const hasNaverSyncResult = computed(() => Boolean(naverSyncSummary.value) || naverSyncLogs.value.length > 0 || Boolean(naverSyncError.value))
+
+const naverSyncRangeLabel = computed(() => {
+  const start = naverSyncStartDate.value || '-'
+  const end = naverSyncEndDate.value || '-'
+  return `${start} ~ ${end}`
+})
+
+const naverSyncBlockReason = computed(() => {
+  if (isViewer.value) return '열람자 권한에서는 네이버 동기화를 실행할 수 없습니다.'
+  if (isNaverSyncRunning.value) return '동기화가 진행 중입니다.'
+  if (!naverSyncStartDate.value || !naverSyncEndDate.value) return '시작일과 종료일을 모두 입력해 주세요.'
+  if (naverSyncStartDate.value > naverSyncEndDate.value) return '시작일은 종료일보다 빠르거나 같아야 합니다.'
+  return ''
+})
+
+const canRunNaverSync = computed(() => naverSyncBlockReason.value === '')
+
+const naverSyncSummaryEntries = computed<NaverSyncSummaryEntry[]>(() => {
+  const source = naverSyncSummary.value
+  if (!source || typeof source !== 'object') return []
+
+  const valueOf = (keys: string[]) => {
+    for (const key of keys) {
+      const value = (source as Record<string, any>)[key]
+      if (value !== undefined && value !== null && `${value}`.trim() !== '') return value
+    }
+    return undefined
+  }
+
+  const candidates: Array<[string, string[], NaverSyncSummaryEntry['tone']?]> = [
+    ['기간', ['rangeLabel', 'range', 'period', 'syncRange'], 'info'],
+    ['윈도우', ['windows', 'windowCount', 'batchCount'], 'info'],
+    ['변경 주문', ['changed', 'changedCount', 'changedItems', 'changedOrderCount'], 'success'],
+    ['상세 주문', ['detail', 'detailCount', 'productOrderCount', 'detailItems'], 'success'],
+    ['적재', ['projected', 'projectedCount', 'upserted', 'appliedCount', 'purchaseCount'], 'success'],
+    ['미매핑', ['unresolved', 'unresolvedCount', 'needsReviewCount'], 'warning'],
+    ['제외', ['excluded', 'excludedCount', 'skippedCount'], 'warning'],
+    ['실행 시간', ['duration', 'elapsed', 'elapsedMs', 'durationMs'], 'info'],
+  ]
+
+  const rows = candidates
+    .map(([label, keys, tone]) => {
+      const value = valueOf(keys)
+      if (value === undefined) return null
+      return { label, value: String(value), tone }
+    })
+    .filter((entry): entry is NaverSyncSummaryEntry => entry !== null)
+
+  if (rows.length > 0) return rows
+
+  return Object.entries(source)
+    .filter(([, value]) => value !== undefined && value !== null && typeof value !== 'object')
+    .slice(0, 8)
+    .map(([label, value]) => ({ label, value: String(value) }))
+})
 
 const uploadStateVariant = computed(() => {
   const map = { empty: 'neutral', uploading: 'info', uploaded: 'success', mapping_required: 'warning' } as const
@@ -377,7 +473,7 @@ const uploadStepLabel = computed(() => {
 const uploadStepGuide = computed(() => {
   if (selectedMonth.value === 'all') return '전체 기간에서는 업로드를 실행할 수 없습니다. 특정 월을 선택해 주세요.'
   const map = {
-    empty: '시트 2개(네이버 스스/웨이프로젝트)가 포함된 통합 엑셀 파일을 선택한 뒤 업로드를 시작하세요.',
+    empty: '체험단 시트가 포함된 엑셀 파일을 선택한 뒤 업로드를 시작하세요.',
     uploading: '파일 검증과 적재를 진행하고 있습니다. 완료될 때까지 잠시만 기다려주세요.',
     uploaded: '업로드가 완료되었습니다. 다음 단계로 필터링을 실행하세요.',
     mapping_required: '상품 매핑이 필요한 항목이 남아 있습니다. 연결을 마친 뒤 필터링을 진행하세요.',
@@ -389,67 +485,25 @@ const canUpload = computed(() => {
   if (selectedMonth.value === 'all') return false
   if (!sourceFile.value) return false
   if (isSourceParsing.value) return false
-  if (!detectedOrderSheetName.value || !detectedExperienceSheetName.value) return false
-  if (!orderValidation.value || orderValidation.value.missing.length > 0) return false
+  if (!detectedExperienceSheetName.value) return false
   if (!influencerValidation.value || influencerValidation.value.missing.length > 0) return false
-  if (parsedOrderRows.value.length === 0 || parsedExpRows.value.length === 0) return false
+  if (parsedExpRows.value.length === 0) return false
   return true
 })
 
 const uploadBlockReason = computed(() => {
   if (selectedMonth.value === 'all') return '특정 월을 선택한 뒤 업로드를 진행해 주세요.'
-  if (!sourceFile.value) return '통합 엑셀(.xlsx/.xls) 파일을 선택해 주세요.'
+  if (!sourceFile.value) return '체험단 엑셀(.xlsx/.xls) 파일을 선택해 주세요.'
   if (isSourceParsing.value) return '시트/컬럼을 분석 중입니다. 잠시만 기다려 주세요.'
-  if (!detectedOrderSheetName.value) return '주문 시트를 찾지 못했습니다. 시트명(네이버 스스) 또는 컬럼 구성을 확인해 주세요.'
   if (!detectedExperienceSheetName.value) return '체험단 시트를 찾지 못했습니다. 시트명(웨이프로젝트) 또는 컬럼 구성을 확인해 주세요.'
-  if (orderValidation.value && orderValidation.value.missing.length > 0) return '주문 시트에 필수 컬럼이 누락되어 있습니다.'
   if (influencerValidation.value && influencerValidation.value.missing.length > 0) return '체험단 시트에 필수 컬럼이 누락되어 있습니다.'
-  if (parsedOrderRows.value.length === 0) return '주문 시트 데이터가 비어 있습니다.'
   if (parsedExpRows.value.length === 0) return '체험단 시트 데이터가 비어 있습니다.'
   return ''
 })
 
-const orderRequiredColumns = ['상품주문번호', '상품명', '상품번호', '옵션정보', '수량', '구매자명', '구매자ID', '수취인명', '주문일시', '주문상태', '클레임상태']
 const influencerRequiredColumns = ['미션상품명', '옵션정보', '수취인명', '아이디', '구매인증일', '캠페인명']
-const orderSheetAliases = ['네이버 스스', '네이버스스', '스마트스토어', '네이버 스마트스토어']
 const experienceSheetAliases = ['웨이프로젝트', '웨이 프로젝트', '체험단']
-const missionProductRules: { keywords: string[]; canonical: string }[] = [
-  { keywords: ['애착트릿'], canonical: '애착트릿' },
-  { keywords: ['츄라잇'], canonical: '츄라잇' },
-  { keywords: ['케어푸'], canonical: '케어푸' },
-  { keywords: ['두부모래'], canonical: '두부모래' },
-  { keywords: ['이즈바이트'], canonical: '이즈바이트' },
-  { keywords: ['엔자이츄'], canonical: '엔자이츄' },
-  { keywords: ['트릿백'], canonical: '미니 트릿백' },
-  { keywords: ['츄르짜개'], canonical: '츄르짜개 (고양이 간식 디스펜서)' },
-  { keywords: ['도시락'], canonical: '도시락 샘플팩' },
-  { keywords: ['맛보기'], canonical: '전제품 맛보기 샘플' },
-]
 const unmappedOptionDelimiter = '__OPT__'
-
-const optionKeywordRules: { product: string; keywords: string[]; canonical: string }[] = [
-  { product: '애착트릿', keywords: ['북어'], canonical: '북어' },
-  { product: '애착트릿', keywords: ['연어'], canonical: '연어' },
-  { product: '애착트릿', keywords: ['치킨'], canonical: '치킨' },
-  { product: '애착트릿', keywords: ['닭가슴살'], canonical: '치킨' },
-  { product: '애착트릿', keywords: ['닭고기'], canonical: '치킨' },
-  { product: '애착트릿', keywords: ['3종세트', '3종 세트'], canonical: '3종세트' },
-  { product: '동결건조(리뉴얼전)', keywords: ['북어'], canonical: '북어' },
-  { product: '동결건조(리뉴얼전)', keywords: ['연어'], canonical: '연어' },
-  { product: '동결건조(리뉴얼전)', keywords: ['치킨'], canonical: '치킨' },
-  { product: '동결건조(리뉴얼전)', keywords: ['닭가슴살'], canonical: '치킨' },
-  { product: '동결건조(리뉴얼전)', keywords: ['닭고기'], canonical: '치킨' },
-  { product: '츄라잇', keywords: ['데일리핏', '데일리펫'], canonical: '데일리핏' },
-  { product: '츄라잇', keywords: ['클린펫'], canonical: '클린펫' },
-  { product: '츄라잇', keywords: ['브라이트'], canonical: '브라이트' },
-  { product: '미니 트릿백', keywords: ['민트'], canonical: '민트' },
-  { product: '미니 트릿백', keywords: ['퍼플'], canonical: '퍼플' },
-  { product: '츄르짜개 (고양이 간식 디스펜서)', keywords: ['옐로', 'yellow'], canonical: '옐로' },
-  { product: '츄르짜개 (고양이 간식 디스펜서)', keywords: ['블루', 'blue'], canonical: '블루' },
-  { product: '츄르짜개 (고양이 간식 디스펜서)', keywords: ['퍼플', 'purple'], canonical: '퍼플' },
-  { product: '도시락 샘플팩', keywords: ['강아지용'], canonical: '강아지용' },
-  { product: '도시락 샘플팩', keywords: ['고양이용'], canonical: '고양이용' },
-]
 
 const DB_BATCH_SIZE = 50
 const DB_REQUEST_TIMEOUT_MS = 20000
@@ -524,125 +578,6 @@ function applyOptionFilter(query: any, optionValue: string) {
     return query.eq('option_info', optionValue)
   }
   return query.or('option_info.is.null,option_info.eq.')
-}
-
-function toPurchaseRestorePayload(row: PurchaseDbRow) {
-  const payload: Record<string, any> = {
-    upload_batch_id: row.upload_batch_id,
-    target_month: row.target_month,
-    buyer_id: row.buyer_id,
-    buyer_name: row.buyer_name,
-    receiver_name: row.receiver_name,
-    customer_key: row.customer_key,
-    product_id: row.product_id,
-    product_name: row.product_name,
-    option_info: row.option_info,
-    quantity: row.quantity,
-    order_date: row.order_date,
-    order_status: row.order_status,
-    claim_status: row.claim_status,
-    delivery_type: row.delivery_type,
-    is_fake: row.is_fake,
-    match_reason: row.match_reason,
-    match_rank: row.match_rank,
-    matched_exp_id: row.matched_exp_id,
-    needs_review: row.needs_review,
-    is_manual: row.is_manual,
-    filter_ver: row.filter_ver,
-    quantity_warning: row.quantity_warning,
-  }
-  if ('source_product_name' in row) payload.source_product_name = row.source_product_name || ''
-  if ('source_option_info' in row) payload.source_option_info = row.source_option_info || ''
-  if ('source_product_id' in row) payload.source_product_id = row.source_product_id || ''
-  if ('source_option_code' in row) payload.source_option_code = row.source_option_code || ''
-  return payload
-}
-
-async function fetchExistingPurchasesSnapshot(purchaseIds: string[]): Promise<Map<string, PurchaseDbRow>> {
-  const ids = Array.from(new Set(purchaseIds.map((id) => String(id || '').trim()).filter(Boolean)))
-  const snapshot = new Map<string, PurchaseDbRow>()
-  if (ids.length === 0) return snapshot
-
-  const baseColumns = [
-    'purchase_id',
-    'upload_batch_id',
-    'target_month',
-    'buyer_id',
-    'buyer_name',
-    'receiver_name',
-    'customer_key',
-    'product_id',
-    'product_name',
-    'option_info',
-    'quantity',
-    'order_date',
-    'order_status',
-    'claim_status',
-    'delivery_type',
-    'is_fake',
-    'match_reason',
-    'match_rank',
-    'matched_exp_id',
-    'needs_review',
-    'is_manual',
-    'filter_ver',
-    'quantity_warning',
-  ].join(', ')
-  const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
-  const columns = purchaseSelectColumns(baseColumns, includeSourceColumns)
-
-  for (const batch of chunkArray(ids)) {
-    const { data, error } = await runQueryWithRetry(
-      '업로드 롤백용 기존 주문 스냅샷 조회',
-      (signal) =>
-        supabase
-          .from('purchases')
-          .select(columns)
-          .in('purchase_id', batch)
-          .abortSignal(signal),
-    )
-    if (error) throw error
-
-    for (const row of ((data || []) as PurchaseDbRow[])) {
-      snapshot.set(String(row.purchase_id), row)
-    }
-  }
-
-  return snapshot
-}
-
-async function deletePurchasesByIds(ids: string[]) {
-  const uniqueIds = Array.from(new Set(ids.map((id) => String(id || '').trim()).filter(Boolean)))
-  for (const batch of chunkArray(uniqueIds)) {
-    const { error } = await runQueryWithRetry(
-      '업로드 롤백용 신규 주문 삭제',
-      (signal) =>
-        supabase
-          .from('purchases')
-          .delete()
-          .in('purchase_id', batch)
-          .abortSignal(signal),
-    )
-    if (error) throw error
-  }
-}
-
-async function restorePurchaseSnapshots(rows: PurchaseDbRow[]) {
-  const restoreRows = rows.filter((row) => Boolean(row?.purchase_id))
-  for (const batch of chunkArray(restoreRows)) {
-    await Promise.all(batch.map(async (row) => {
-      const { error } = await runQueryWithRetry(
-        `업로드 롤백용 기존 주문 복원(${row.purchase_id})`,
-        (signal) =>
-          supabase
-            .from('purchases')
-            .update(toPurchaseRestorePayload(row))
-            .eq('purchase_id', row.purchase_id)
-            .abortSignal(signal),
-      )
-      if (error) throw error
-    }))
-  }
 }
 
 async function fetchCampaignExperiencesSnapshot(month: string, campaignId: number): Promise<ExperienceDbRow[]> {
@@ -751,6 +686,99 @@ function formatUploadTimestamp(value: string): string {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
 }
 
+function isValidDateInput(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim())
+}
+
+function appendNaverSyncLog(message: string, level: SyncLogLevel = 'info', time = '') {
+  const normalized = String(message || '').trim()
+  if (!normalized) return
+  naverSyncLogs.value.push({
+    time: time || formatUploadTimestamp(new Date().toISOString()),
+    level,
+    message: normalized,
+  })
+}
+
+function buildNaverSyncLogs(stdout: string, stderr: string): NaverSyncLogEntry[] {
+  const nextLogs: NaverSyncLogEntry[] = []
+  const normalizeStdout = (() => {
+    const trimmed = String(stdout || '').trimEnd()
+    const braceIndex = trimmed.lastIndexOf('\n{')
+    if (braceIndex >= 0) {
+      return trimmed.slice(0, braceIndex).trimEnd()
+    }
+    return trimmed
+  })()
+  const appendLines = (text: string, level: SyncLogLevel) => {
+    String(text || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .forEach((line) => {
+        if (line.startsWith('{') && line.endsWith('}')) return
+        nextLogs.push({
+          time: formatUploadTimestamp(new Date().toISOString()),
+          level,
+          message: line,
+        })
+      })
+  }
+
+  appendLines(normalizeStdout, 'info')
+  appendLines(stderr, 'error')
+  return nextLogs.slice(-20)
+}
+
+function resetNaverSyncResult(mode: NaverSyncMode) {
+  naverSyncMode.value = mode
+  naverSyncError.value = ''
+  naverSyncSummary.value = null
+  naverSyncLogs.value = []
+  naverSyncLastRunAt.value = ''
+  naverSyncProgress.value = 0
+  naverSyncProgressLabel.value = mode === 'dry-run' ? '드라이런 시작 준비' : '실시간 동기화 시작 준비'
+}
+
+function startNaverSyncPulse() {
+  stopNaverSyncPulse()
+  naverSyncProgressLabel.value = '동기화 요청 처리 중'
+  naverSyncProgress.value = 12
+  naverSyncPulseTimer = setInterval(() => {
+    naverSyncProgress.value = Math.min(92, naverSyncProgress.value + 7)
+  }, 1200)
+}
+
+function stopNaverSyncPulse(finalProgress = 100) {
+  if (naverSyncPulseTimer) {
+    clearInterval(naverSyncPulseTimer)
+    naverSyncPulseTimer = null
+  }
+  naverSyncProgress.value = finalProgress
+}
+
+function applyNaverSyncPreset(preset: keyof typeof NAVER_SYNC_PRESETS) {
+  const selected = NAVER_SYNC_PRESETS[preset]
+  if (!selected) return
+  naverSyncStartDate.value = selected.start
+  naverSyncEndDate.value = selected.end
+}
+
+function expandMonthRange(start: string, end: string): string[] {
+  if (!isValidDateInput(start) || !isValidDateInput(end) || start > end) return []
+  const startDate = new Date(`${start}T00:00:00`)
+  const endDate = new Date(`${end}T00:00:00`)
+  const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1)
+  const months: string[] = []
+
+  while (cursor.getTime() <= endDate.getTime()) {
+    months.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`)
+    cursor.setMonth(cursor.getMonth() + 1)
+  }
+
+  return months
+}
+
 function pickLatestTimestamp(a: string, b: string): string {
   if (!a) return b
   if (!b) return a
@@ -761,58 +789,31 @@ function pickLatestTimestamp(a: string, b: string): string {
   return da.getTime() >= db.getTime() ? a : b
 }
 
-async function fetchMonthUploadMeta(month: string): Promise<{ orderCount: number; expCount: number; latestUploadAt: string }> {
-  const [{ count: orderCount, error: orderError }, { count: expCount, error: expError }] = await Promise.all([
-    supabase
-      .from('purchases')
-      .select('purchase_id', { count: 'exact', head: true })
-      .eq('target_month', month),
-    supabase
-      .from('experiences')
-      .select('id', { count: 'exact', head: true })
-      .eq('target_month', month),
-  ])
+async function fetchMonthUploadMeta(month: string): Promise<{ expCount: number; latestUploadAt: string }> {
+  const { count: expCount, error: expError } = await supabase
+    .from('experiences')
+    .select('id', { count: 'exact', head: true })
+    .eq('target_month', month)
 
-  if (orderError) throw orderError
   if (expError) throw expError
 
   let latestUploadAt = ''
-  const [{ data: latestOrderRows, error: latestOrderError }, { data: latestExpRows, error: latestExpError }] = await Promise.all([
-    supabase
-      .from('purchases')
-      .select('created_at')
-      .eq('target_month', month)
-      .order('created_at', { ascending: false })
-      .limit(1),
-    supabase
-      .from('experiences')
-      .select('created_at')
-      .eq('target_month', month)
-      .order('created_at', { ascending: false })
-      .limit(1),
-  ])
+  const { data: latestExpRows, error: latestExpError } = await supabase
+    .from('experiences')
+    .select('created_at')
+    .eq('target_month', month)
+    .order('created_at', { ascending: false })
+    .limit(1)
 
-  // created_at 컬럼이 없는 구버전 스키마는 시간 fallback만 생략하고 진행한다.
-  if (!latestOrderError || latestOrderError.code !== '42703') {
-    const orderAt = String((latestOrderRows as any[] | null)?.[0]?.created_at || '')
-    latestUploadAt = pickLatestTimestamp(latestUploadAt, orderAt)
-  }
   if (!latestExpError || latestExpError.code !== '42703') {
     const expAt = String((latestExpRows as any[] | null)?.[0]?.created_at || '')
     latestUploadAt = pickLatestTimestamp(latestUploadAt, expAt)
   }
 
   return {
-    orderCount: Number(orderCount || 0),
     expCount: Number(expCount || 0),
     latestUploadAt: formatUploadTimestamp(latestUploadAt),
   }
-}
-
-function normalizeForMatch(value: string): string {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^0-9a-z가-힣]/g, '')
 }
 
 function buildExperienceDedupKey(row: ExperienceInsertRow): string {
@@ -838,120 +839,10 @@ function formatSize(bytes: number): string {
 function resetSourceFileState() {
   isSourceParsing.value = false
   sourceFile.value = null
-  orderValidation.value = null
   influencerValidation.value = null
-  parsedOrderRows.value = []
   parsedExpRows.value = []
-  detectedOrderSheetName.value = ''
   detectedExperienceSheetName.value = ''
   inferredCampaignName.value = ''
-}
-
-function normalizeMissionProductName(rawName: string): string {
-  const name = String(rawName || '').trim()
-  if (!name) return ''
-
-  const normalizedName = normalizeForMatch(name)
-
-  // 리뉴얼 전 동결건조 라인:
-  // "동결건조(또는 동견건조) 포함 + 애착트릿 미포함"이면 별도 상품으로 분리한다.
-  const hasFreezeDried = normalizedName.includes('동결건조') || normalizedName.includes('동견건조')
-  const hasAttachmentTreat = normalizedName.includes('애착트릿')
-  if (hasFreezeDried && !hasAttachmentTreat) {
-    return '동결건조(리뉴얼전)'
-  }
-
-  const matched = missionProductRules.find((rule) =>
-    rule.keywords.some((kw) => normalizedName.includes(normalizeForMatch(kw))),
-  )
-  return matched?.canonical || name
-}
-
-function matchOptionKeyword(productName: string, source: string): string {
-  const normalizedSource = normalizeForMatch(source)
-  if (!normalizedSource) return ''
-  const matched = optionKeywordRules.find((rule) =>
-    rule.product === productName &&
-    rule.keywords.some((kw) => normalizedSource.includes(normalizeForMatch(kw))),
-  )
-  return matched?.canonical || ''
-}
-
-function normalizeOptionLabel(productName: string, rawOption: string, rawMissionName: string): string {
-  const option = String(rawOption || '').trim()
-  const missionName = String(rawMissionName || '').trim()
-
-  // 두부모래는 옵션(개수)을 매핑 기준에서 사용하지 않는다.
-  if (productName === '두부모래') return ''
-  // 츄라잇은 옵션정보 원문 그대로 사용한다(단일/혼합 축약 금지).
-  if (productName === '츄라잇') {
-    return option.replace(/\s+/g, ' ').trim()
-  }
-
-  const keywordByOption = matchOptionKeyword(productName, option)
-  if (keywordByOption) return keywordByOption
-  const keywordByMission = matchOptionKeyword(productName, missionName)
-  if (keywordByMission) return keywordByMission
-
-  if (!option) return ''
-  return option.replace(/\s+/g, ' ').trim()
-}
-
-function normalizeOptionKey(value: string): string {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .replace(/[()]/g, '')
-    .replace(/[|/]/g, '')
-}
-
-function makeProductMatchKey(productName: string, optionName: string): string {
-  return `${productName.trim().toLowerCase()}::${normalizeOptionKey(optionName)}`
-}
-
-function buildProductLookup() {
-  const exactMap = new Map<string, string>()
-  const baseMap = new Map<string, string>()
-  const anyNameMap = new Map<string, string>()
-
-  for (const product of productCatalog.value) {
-    const normalizedProductName = normalizeMissionProductName(product.product_name)
-    exactMap.set(makeProductMatchKey(product.product_name, product.option_name || ''), product.product_id)
-    exactMap.set(makeProductMatchKey(normalizedProductName, product.option_name || ''), product.product_id)
-    if (!anyNameMap.has(product.product_name.toLowerCase())) {
-      anyNameMap.set(product.product_name.toLowerCase(), product.product_id)
-    }
-    if (!anyNameMap.has(normalizedProductName.toLowerCase())) {
-      anyNameMap.set(normalizedProductName.toLowerCase(), product.product_id)
-    }
-    if (!product.option_name && !baseMap.has(product.product_name.toLowerCase())) {
-      baseMap.set(product.product_name.toLowerCase(), product.product_id)
-    }
-    if (!product.option_name && !baseMap.has(normalizedProductName.toLowerCase())) {
-      baseMap.set(normalizedProductName.toLowerCase(), product.product_id)
-    }
-  }
-
-  return { exactMap, baseMap, anyNameMap }
-}
-
-function resolveMappedProduct(
-  rawProductName: string,
-  rawOption: string,
-  lookup: ReturnType<typeof buildProductLookup>,
-): { normalizedName: string; normalizedOption: string; mappedProductId: string | null } {
-  const normalizedName = normalizeMissionProductName(rawProductName)
-  const normalizedOption = normalizeOptionLabel(normalizedName, rawOption, rawProductName)
-  const isOptionAgnostic = normalizedName === '두부모래'
-  const mappedProductId =
-    (isOptionAgnostic
-      ? lookup.anyNameMap.get(normalizedName.toLowerCase())
-      : lookup.exactMap.get(makeProductMatchKey(normalizedName, normalizedOption)))
-    || lookup.baseMap.get(normalizedName.toLowerCase())
-    || null
-
-  return { normalizedName, normalizedOption, mappedProductId }
 }
 
 function serializeUnmappedItem(name: string, option: string): string {
@@ -972,21 +863,15 @@ function productDisplayName(product: ProductCatalogItem): string {
   return product.option_name ? `${product.product_name} / ${product.option_name}` : product.product_name
 }
 
-function pickOrderSheet(sheets: ParsedWorkbookSheet[]): ParsedWorkbookSheet | null {
-  return (
-    findSheetByPreferredNames(sheets, orderSheetAliases)
-    || detectSheetByColumns(sheets, orderRequiredColumns)
-  )
-}
-
 function pickExperienceSheet(sheets: ParsedWorkbookSheet[], excludedNames: string[]): ParsedWorkbookSheet | null {
   return (
     findSheetByPreferredNames(sheets, experienceSheetAliases, excludedNames)
     || detectSheetByColumns(sheets, influencerRequiredColumns, excludedNames)
+    || detectLegacyExperienceSheet(sheets, excludedNames)
   )
 }
 
-// ── 파일 선택 시 실제 엑셀 파싱(시트 2개) ──
+// ── 파일 선택 시 체험단 시트 파싱 ──
 async function processSourceFile(file: File) {
   if (/^~\$/.test(file.name)) {
     toast.error('엑셀 임시 잠금 파일(~$)입니다. 원본 파일을 선택해 주세요.')
@@ -999,22 +884,8 @@ async function processSourceFile(file: File) {
 
   try {
     const sheets = await parseExcelWorkbook(file)
-    const orderSheet = pickOrderSheet(sheets)
-    const experienceSheet = pickExperienceSheet(sheets, orderSheet ? [orderSheet.name] : [])
-
-    detectedOrderSheetName.value = orderSheet?.name || ''
+    const experienceSheet = pickExperienceSheet(sheets, [])
     detectedExperienceSheetName.value = experienceSheet?.name || ''
-
-    if (orderSheet) {
-      parsedOrderRows.value = orderSheet.rows
-      orderValidation.value = validateColumns(orderSheet.headers, orderRequiredColumns)
-    } else {
-      orderValidation.value = {
-        total: orderRequiredColumns.length,
-        matched: [],
-        missing: [...orderRequiredColumns],
-      }
-    }
 
     if (experienceSheet) {
       const extractedRows = extractExperienceRows(experienceSheet)
@@ -1099,30 +970,12 @@ function removeMappingItem(item: MappingItem) {
 
 async function applyMappedProductToDataset(item: MappingItem, mappedProductId: string): Promise<MappingApplyResult> {
   if (!mappedProductId || selectedMonth.value === 'all') {
-    return { purchaseUpdated: 0, experienceUpdated: 0 }
+    return { experienceUpdated: 0 }
   }
 
   const matchedProduct = productCatalog.value.find((p) => p.product_id === mappedProductId)
   const normalizedProductName = matchedProduct?.product_name || item.originalName
   const normalizedOption = matchedProduct?.option_name || null
-
-  const purchasePayload: Record<string, any> = {
-    product_id: mappedProductId,
-    product_name: normalizedProductName,
-  }
-  if (normalizedOption) purchasePayload.option_info = normalizedOption
-
-  let purchaseQuery = supabase
-    .from('purchases')
-    .update(purchasePayload)
-    .eq('target_month', selectedMonth.value)
-    .eq('product_name', item.originalName)
-  purchaseQuery = applyOptionFilter(purchaseQuery, item.originalOption)
-  const { data: purchaseData, error: purchaseError } = await purchaseQuery.select('purchase_id')
-  if (purchaseError) {
-    console.error('Failed to apply mapped product to purchases:', purchaseError)
-    throw new Error(`주문 DB 반영 실패: ${purchaseError.message}`)
-  }
 
   const experiencePayload: Record<string, any> = {
     mapped_product_id: mappedProductId,
@@ -1143,10 +996,9 @@ async function applyMappedProductToDataset(item: MappingItem, mappedProductId: s
   }
 
   const result = {
-    purchaseUpdated: Array.isArray(purchaseData) ? purchaseData.length : 0,
     experienceUpdated: Array.isArray(expData) ? expData.length : 0,
   }
-  if (result.purchaseUpdated + result.experienceUpdated === 0) {
+  if (result.experienceUpdated === 0) {
     throw new Error('적용 대상이 없어 반영되지 않았습니다. 원본 상품명/옵션 조건을 확인해 주세요.')
   }
   return result
@@ -1157,7 +1009,7 @@ async function connectItem(item: MappingItem) {
   item.isProcessing = true
   try {
     const applied = await applyMappedProductToDataset(item, item.mappedProductId)
-    toast.success(`"${item.mappedProduct}" 연결 완료 (주문 ${applied.purchaseUpdated}건, 체험단 ${applied.experienceUpdated}건)`)
+    toast.success(`"${item.mappedProduct}" 연결 완료 (체험단 ${applied.experienceUpdated}건)`)
     removeMappingItem(item)
     syncMappingState()
   } catch (err: any) {
@@ -1205,7 +1057,7 @@ async function registerAsNew(item: MappingItem) {
         const applied = await applyMappedProductToDataset(item, newId)
         removeMappingItem(item)
         syncMappingState()
-        toast.success(`"${item.mappedProduct}" 상품이 등록되었습니다. (주문 ${applied.purchaseUpdated}건, 체험단 ${applied.experienceUpdated}건 반영)`)
+        toast.success(`"${item.mappedProduct}" 상품이 등록되었습니다. (체험단 ${applied.experienceUpdated}건 반영)`)
       } catch (err: any) {
         // 상품은 등록됨, 매핑 반영만 실패
         toast.error(`상품은 등록되었지만 매핑 반영에 실패했습니다: ${err.message}`)
@@ -1219,6 +1071,97 @@ async function registerAsNew(item: MappingItem) {
   }
 }
 
+async function startNaverSync(mode: NaverSyncMode) {
+  if (!canRunNaverSync.value || isNaverSyncRunning.value) return
+
+  resetNaverSyncResult(mode)
+  isNaverSyncRunning.value = true
+  startNaverSyncPulse()
+  appendNaverSyncLog(
+    mode === 'dry-run'
+      ? `드라이런 시작: ${naverSyncStartDate.value} ~ ${naverSyncEndDate.value}`
+      : `실동기화 시작: ${naverSyncStartDate.value} ~ ${naverSyncEndDate.value}`,
+    'info',
+  )
+
+  try {
+    const response = await $fetch<NaverSyncResponse>(naverSyncEndpoint, {
+      method: 'POST',
+      body: {
+        start: naverSyncStartDate.value,
+        end: naverSyncEndDate.value,
+        dryRun: mode === 'dry-run',
+        requestedByAccountId: user.value.id || null,
+      },
+    })
+
+    stopNaverSyncPulse(95)
+    naverSyncProgressLabel.value = '응답 정리 중'
+    naverSyncSummary.value = response.summary || null
+    naverSyncLogs.value = buildNaverSyncLogs(response.stdout, response.stderr)
+    naverSyncLastRunAt.value = formatUploadTimestamp(new Date().toISOString())
+
+    if (mode === 'live') {
+      for (const month of expandMonthRange(naverSyncStartDate.value, naverSyncEndDate.value)) {
+        setUploadResult(month, {
+          orderUploadDone: true,
+        })
+      }
+      await refreshMonths()
+      const latestSyncedMonth = naverSyncEndDate.value.slice(0, 7)
+      if (latestSyncedMonth) {
+        selectMonth(latestSyncedMonth)
+      }
+    }
+
+    stopNaverSyncPulse(100)
+    naverSyncProgressLabel.value = mode === 'dry-run' ? '드라이런 완료' : '실시간 동기화 완료'
+    toast.success(mode === 'dry-run' ? '네이버 주문 드라이런이 완료되었습니다.' : '네이버 주문 동기화가 완료되었습니다.')
+    await createNotification({
+      type: mode === 'dry-run' ? 'info' : 'success',
+      title: mode === 'dry-run' ? '네이버 주문 드라이런 완료' : '네이버 주문 동기화 완료',
+      message: `${naverSyncStartDate.value} ~ ${naverSyncEndDate.value} 범위를 ${mode === 'dry-run' ? '미리보기' : '적재'}했습니다.`,
+      link: '/upload',
+      payload: {
+        dryRun: mode === 'dry-run',
+        range: `${naverSyncStartDate.value} ~ ${naverSyncEndDate.value}`,
+        summary: response.summary || null,
+      },
+    })
+  } catch (error: any) {
+    stopNaverSyncPulse(100)
+    const errorPayload = error?.data || null
+    const nestedErrorData = errorPayload?.data || null
+    naverSyncError.value = String(
+      errorPayload?.message
+      || nestedErrorData?.message
+      || error?.message
+      || '네이버 주문 동기화 중 알 수 없는 오류가 발생했습니다.',
+    )
+    naverSyncSummary.value = ((nestedErrorData?.summary || errorPayload?.summary || null) as NaverSyncSummary | null)
+    naverSyncLogs.value = buildNaverSyncLogs(
+      String(nestedErrorData?.stdout || errorPayload?.stdout || ''),
+      String(nestedErrorData?.stderr || errorPayload?.stderr || ''),
+    )
+    naverSyncLastRunAt.value = formatUploadTimestamp(new Date().toISOString())
+    naverSyncProgressLabel.value = '실행 실패'
+    toast.error(naverSyncError.value)
+    await createNotification({
+      type: 'error',
+      title: '네이버 주문 동기화 실패',
+      message: naverSyncError.value,
+      link: '/upload',
+      payload: {
+        dryRun: mode === 'dry-run',
+        range: `${naverSyncStartDate.value} ~ ${naverSyncEndDate.value}`,
+        error: naverSyncError.value,
+      },
+    })
+  } finally {
+    isNaverSyncRunning.value = false
+  }
+}
+
 // ── 핵심: 업로드 실행 (Supabase 연동) ──
 async function startUpload() {
   if (isViewer.value || selectedMonth.value === 'all') return
@@ -1227,15 +1170,12 @@ async function startUpload() {
   const targetMonth = selectedMonth.value
   const batchId = crypto.randomUUID()
   const campaignNameForLog = inferredCampaignName.value || `${targetMonth} 웨이프로젝트`
-  const touchedPurchaseIds = new Set<string>()
-  let purchaseSnapshotById = new Map<string, PurchaseDbRow>()
-  let ordersMutated = false
   let rollbackCampaignId: number | null = null
   let experienceSnapshot: ExperienceDbRow[] = []
   let experiencesMutated = false
 
   async function rollbackUploadMutations() {
-    const hasRollbackTarget = ordersMutated || (experiencesMutated && rollbackCampaignId !== null)
+    const hasRollbackTarget = experiencesMutated && rollbackCampaignId !== null
     if (!hasRollbackTarget) return
 
     if (experiencesMutated && rollbackCampaignId !== null) {
@@ -1244,113 +1184,18 @@ async function startUpload() {
         await restoreCampaignExperiencesSnapshot(experienceSnapshot)
       }
     }
-
-    if (ordersMutated) {
-      const existingIdSet = new Set(purchaseSnapshotById.keys())
-      const insertedIds = Array.from(touchedPurchaseIds).filter((id) => !existingIdSet.has(id))
-      if (insertedIds.length > 0) {
-        await deletePurchasesByIds(insertedIds)
-      }
-
-      const restoreRows = Array.from(purchaseSnapshotById.values())
-        .filter((row) => touchedPurchaseIds.has(String(row.purchase_id || '')))
-      if (restoreRows.length > 0) {
-        await restorePurchaseSnapshots(restoreRows)
-      }
-    }
   }
 
   try {
-    let orderNew = 0, orderExcluded = 0, expInserted = 0
+    let expInserted = 0
     const unmappedProducts = new Map<string, { name: string; option: string }>()
-    const productLookup = buildProductLookup()
+    const productLookup = buildProductLookup(productCatalog.value)
+    uploadProgress.value = 20
 
-    // 1. 주문 적재
-    if (sourceFile.value && parsedOrderRows.value.length > 0) {
-      uploadProgress.value = 10
-      const { valid, excluded } = preprocessOrders(parsedOrderRows.value)
-      orderExcluded = excluded
-      const resolvedOrderMap = new Map<string, ReturnType<typeof resolveMappedProduct>>()
-      const purchaseIds = valid.map((row) => String(row.purchase_id || '').trim()).filter(Boolean)
-      for (const id of purchaseIds) touchedPurchaseIds.add(id)
-      purchaseSnapshotById = await fetchExistingPurchasesSnapshot(purchaseIds)
-
-      // 스마트스토어 주문 상품도 상품목록 기준으로 미등록 여부를 먼저 체크한다.
-      for (const row of valid) {
-        const sourceProductMatch = resolveCommerceSourceProduct({
-          sourceProductId: row.product_id,
-          productName: row.product_name,
-          optionInfo: row.option_info,
-        })
-        const resolved = resolveMappedProduct(
-          sourceProductMatch?.canonicalProductName || row.product_name,
-          sourceProductMatch?.canonicalOptionInfo ?? row.option_info,
-          productLookup,
-        )
-        resolvedOrderMap.set(row.purchase_id, resolved)
-        if (!resolved.mappedProductId) {
-          const serialized = serializeUnmappedItem(resolved.normalizedName, resolved.normalizedOption)
-          unmappedProducts.set(serialized, { name: resolved.normalizedName, option: resolved.normalizedOption })
-        }
-      }
-
-      uploadProgress.value = 30
-
-      const totalOrderBatches = Math.max(1, Math.ceil(valid.length / DB_BATCH_SIZE))
-      const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
-      for (let i = 0; i < valid.length; i += DB_BATCH_SIZE) {
-        const batch = valid.slice(i, i + DB_BATCH_SIZE).map((row) => {
-          const resolved = resolvedOrderMap.get(row.purchase_id)
-          const payload: Record<string, any> = {
-            purchase_id: row.purchase_id,
-            upload_batch_id: batchId,
-            target_month: targetMonth,
-            buyer_id: row.buyer_id,
-            buyer_name: row.buyer_name,
-            receiver_name: row.receiver_name,
-            customer_key: row.customer_key,
-            // 고객분석/필터링에서 products와 조인 가능한 내부 상품ID를 우선 저장한다.
-            product_id: resolved?.mappedProductId || row.product_id,
-            product_name: resolved?.normalizedName || row.product_name,
-            option_info: resolved?.normalizedOption || row.option_info || '',
-            quantity: row.quantity,
-            order_date: row.order_date,
-            order_status: row.order_status,
-            claim_status: row.claim_status,
-            quantity_warning: row.quantity >= 2,
-          }
-          if (includeSourceColumns) {
-            payload.source_product_name = row.product_name
-            payload.source_option_info = row.option_info || ''
-            payload.source_product_id = row.product_id || ''
-            payload.source_option_code = ''
-          }
-          return payload
-        })
-        const batchNumber = Math.floor(i / DB_BATCH_SIZE) + 1
-        const { data, error } = await runQueryWithRetry(
-          `주문 적재 ${batchNumber}/${totalOrderBatches} 배치`,
-          (signal) =>
-            supabase
-              .from('purchases')
-              .upsert(batch, { onConflict: 'purchase_id' })
-              .select('purchase_id')
-              .abortSignal(signal),
-        )
-        if (error) throw new Error(`주문 적재 오류: ${error.message}`)
-        if (!ordersMutated) ordersMutated = true
-        orderNew += data?.length || 0
-
-        const processed = Math.min(i + batch.length, valid.length)
-        uploadProgress.value = 30 + Math.floor((processed / valid.length) * 30)
-      }
-    }
-    uploadProgress.value = 65
-
-    // 2. 체험단 적재
+    // 체험단 적재
     if (sourceFile.value && parsedExpRows.value.length > 0) {
       const expData = preprocessExperiences(parsedExpRows.value)
-      uploadProgress.value = 70
+      uploadProgress.value = 35
 
       // 캠페인 조회/생성
       const campaignName = campaignNameForLog
@@ -1382,7 +1227,7 @@ async function startUpload() {
         if (campErr) throw new Error(`캠페인 생성 오류: ${campErr.message}`)
         campaignId = (created as any).id
       }
-      uploadProgress.value = 80
+      uploadProgress.value = 50
 
       if (campaignId) {
         rollbackCampaignId = campaignId
@@ -1431,14 +1276,14 @@ async function startUpload() {
           expInserted += data?.length || 0
 
           const processed = Math.min(i + batch.length, dedupedRows.length)
-          uploadProgress.value = 80 + Math.floor((processed / Math.max(dedupedRows.length, 1)) * 15)
+          uploadProgress.value = 60 + Math.floor((processed / Math.max(dedupedRows.length, 1)) * 35)
         }
       }
     }
     uploadProgress.value = 95
 
-    // 3. 결과 처리
-    uploadResultStats.value = { orderNew, orderExcluded, expInserted }
+    // 결과 처리
+    uploadResultStats.value = { orderNew: 0, orderExcluded: 0, expInserted }
     const unmappedList = Array.from(unmappedProducts.values())
     const serializedUnmapped = unmappedList.map((item) => serializeUnmappedItem(item.name, item.option))
     if (unmappedList.length > 0) {
@@ -1464,11 +1309,11 @@ async function startUpload() {
     setTimeout(() => {
       uploadState.value = unmappedList.length > 0 ? 'mapping_required' : 'uploaded'
       setUploadResult(targetMonth, {
-        orderUploadDone: parsedOrderRows.value.length > 0,
+        orderUploadDone: false,
         influencerUploadDone: parsedExpRows.value.length > 0,
         campaignLabel: campaignNameForLog,
         mappingPending: unmappedList.length,
-        uploadStats: { orderNew, orderExcluded, expInserted },
+        uploadStats: { orderNew: 0, orderExcluded: 0, expInserted },
         unmappedProducts: serializedUnmapped,
       })
       uploadResultTimestamp.value = getWorkflow(targetMonth).lastOrderUpload || ''
@@ -1477,14 +1322,12 @@ async function startUpload() {
 
     await createNotification({
       type: unmappedList.length > 0 ? 'warning' : 'success',
-      title: '데이터 업로드 완료',
-      message: `${targetMonth} 주문 ${orderNew}건, 체험단 ${expInserted}건 반영${orderExcluded > 0 ? `, 제외 ${orderExcluded}건` : ''}${unmappedList.length > 0 ? `, 매핑 필요 ${unmappedList.length}건` : ''}`,
+      title: '체험단 업로드 완료',
+      message: `${targetMonth} 체험단 ${expInserted}건 반영${unmappedList.length > 0 ? `, 매핑 필요 ${unmappedList.length}건` : ''}`,
       link: '/upload',
       payload: {
         targetMonth,
-        orderNew,
         expInserted,
-        orderExcluded,
         mappingPending: unmappedList.length,
       },
     })
@@ -1513,18 +1356,13 @@ async function startUpload() {
   }
 }
 
-function downloadTemplate(type: 'order' | 'influencer') {
+function downloadTemplate() {
   const wb = XLSX.utils.book_new()
-  const isOrder = type === 'order'
-  const headers = isOrder
-    ? ['상품주문번호', '상품명', '상품번호', '옵션정보', '수량', '구매자명', '구매자ID', '수취인명', '주문일시', '주문상태', '클레임상태']
-    : ['미션상품명', '옵션정보', '수취인명', '아이디', '구매인증일', '캠페인명']
-  const sample = isOrder
-    ? ['2025021200000001', '유산균 파우더 30포', 'P-1001', '기본', 1, '김지윤', 'kimj****', '김지윤', '2025-02-12 10:32', '결제완료', '없음']
-    : ['유산균 파우더 30포', '기본', '김지윤', 'kimj****', '2025-02-12', '2025년 2월 블로그 체험단']
+  const headers = ['미션상품명', '옵션정보', '수취인명', '아이디', '구매인증일', '캠페인명']
+  const sample = ['유산균 파우더 30포', '기본', '김지윤', 'kimj****', '2025-02-12', '2025년 2월 블로그 체험단']
   const ws = XLSX.utils.aoa_to_sheet([headers, sample])
-  XLSX.utils.book_append_sheet(wb, ws, isOrder ? '주문양식' : '체험단양식')
-  XLSX.writeFile(wb, isOrder ? '주문업로드_예시양식.xlsx' : '체험단업로드_예시양식.xlsx')
+  XLSX.utils.book_append_sheet(wb, ws, '체험단양식')
+  XLSX.writeFile(wb, '체험단업로드_예시양식.xlsx')
 }
 
 const uploadResults = computed(() => {
@@ -1532,35 +1370,38 @@ const uploadResults = computed(() => {
   const s = uploadResultStats.value
   const timestamp = uploadResultTimestamp.value || '-'
   const r = []
-  if (s.orderNew > 0) r.push({ time: timestamp, description: '주문 데이터 업로드 반영', count: s.orderNew, type: 'success' })
   if (s.expInserted > 0) r.push({ time: timestamp, description: '체험단 데이터 업로드 반영', count: s.expInserted, type: 'info' })
-  if (s.orderExcluded > 0) r.push({ time: timestamp, description: '취소/반품 주문 제외 처리', count: s.orderExcluded, type: 'warning' })
   return r
+})
+
+onBeforeUnmount(() => {
+  stopNaverSyncPulse()
 })
 
 watch(
   () => [selectedMonth.value, profileLoaded.value, profileRevision.value],
-  async ([month, loaded]) => {
+  async ([month, loaded], previousValue) => {
     if (!loaded) return
+    const previousMonth = previousValue?.[0]
     const syncId = ++monthSyncSeq.value
     if (isUploading.value) return
-    resetSourceFileState()
-    uploadResultStats.value = { orderNew: 0, orderExcluded: 0, expInserted: 0 }
+    if (month !== previousMonth) {
+      resetSourceFileState()
+      uploadResultStats.value = { orderNew: 0, orderExcluded: 0, expInserted: 0 }
+    }
 
     if (month === 'all') { uploadState.value = 'empty'; mappingFailedItems.value = []; return }
 
     const wf = getWorkflow(month)
-    inferredCampaignName.value = wf.campaignLabel === '미등록' ? '' : wf.campaignLabel
-    uploadResultTimestamp.value = wf.lastOrderUpload !== '미업로드' ? wf.lastOrderUpload : ''
+    inferredCampaignName.value = ''
+    uploadResultTimestamp.value = ''
 
-    let orderCount = 0
     let expCount = 0
     let latestUploadAt = ''
     let dbChecked = false
     try {
       const meta = await fetchMonthUploadMeta(month)
       if (syncId !== monthSyncSeq.value) return
-      orderCount = meta.orderCount
       expCount = meta.expCount
       latestUploadAt = meta.latestUploadAt
       dbChecked = true
@@ -1568,37 +1409,25 @@ watch(
       console.warn('Failed to fetch upload counts for month:', month, error)
     }
 
-    const hasDbUpload = dbChecked ? (orderCount > 0 || expCount > 0) : (wf.orderUploadDone || wf.influencerUploadDone)
-    if (!hasDbUpload) {
-      if (
-        dbChecked
-        && (
-          wf.orderUploadDone
-          || wf.influencerUploadDone
-          || wf.mappingPending > 0
-          || wf.uploadStats.orderNew > 0
-          || wf.uploadStats.expInserted > 0
-          || wf.uploadStats.orderExcluded > 0
-          || wf.lastOrderUpload !== '미업로드'
-        )
-      ) {
-        resetMonth(month)
-      }
+    const hasExperienceUpload = dbChecked ? expCount > 0 : wf.influencerUploadDone
+    if (!hasExperienceUpload) {
       mappingFailedItems.value = []
       uploadResultStats.value = { orderNew: 0, orderExcluded: 0, expInserted: 0 }
       uploadResultTimestamp.value = ''
+      inferredCampaignName.value = ''
       uploadState.value = 'empty'
       return
     }
 
     uploadResultStats.value = {
-      orderNew: wf.uploadStats.orderNew > 0 ? wf.uploadStats.orderNew : orderCount,
-      orderExcluded: wf.uploadStats.orderExcluded || 0,
+      orderNew: 0,
+      orderExcluded: 0,
       expInserted: wf.uploadStats.expInserted > 0 ? wf.uploadStats.expInserted : expCount,
     }
     if (!uploadResultTimestamp.value && latestUploadAt) {
       uploadResultTimestamp.value = latestUploadAt
     }
+    inferredCampaignName.value = wf.campaignLabel === '미등록' ? '' : wf.campaignLabel
     mappingFailedItems.value = wf.unmappedProducts.map((serialized) => {
       const parsed = deserializeUnmappedItem(serialized)
       return {
@@ -1746,6 +1575,226 @@ watch(
   gap: var(--space-lg);
 }
 
+.naver-sync-card {
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.1), transparent 40%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+}
+
+.sync-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.sync-link-btn {
+  width: fit-content;
+  margin-top: var(--space-sm);
+}
+
+.sync-endpoint-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.08);
+  color: #1D4ED8;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+}
+
+.sync-date-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.sync-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.sync-date-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.875rem;
+}
+
+.sync-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-md);
+}
+
+.sync-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-top: var(--space-lg);
+}
+
+.sync-spinner {
+  animation: sync-spin 1s linear infinite;
+}
+
+.sync-result-shell {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.sync-progress-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.sync-progress-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sync-progress-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.sync-progress-range {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+.sync-progress-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.sync-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.sync-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-light);
+}
+
+.sync-summary-item.tone-info {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.sync-summary-item.tone-success {
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.sync-summary-item.tone-warning {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.sync-summary-item.tone-danger {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.sync-summary-label {
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+}
+
+.sync-summary-value {
+  font-size: 0.9375rem;
+  color: var(--color-text);
+  word-break: break-word;
+}
+
+.sync-log-panel {
+  margin-top: var(--space-md);
+}
+
+.sync-log-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-xs);
+}
+
+.sync-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-light);
+}
+
+.sync-log-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.sync-log-item.success {
+  color: #065F46;
+}
+
+.sync-log-item.warning {
+  color: #92400E;
+}
+
+.sync-log-item.error {
+  color: #991B1B;
+}
+
+.sync-log-time {
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.sync-log-message {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@keyframes sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .result-timeline {
   display: flex;
   flex-direction: column;
@@ -1873,6 +1922,10 @@ watch(
   .next-step-banner {
     flex-wrap: wrap;
     gap: var(--space-sm);
+  }
+
+  .sync-date-grid {
+    grid-template-columns: 1fr;
   }
 }
 

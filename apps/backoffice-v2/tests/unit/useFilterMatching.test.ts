@@ -132,6 +132,51 @@ describe('useFilterMatching', () => {
     expect(unmatched.matches[0]?.reason).toBe('옵션불일치_매칭')
   })
 
+  it('matches single-option churait rows when purchases store the canonical option label', () => {
+    const result = buildMatchingResult(
+      [purchase({
+        purchase_id: 'P-churait-single',
+        product_name: '굿포펫 츄라잇 고양이 영양제 스틱 유산균 14포입',
+        option_info: '브라이트',
+        order_date: '2025-12-10',
+      })],
+      [experience({
+        id: 301,
+        mission_product_name: '츄라잇',
+        option_info: '브라이트',
+        purchase_date: '2025-12-10',
+      })],
+    )
+
+    expect(result.matches).toHaveLength(1)
+    expect(result.matches[0]?.rank).toBe(1)
+    expect(result.matches[0]?.reason).toBe('완벽일치_매칭')
+  })
+
+  it('matches masked API names against full experience names', () => {
+    const result = buildMatchingResult(
+      [purchase({
+        purchase_id: 'P-masked-name',
+        buyer_name: '황*호',
+        receiver_name: '황*호',
+        product_name: '츄라잇',
+        option_info: '브라이트',
+        order_date: '2025-12-10',
+      })],
+      [experience({
+        id: 302,
+        mission_product_name: '츄라잇',
+        option_info: '브라이트',
+        receiver_name: '황민호',
+        purchase_date: '2025-12-10',
+      })],
+    )
+
+    expect(result.matches).toHaveLength(1)
+    expect(result.matches[0]?.rank).toBe(1)
+    expect(result.matches[0]?.reason).toBe('완벽일치_매칭')
+  })
+
   it('treats freeze-dried legacy product as non-campaign (excluded from matching)', () => {
     expect(extractProductKeyword('스스/굿포펫 동결건조간식 원물100% 국내생산 연어 110g')).toBe('동결건조리뉴얼전')
     expect(isNonCampaignProduct('스스/굿포펫 동결건조간식 원물100% 국내생산 연어 110g')).toBe(true)

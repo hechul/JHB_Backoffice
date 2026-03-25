@@ -62,6 +62,10 @@ function normalizeText(value: unknown): string {
   return String(value || '').trim().toLowerCase().replace(/[^0-9a-z가-힣]/g, '')
 }
 
+function normalizeNameText(value: unknown): string {
+  return String(value || '').trim().toLowerCase().replace(/[^0-9a-z가-힣*]/g, '')
+}
+
 function idPrefix(value: unknown): string {
   return normalizeText(value).slice(0, 4)
 }
@@ -220,12 +224,12 @@ export function extractExperienceOptionKeyword(
 /* ─── 비교 함수(5‑Rank에서 사용) ─── */
 
 function getNameMatchType(purchase: FilterPurchaseRow, exp: FilterExperienceRow): NameMatchType {
-  const target = normalizeText(exp.receiver_name)
+  const target = normalizeNameText(exp.receiver_name)
   if (!target) return 'none'
-  const buyer = normalizeText(purchase.buyer_name)
-  const receiver = normalizeText(purchase.receiver_name || '')
-  const buyerMatched = Boolean(buyer) && target === buyer
-  const receiverMatched = Boolean(receiver) && target === receiver
+  const buyer = normalizeNameText(purchase.buyer_name)
+  const receiver = normalizeNameText(purchase.receiver_name || '')
+  const buyerMatched = Boolean(buyer) && namesEquivalent(target, buyer)
+  const receiverMatched = Boolean(receiver) && namesEquivalent(target, receiver)
   if (buyerMatched && receiverMatched) return 'both'
   if (receiverMatched) return 'receiver'
   if (buyerMatched) return 'buyer'
@@ -234,6 +238,21 @@ function getNameMatchType(purchase: FilterPurchaseRow, exp: FilterExperienceRow)
 
 function namesMatch(purchase: FilterPurchaseRow, exp: FilterExperienceRow): boolean {
   return getNameMatchType(purchase, exp) !== 'none'
+}
+
+function namesEquivalent(left: string, right: string): boolean {
+  if (!left || !right) return false
+  if (left === right) return true
+  if (!left.includes('*') && !right.includes('*')) return false
+  if (left.length !== right.length) return false
+
+  for (let i = 0; i < left.length; i += 1) {
+    const leftChar = left[i]
+    const rightChar = right[i]
+    if (leftChar === '*' || rightChar === '*') continue
+    if (leftChar !== rightChar) return false
+  }
+  return true
 }
 
 function idsMatch(purchase: FilterPurchaseRow, exp: FilterExperienceRow): boolean {
