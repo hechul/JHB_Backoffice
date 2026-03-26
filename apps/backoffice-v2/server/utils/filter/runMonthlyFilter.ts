@@ -44,7 +44,7 @@ interface PersistFilterLogInput {
 
 export interface MonthlyFilterRunResult {
   month: string
-  status: 'filtered' | 'skipped_no_purchases' | 'skipped_no_experiences'
+  status: 'filtered' | 'skipped_no_purchases' | 'reset_no_experiences'
   totalPurchases: number
   totalExperiences: number
   matchedCount: number
@@ -217,6 +217,25 @@ async function countPendingReviews(month: string): Promise<number> {
   return Number(count || 0)
 }
 
+async function resetMonthMatchingState(
+  admin: ReturnType<typeof getAdminClient>,
+  month: string,
+) {
+  const { error } = await admin
+    .from('purchases')
+    .update({
+      is_fake: false,
+      match_reason: null,
+      match_rank: null,
+      matched_exp_id: null,
+      needs_review: false,
+    })
+    .eq('target_month', month)
+    .eq('is_manual', false)
+
+  if (error) throw error
+}
+
 export async function findMonthsWithExperiences(months: readonly unknown[]): Promise<string[]> {
   const normalizedMonths = normalizeTargetMonths(months)
   if (normalizedMonths.length === 0) return []
@@ -280,33 +299,57 @@ export async function runMonthlyFilter(
     }
 
     if (experiences.length === 0) {
+      await resetMonthMatchingState(admin, normalizedMonth)
+      const { error: stampFilterVersionError } = await admin
+        .from('purchases')
+        .update({ filter_ver: FILTER_VER })
+        .eq('target_month', normalizedMonth)
+        .eq('is_manual', false)
+        .is('filter_ver', null)
+      if (stampFilterVersionError) throw stampFilterVersionError
+      const pendingReviewCount = await countPendingReviews(normalizedMonth)
+      const durationSec = (Date.now() - startedAt) / 1000
+
+      await persistFilterLog({
+        month: normalizedMonth,
+        actorName,
+        actorId,
+        status: 'success',
+        durationSec,
+        totalMatched: 0,
+        totalUnmatchedExp: 0,
+        totalPurchasesProcessed: purchases.filter((row) => !row.is_manual).length,
+        totalExpProcessed: 0,
+        newMatches: 0,
+        removedMatches: 0,
+        protectedCount: 0,
+        ambiguousCount: 0,
+      })
+
       return {
         month: normalizedMonth,
-        status: 'skipped_no_experiences',
+        status: 'reset_no_experiences',
         totalPurchases: purchases.length,
         totalExperiences: 0,
         matchedCount: 0,
         unmatchedExperienceCount: 0,
-        pendingReviewCount: 0,
+        pendingReviewCount,
       }
     }
 
     const matching = buildMatchingResult(purchases, experiences)
 
-    const { error: resetError } = await admin
+    await resetMonthMatchingState(admin, normalizedMonth)
+
+    const { error: resetMetaError } = await admin
       .from('purchases')
       .update({
-        is_fake: false,
-        match_reason: null,
-        match_rank: null,
-        matched_exp_id: null,
-        needs_review: false,
         filter_ver: null,
         quantity_warning: false,
       })
       .eq('target_month', normalizedMonth)
       .eq('is_manual', false)
-    if (resetError) throw resetError
+    if (resetMetaError) throw resetMetaError
 
     await runConcurrentUpdates(matching.matches, async (match) => {
       const { error } = await admin

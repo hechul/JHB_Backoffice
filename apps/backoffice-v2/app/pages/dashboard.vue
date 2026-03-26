@@ -5,7 +5,6 @@
         <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
         <StatusBadge v-if="selectedMonth !== 'all' && dashboardWeekFilter" :label="weekLabelFromCode(selectedMonth, dashboardWeekFilter)" variant="info" />
         <StatusBadge v-if="dashboardLoading" label="데이터 불러오는 중" variant="info" />
-        <span v-else class="text-xs text-muted">실구매 주문 {{ currentMetrics.realPurchase.toLocaleString() }}건 기준</span>
       </div>
       <div v-if="selectedMonth !== 'all'" class="status-row-actions">
         <select v-model="dashboardWeekFilter" class="select select-compact">
@@ -59,7 +58,6 @@
         <div class="card-header">
           <div class="dashboard-card-head">
             <h3 class="card-title">{{ trendTitle }}</h3>
-            <p class="card-caption">차트는 실구매 건수만 보여주고, 아래에서 구간 간 변화율을 바로 읽을 수 있게 정리했습니다.</p>
           </div>
           <StatusBadge :label="trendRangeLabel" variant="neutral" />
         </div>
@@ -94,7 +92,6 @@
         <div class="card-header">
           <div class="dashboard-card-head">
             <h3 class="card-title">실구매 고객 펫 타입</h3>
-            <p class="card-caption">고객별 구매 이력을 기준으로 강아지/고양이/공용 비중을 집계합니다.</p>
           </div>
         </div>
         <div class="pet-chart">
@@ -117,7 +114,6 @@
         <div class="card-header">
           <div class="dashboard-card-head">
             <h3 class="card-title">{{ dailySalesTitle }}</h3>
-            <p class="card-caption">원문 상품명 기준 수량 계산 로직으로 집계한 실구매 판매량입니다. 막대를 누르면 고객 분석으로 이동합니다.</p>
           </div>
           <StatusBadge :label="dailySalesRangeLabel" variant="neutral" />
         </div>
@@ -134,7 +130,6 @@
         <div class="card-header">
           <div class="dashboard-card-head">
             <h3 class="card-title">실구매 인기 상품 TOP 5</h3>
-            <p class="card-caption">실구매 수량 기준 상위 상품과 옵션 구성을 확인합니다.</p>
           </div>
           <StatusBadge :label="`${selectedPeriodLabel} 기준`" variant="neutral" />
         </div>
@@ -161,7 +156,6 @@
         <div class="card-header">
           <div class="dashboard-card-head">
             <h3 class="card-title">고객 성장 단계</h3>
-            <p class="card-caption">누적 구매월 수 기준으로 계산한 고객 분포입니다.</p>
           </div>
         </div>
         <div class="stage-bars">
@@ -195,7 +189,6 @@
         <div class="card-header">
           <div>
             <h3 class="card-title">이탈 위험 고객</h3>
-            <p class="card-caption">마지막 구매 상품의 예상 소비일을 초과한 실구매 고객입니다.</p>
           </div>
           <StatusBadge :label="churnCountLabel" variant="danger" dot />
         </div>

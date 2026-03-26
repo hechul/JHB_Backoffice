@@ -94,6 +94,7 @@
               <th>구매 횟수</th>
               <th>구매 상품 수</th>
               <th v-if="hasProductFilter">검색상품 구매횟수</th>
+              <th>구매 날짜</th>
               <th>최근 주문</th>
               <th>현재 상태</th>
               <th>이탈 위험</th>
@@ -123,6 +124,7 @@
               <td>{{ c.purchaseCount }}회</td>
               <td>{{ formatQuantityCount(c.productCount) }}개</td>
               <td v-if="hasProductFilter">{{ matchingProductPurchaseCount(c) }}회</td>
+              <td class="text-sm text-secondary">{{ currentPurchaseDate(c) }}</td>
               <td class="text-sm text-secondary">{{ c.lastOrder }}</td>
               <td>
                 <StatusBadge
@@ -139,7 +141,7 @@
               </td>
             </tr>
             <tr v-if="filteredCustomers.length === 0">
-              <td :colspan="hasProductFilter ? 11 : 10" class="empty-row">조건에 맞는 고객이 없습니다.</td>
+              <td :colspan="hasProductFilter ? 12 : 11" class="empty-row">조건에 맞는 고객이 없습니다.</td>
             </tr>
           </tbody>
         </table>
@@ -183,6 +185,10 @@
             <div v-if="hasProductFilter" class="customer-mobile-item">
               <span class="customer-mobile-label">검색상품 구매횟수</span>
               <span class="customer-mobile-value">{{ matchingProductPurchaseCount(c) }}회</span>
+            </div>
+            <div class="customer-mobile-item">
+              <span class="customer-mobile-label">구매 날짜</span>
+              <span class="customer-mobile-value customer-mobile-muted">{{ currentPurchaseDate(c) }}</span>
             </div>
             <div class="customer-mobile-item">
               <span class="customer-mobile-label">최근 주문</span>
@@ -969,6 +975,32 @@ const filteredCustomers = computed(() => {
     return true
   })
 })
+
+const currentPurchaseDateByCustomer = computed(() => {
+  const result = new Map<string, string>()
+  const productQuery = filterProductName.value.trim()
+
+  for (const row of customerPurchaseRows.value) {
+    if (filterWeek.value && selectedMonth.value !== 'all' && weekCodeFromDate(row.order_date, selectedMonth.value) !== filterWeek.value) continue
+    if (filterOrderDate.value && purchaseDateKey(row) !== filterOrderDate.value) continue
+    if (productQuery && !matchesSearchQuery(productQuery, purchaseDisplayProductName(row), row.product_name, row.source_product_name)) continue
+
+    const customerKey = row.customer_key || `${row.buyer_id}_${row.buyer_name}`
+    const date = purchaseDateKey(row)
+    if (!date) continue
+
+    const current = result.get(customerKey)
+    if (!current || parseOrderDate(date).getTime() > parseOrderDate(current).getTime()) {
+      result.set(customerKey, date)
+    }
+  }
+
+  return result
+})
+
+function currentPurchaseDate(customer: CustomerRow): string {
+  return currentPurchaseDateByCustomer.value.get(customer.customerKey) || customer.lastOrder
+}
 
 const totalPages = computed(() => {
   const total = filteredCustomers.value.length

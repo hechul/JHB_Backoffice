@@ -77,24 +77,6 @@
         </div>
       </div>
 
-      <div v-if="!isViewer" class="card naver-sync-card">
-        <div class="card-header">
-          <h3 class="card-title">
-            <CloudDownload :size="18" :stroke-width="1.8" style="color: var(--color-primary)" />
-            주문 동기화 페이지
-          </h3>
-          <StatusBadge label="분리됨" variant="info" dot />
-        </div>
-
-        <div class="sync-card-copy">
-          <p class="text-sm text-secondary">
-            주문 API 호출은 고객 관리 메뉴의 <strong>주문 동기화</strong> 페이지에서만 실행합니다. 체험단 업로드와 주문 동기화를 분리해서 사용하세요.
-          </p>
-          <NuxtLink to="/naver-sync" class="btn btn-primary btn-lg sync-link-btn">
-            주문 동기화 페이지 열기
-          </NuxtLink>
-        </div>
-      </div>
     </div>
 
     <div v-if="!isViewer" class="upload-actions">
@@ -229,7 +211,6 @@ import {
   ArrowRight,
   Download,
   Info,
-  CloudDownload,
   Terminal,
   Play,
   RefreshCw,

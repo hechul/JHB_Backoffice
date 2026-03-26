@@ -5,7 +5,12 @@ import { serverSupabaseUser } from '#supabase/server'
 import {
   findMonthsWithExperiences,
   normalizeTargetMonths,
+  runMonthlyFilter,
 } from '../../../utils/filter/runMonthlyFilter.ts'
+import {
+  releaseMonthFilterLock,
+  tryAcquireMonthFilterLock,
+} from '../../../utils/filter/monthFilterLock.ts'
 
 interface NaverSyncRequestBody {
   start?: unknown
@@ -31,6 +36,7 @@ interface ScriptResult {
 interface BackgroundRefilterResult {
   affectedMonths: string[]
   queuedMonths: string[]
+  resetMonths: string[]
   skippedMonths: string[]
   status: 'not_requested' | 'queued' | 'no_experience_months' | 'schedule_failed'
   errorMessage: string | null
@@ -314,6 +320,7 @@ export default defineEventHandler(async (event) => {
   let backgroundRefilter: BackgroundRefilterResult = {
     affectedMonths: [],
     queuedMonths: [],
+    resetMonths: [],
     skippedMonths: [],
     status: 'not_requested',
     errorMessage: null,
@@ -324,27 +331,74 @@ export default defineEventHandler(async (event) => {
       Array.isArray(summary?.affectedTargetMonths) ? summary.affectedTargetMonths : [],
     )
     if (affectedMonths.length > 0) {
+      const queuedMonths: string[] = []
+      const resetMonths: string[] = []
+      const skippedMonths: string[] = []
+      const failureMessages: string[] = []
+
       try {
-        const queuedMonths = await findMonthsWithExperiences(affectedMonths)
-        const skippedMonths = affectedMonths.filter((month) => !queuedMonths.includes(month))
-        backgroundRefilter = {
-          affectedMonths,
-          queuedMonths,
-          skippedMonths,
-          status: queuedMonths.length > 0 ? 'queued' : 'no_experience_months',
-          errorMessage: null,
+        const monthsWithExperiences = await findMonthsWithExperiences(affectedMonths)
+        queuedMonths.push(...monthsWithExperiences)
+
+        const monthsWithoutExperiences = affectedMonths.filter((month) => !monthsWithExperiences.includes(month))
+        for (const month of monthsWithoutExperiences) {
+          const lock = tryAcquireMonthFilterLock({
+            month,
+            owner: '자동 정리(sync, 체험단 없음)',
+          })
+          if (!lock.acquired) {
+            skippedMonths.push(month)
+            failureMessages.push(`${month}: 자동 정리용 월 잠금을 확보하지 못했습니다.`)
+            continue
+          }
+
+          try {
+            await runMonthlyFilter(month, {
+              actorName: '자동 정리(sync, 체험단 없음)',
+              actorId: requestedByAccountId || null,
+            })
+            resetMonths.push(month)
+          } catch (error) {
+            skippedMonths.push(month)
+            failureMessages.push(
+              `${month}: ${error instanceof Error ? error.message : String(error)}`,
+            )
+          } finally {
+            releaseMonthFilterLock({
+              month,
+              token: lock.lock.token,
+            })
+          }
         }
 
         if (queuedMonths.length > 0) {
-          spawnBackgroundFilterProcess({
-            months: queuedMonths,
-            actorId: requestedByAccountId || null,
-          })
+          try {
+            spawnBackgroundFilterProcess({
+              months: queuedMonths,
+              actorId: requestedByAccountId || null,
+            })
+          } catch (error) {
+            skippedMonths.push(...queuedMonths)
+            queuedMonths.length = 0
+            failureMessages.push(error instanceof Error ? error.message : String(error))
+          }
+        }
+
+        backgroundRefilter = {
+          affectedMonths,
+          queuedMonths,
+          resetMonths,
+          skippedMonths,
+          status: failureMessages.length > 0
+            ? 'schedule_failed'
+            : (queuedMonths.length > 0 ? 'queued' : 'no_experience_months'),
+          errorMessage: failureMessages.length > 0 ? failureMessages.join(' | ') : null,
         }
       } catch (error) {
         backgroundRefilter = {
           affectedMonths,
           queuedMonths: [],
+          resetMonths: [],
           skippedMonths: affectedMonths,
           status: 'schedule_failed',
           errorMessage: error instanceof Error ? error.message : String(error),

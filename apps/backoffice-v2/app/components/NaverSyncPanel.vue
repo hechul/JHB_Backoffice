@@ -126,6 +126,7 @@ interface NaverSyncSummary {
 interface NaverSyncBackgroundRefilter {
   affectedMonths: string[]
   queuedMonths: string[]
+  resetMonths: string[]
   skippedMonths: string[]
   status: 'not_requested' | 'queued' | 'no_experience_months' | 'schedule_failed'
   errorMessage: string | null
@@ -463,6 +464,13 @@ function formatMonthLabel(month: string): string {
 function appendBackgroundRefilterLogs(input?: NaverSyncBackgroundRefilter | null) {
   if (!input) return
 
+  if (input.resetMonths.length > 0) {
+    appendNaverSyncLog(
+      `체험단이 없는 ${input.resetMonths.map(formatMonthLabel).join(', ')} 데이터는 실구매 상태로 정리했습니다.`,
+      'success',
+    )
+  }
+
   if (input.status === 'queued' && input.queuedMonths.length > 0) {
     appendNaverSyncLog(
       `체험단이 있는 ${input.queuedMonths.map(formatMonthLabel).join(', ')} 데이터는 백그라운드에서 다시 계산합니다.`,
@@ -472,7 +480,7 @@ function appendBackgroundRefilterLogs(input?: NaverSyncBackgroundRefilter | null
 
   if (input.status === 'no_experience_months' && input.affectedMonths.length > 0) {
     appendNaverSyncLog(
-      '체험단이 없는 월만 바뀌어서 추가 필터링은 실행하지 않았습니다.',
+      '체험단 데이터가 없는 월은 추가 필터링 없이 실구매 상태만 유지합니다.',
       'info',
     )
   }
