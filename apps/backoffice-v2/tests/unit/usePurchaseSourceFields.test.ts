@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { purchaseQuantityInput } from '../../app/composables/usePurchaseSourceFields'
+import {
+  normalizePurchaseSourceScope,
+  purchaseQuantityInput,
+  purchaseSourceScopeSelectColumns,
+} from '../../app/composables/usePurchaseSourceFields'
 import { computePurchaseQuantity } from '../../app/composables/usePurchaseQuantity'
 
 describe('usePurchaseSourceFields', () => {
@@ -72,5 +76,26 @@ describe('usePurchaseSourceFields', () => {
     })
 
     expect(computePurchaseQuantity(input).totalCount).toBe(4)
+  })
+
+  it('adds source scope columns only when explicitly requested', () => {
+    expect(purchaseSourceScopeSelectColumns('purchase_id, product_name', false)).toBe('purchase_id, product_name')
+    expect(purchaseSourceScopeSelectColumns('purchase_id, product_name', true))
+      .toBe('purchase_id, product_name, source_channel, source_fulfillment_type')
+  })
+
+  it('normalizes missing source scope values to safe defaults', () => {
+    expect(normalizePurchaseSourceScope({})).toEqual({
+      sourceChannel: 'excel',
+      sourceFulfillmentType: 'default',
+    })
+
+    expect(normalizePurchaseSourceScope({
+      source_channel: 'coupang',
+      source_fulfillment_type: 'rocket_growth',
+    })).toEqual({
+      sourceChannel: 'coupang',
+      sourceFulfillmentType: 'rocket_growth',
+    })
   })
 })

@@ -16,13 +16,16 @@
 
     <div class="card today-card" :class="{ 'mode-cta': workToggleMode === 'before_start' && !blocksAttendanceToday }">
       <div class="today-head">
-        <div>
+        <div class="today-head-copy">
           <div class="today-label">오늘 ({{ todayDate }})</div>
           <strong class="today-status" :class="todayDisplayStatus.className">{{ todayDisplayStatus.label }}</strong>
           <div v-if="todayApprovedLeave" class="today-note">
             승인된 부재: {{ getLeaveTypeLabel(todayApprovedLeave.leave_type) }}
           </div>
-          <div v-else class="today-note">{{ todayActionDescription }}</div>
+          <div class="today-badges">
+            <span v-if="nextActionLabel" class="today-helper-chip accent">다음 행동 · {{ nextActionLabel }}</span>
+            <span class="today-helper-chip">기준 퇴근 · {{ settings.work_end_time }}</span>
+          </div>
         </div>
         <div class="today-pill">{{ currentModeLabel }}</div>
       </div>
@@ -40,8 +43,8 @@
             </button>
 
             <div v-else-if="workToggleMode === 'on'" class="action-row">
-              <button class="btn btn-ghost btn-lg action-secondary" :disabled="saving || !canToggleWork" @click="handleToggleWork">일시중단</button>
               <button class="btn btn-primary btn-lg action-primary" :disabled="saving || !canFinalCheckOut" @click="isCheckOutConfirmOpen = true">퇴근하기</button>
+              <button class="btn btn-ghost btn-lg action-secondary" :disabled="saving || !canToggleWork" @click="handleToggleWork">일시중단</button>
             </div>
 
             <div v-else-if="workToggleMode === 'off'" class="action-row">
@@ -51,7 +54,7 @@
 
             <div v-else class="action-complete">
               <strong>오늘도 수고하셨습니다</strong>
-              <span>오늘 근무 기록이 모두 저장되었습니다.</span>
+              <span>기록 저장 완료</span>
             </div>
           </template>
 
@@ -62,7 +65,7 @@
         </template>
         <div v-else class="action-complete leave-complete">
           <strong>{{ todayDisplayStatus.label }}</strong>
-          <span>승인된 휴가 일정이 있어 오늘 출퇴근 기록은 입력하지 않습니다.</span>
+          <span>오늘은 근태 입력이 없습니다.</span>
         </div>
       </div>
 
@@ -78,6 +81,10 @@
         <div class="today-item">
           <span>총 근무시간</span>
           <strong>{{ todayWorkDuration }}</strong>
+        </div>
+        <div class="today-item">
+          <span>기준 퇴근</span>
+          <strong>{{ settings.work_end_time }}</strong>
         </div>
       </div>
 
@@ -286,15 +293,19 @@ const currentModeLabel = computed(() => {
   return '퇴근 완료'
 })
 
-const todayActionDescription = computed(() => {
-  if (todayApprovedLeave.value) return `승인된 부재: ${getLeaveTypeLabel(todayApprovedLeave.value.leave_type)}`
-  if (workToggleMode.value === 'before_start' && todayComputedStatus.value.code === 'off_day') {
-    return '기본 휴무일입니다. 필요하면 출근하기로 근무 기록을 시작할 수 있습니다.'
+const nextActionLabel = computed(() => {
+  if (todayApprovedLeave.value && blocksAttendanceToday.value) return ''
+  if (sessionsTableMissing.value) {
+    if (canLegacyCheckIn.value) return '출근'
+    if (canLegacyCheckOut.value) return '퇴근'
+    return '완료'
   }
-  if (workToggleMode.value === 'before_start') return '출근하기를 눌러 근무를 시작하세요.'
-  if (workToggleMode.value === 'on') return '잠시 자리를 비울 때 일시중단, 업무가 끝나면 퇴근하기를 누르세요.'
-  if (workToggleMode.value === 'off') return '자리로 돌아왔으면 재시작, 업무를 마쳤으면 퇴근하기를 누르세요.'
-  return '오늘 근무 기록이 모두 저장되었습니다.'
+  if (workToggleMode.value === 'before_start') {
+    return todayComputedStatus.value.code === 'off_day' ? '필요 시 출근' : '출근'
+  }
+  if (workToggleMode.value === 'on') return '퇴근 또는 일시중단'
+  if (workToggleMode.value === 'off') return '재시작 또는 퇴근'
+  return '완료'
 })
 
 const todayWorkDuration = computed(() => {
@@ -789,6 +800,12 @@ onBeforeUnmount(() => {
   gap: var(--space-md);
 }
 
+.today-head-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .today-label {
   font-size: 0.92rem;
   color: var(--color-text-secondary);
@@ -808,6 +825,33 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
+.today-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.today-helper-chip {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.today-helper-chip.accent {
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.18);
+  background: rgba(239, 246, 255, 0.92);
+}
+
 .today-pill {
   min-height: 42px;
   padding: 0 16px;
@@ -823,7 +867,7 @@ onBeforeUnmount(() => {
 
 .today-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-md);
 }
 
@@ -851,6 +895,10 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+  padding: 18px;
+  border-radius: 22px;
+  background: rgba(248, 250, 252, 0.76);
+  border: 1px solid rgba(148, 163, 184, 0.14);
 }
 
 .action-main {
@@ -1179,7 +1227,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 960px) {
   .today-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1195,17 +1243,7 @@ onBeforeUnmount(() => {
   }
 
   .today-grid {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(148px, 72vw);
-    overflow-x: auto;
-    padding: 2px 2px 8px;
-    margin: 0 -2px;
-    scrollbar-width: none;
-  }
-
-  .today-grid::-webkit-scrollbar {
-    display: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .action-main,
@@ -1220,6 +1258,10 @@ onBeforeUnmount(() => {
   .session-top {
     display: flex;
     flex-direction: column;
+  }
+
+  .today-pill {
+    width: 100%;
   }
 
   .session-state {

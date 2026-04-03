@@ -130,6 +130,10 @@ function resolveEnzaichuCount(productName: string, quantity: number): number {
   const pieceCount = extractLastPieceCount(productName)
   if (!pieceCount) return quantity
 
+  // "1개/2개/3개..."처럼 실제 판매 수량이 직접 적힌 SKU는 그대로 사용한다.
+  // 무게 기준 fallback은 "100g, 20개" 같은 내부 조각 수 표기에만 적용한다.
+  if (pieceCount <= 6) return pieceCount * quantity
+
   const gram = extractGram(productName)
   if (gram && gram !== 10) {
     const byGram = (gram / 100) * quantity
@@ -143,6 +147,10 @@ function resolveEnzaichuCount(productName: string, quantity: number): number {
 function resolveEaseBiteCount(productName: string, quantity: number): number {
   const pieceCount = extractLastPieceCount(productName)
   if (!pieceCount) return quantity
+
+  // "1개/2개/3개/4개"처럼 판매 SKU 수량은 그대로 개수로 본다.
+  // 무게 기준 fallback은 "13g, 14개" 같은 내부 조각 수 표기에만 적용한다.
+  if (pieceCount <= 6) return pieceCount * quantity
 
   const gram = extractGram(productName)
   if (gram && gram !== 13) {
@@ -192,8 +200,13 @@ export function computePurchaseQuantity(input: PurchaseQuantityInput): PurchaseQ
     return fallbackResult(optionInfo, quantity)
   }
 
-  // 디스펜서 / 트릿백 / 전제품 맛보기 샘플
-  if (group === '츄르짜개' || group === '트릿백' || group === '맛보기' || group === '샘플팩') {
+  // 디스펜서 / 트릿백은 쿠팡 SKU별 개수 규칙이 있으면 그 값을 우선 사용한다.
+  if (group === '츄르짜개' || group === '트릿백') {
+    return fallbackResult(optionInfo, (packMultiplier || 1) * quantity)
+  }
+
+  // 전제품 맛보기 샘플 / 도시락 샘플은 주문 수량 그대로 본다.
+  if (group === '맛보기' || group === '샘플팩') {
     return fallbackResult(optionInfo, quantity)
   }
 

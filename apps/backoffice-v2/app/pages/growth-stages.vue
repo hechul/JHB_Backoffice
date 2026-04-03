@@ -1,42 +1,37 @@
 <template>
   <div class="growth-page">
-    <div class="growth-toolbar">
-      <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
-      <NuxtLink to="/dashboard" class="btn btn-secondary btn-sm growth-back-link">
-        <BarChart3 :size="14" :stroke-width="2" />
-        대시보드로 돌아가기
-      </NuxtLink>
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1 class="page-title">재구매·리텐션</h1>
+        <span class="page-caption">전환과 성장 흐름</span>
+      </div>
+      <div class="page-header-actions">
+        <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
+        <NuxtLink to="/dashboard" class="btn btn-secondary btn-sm growth-back-link">
+          <BarChart3 :size="14" :stroke-width="2" />
+          요약으로
+        </NuxtLink>
+      </div>
     </div>
 
     <div v-if="loading" class="card growth-loading">고객 성장 단계 데이터를 불러오는 중입니다.</div>
 
     <template v-else>
-      <div class="growth-summary-grid">
-        <div
-          v-for="summary in insights.summaries"
-          :key="summary.stage"
-          class="card growth-summary-card"
-          :style="{ '--stage-accent': stageColor(summary.stage) }"
-        >
-          <div class="growth-summary-top">
-            <StatusBadge :label="summary.label" :variant="badgeVariant(summary.stage)" />
-            <span class="growth-summary-ratio">전체 {{ summary.ratio }}%</span>
-          </div>
-          <strong class="growth-summary-count">{{ summary.count.toLocaleString() }}명</strong>
-          <div class="growth-summary-meter">
-            <div
-              class="growth-summary-meter-fill"
-              :class="`fill-${summary.stage.toLowerCase()}`"
-              :style="{ width: `${summary.ratio}%` }"
-            />
-          </div>
-          <button class="growth-summary-foot" @click="navigateToCustomers(summary.stage)">
-            <span>이탈위험 {{ summary.churnCustomers.toLocaleString() }}명</span>
-            <span class="growth-summary-foot-link">
-              고객 보기
-              <MoveRight :size="12" :stroke-width="2" />
-            </span>
-          </button>
+      <div class="growth-kpi-grid">
+        <div class="card growth-kpi-card">
+          <span class="growth-kpi-label">2회차 전환율</span>
+          <strong class="growth-kpi-value">{{ repurchaseSummary.secondPurchaseRate }}%</strong>
+          <span class="growth-kpi-meta">{{ repurchaseSummary.secondPurchaseCount.toLocaleString() }}명 / 전체 {{ insights.totalCustomers.toLocaleString() }}명</span>
+        </div>
+        <div class="card growth-kpi-card">
+          <span class="growth-kpi-label">3회차 전환율</span>
+          <strong class="growth-kpi-value">{{ repurchaseSummary.thirdPurchaseRate }}%</strong>
+          <span class="growth-kpi-meta">{{ repurchaseSummary.thirdPurchaseCount.toLocaleString() }}명 / 전체 {{ insights.totalCustomers.toLocaleString() }}명</span>
+        </div>
+        <div class="card growth-kpi-card">
+          <span class="growth-kpi-label">평균 재구매 일수</span>
+          <strong class="growth-kpi-value">{{ repurchaseSummary.averageSecondPurchaseDays }}일</strong>
+          <span class="growth-kpi-meta">첫 구매에서 2회차까지</span>
         </div>
       </div>
 
@@ -205,6 +200,28 @@ const transitionRows = computed(() => {
   })
 })
 
+const repurchaseSummary = computed(() => {
+  const customers = insights.value.customers
+  const totalCustomers = Math.max(customers.length, 1)
+  const secondPurchaseCustomers = customers.filter((customer) => customer.purchaseCount >= 2)
+  const thirdPurchaseCustomers = customers.filter((customer) => customer.purchaseCount >= 3)
+  const secondPurchaseDayRows = customers
+    .map((customer) => customer.daysToSecondPurchase)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+
+  const averageSecondPurchaseDays = secondPurchaseDayRows.length > 0
+    ? Math.round(secondPurchaseDayRows.reduce((sum, value) => sum + value, 0) / secondPurchaseDayRows.length)
+    : 0
+
+  return {
+    secondPurchaseCount: secondPurchaseCustomers.length,
+    thirdPurchaseCount: thirdPurchaseCustomers.length,
+    secondPurchaseRate: Math.round((secondPurchaseCustomers.length / totalCustomers) * 100),
+    thirdPurchaseRate: Math.round((thirdPurchaseCustomers.length / totalCustomers) * 100),
+    averageSecondPurchaseDays,
+  }
+})
+
 function navigateToCustomers(stage?: CustomerStageCode) {
   const query: Record<string, string> = {}
   if (selectedMonth.value !== 'all') query.month = selectedMonth.value
@@ -316,12 +333,80 @@ onBeforeUnmount(() => {
   gap: var(--space-xl);
 }
 
-.growth-toolbar {
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.page-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.page-header-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-sm);
   flex-wrap: wrap;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--color-text);
+}
+
+.page-caption {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.growth-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 26px;
+  overflow: hidden;
+}
+
+.growth-kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 24px;
+  box-shadow: none;
+  border: none;
+  background: transparent;
+}
+
+.growth-kpi-card + .growth-kpi-card {
+  border-left: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.growth-kpi-label {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.growth-kpi-value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.growth-kpi-meta {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
 }
 
 .growth-back-link {
@@ -332,23 +417,6 @@ onBeforeUnmount(() => {
   padding: 36px;
   text-align: center;
   color: var(--color-text-secondary);
-}
-
-.growth-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-lg);
-}
-
-.growth-summary-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-top: 4px solid var(--stage-accent);
-  background: rgba(255, 255, 255, 0.98);
 }
 
 .growth-summary-top,
@@ -651,7 +719,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1280px) {
-  .growth-summary-grid,
   .growth-overview-row,
   .candidate-stage-grid,
   .growth-chart-content-split {
@@ -660,7 +727,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 960px) {
-  .growth-summary-grid,
   .growth-overview-row,
   .growth-chart-content-split,
   .candidate-stage-grid,
@@ -668,8 +734,13 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
-  .growth-toolbar {
-    align-items: stretch;
+  .growth-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .growth-kpi-card + .growth-kpi-card {
+    border-left: none;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
   }
 
   .growth-chart-content-split {
@@ -680,6 +751,10 @@ onBeforeUnmount(() => {
   .growth-chart-shell,
   .doughnut-shell {
     min-height: 240px;
+  }
+
+  .page-header-actions {
+    width: 100%;
   }
 }
 </style>

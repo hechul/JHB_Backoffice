@@ -25,6 +25,7 @@ const PRODUCT_ROWS = [
 const MAPPING_ROWS = [
   {
     source_channel: 'naver',
+    source_fulfillment_type: 'default',
     source_account_key: 'default',
     commerce_product_id: '12668877332',
     commerce_option_code: '',
@@ -39,6 +40,7 @@ const MAPPING_ROWS = [
   },
   {
     source_channel: 'naver',
+    source_fulfillment_type: 'default',
     source_account_key: 'default',
     commerce_product_id: '12825547641',
     commerce_option_code: '',
@@ -56,6 +58,7 @@ const MAPPING_ROWS = [
   },
   {
     source_channel: 'naver',
+    source_fulfillment_type: 'default',
     source_account_key: 'default',
     commerce_product_id: '12417368947',
     commerce_option_code: '',
@@ -146,6 +149,7 @@ describe('naver sync helpers', () => {
 
     expect(eventRow.source_line_id).toBe('20260323000101')
     expect(eventRow.event_type).toBe('PAYED')
+    expect(eventRow.source_fulfillment_type).toBe('default')
 
     const orderInfo: NaverOrderInfo = {
       order: {
@@ -187,6 +191,7 @@ describe('naver sync helpers', () => {
     expect(rawLine.source_product_id).toBe('12668877332')
     expect(rawLine.invoice_number).toBe('1111-2222')
     expect(rawLine.receiver_name).toBe('김집사')
+    expect(rawLine.source_fulfillment_type).toBe('default')
   })
 
   it('projects eligible orders into purchases using the same canonical mapping path as upload', () => {
@@ -245,6 +250,7 @@ describe('naver sync helpers', () => {
       option_info: '블루',
       source_product_id: '12668877332',
       source_channel: 'naver',
+      source_fulfillment_type: 'default',
       quantity: 1,
       order_date: '2026-03-23',
       order_status: 'PAYED',
@@ -347,6 +353,7 @@ describe('naver sync helpers', () => {
       ...MAPPING_ROWS,
       {
         source_channel: 'naver',
+        source_fulfillment_type: 'default',
         source_account_key: 'default',
         commerce_product_id: '12417368947',
         commerce_option_code: '',

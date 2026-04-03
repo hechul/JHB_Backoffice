@@ -109,6 +109,20 @@
           placeholder="주문번호, 구매자명, 상품명으로 검색..."
           width="100%"
         />
+        <select v-model="filterSourceChannel" class="select tab-search-select">
+          <option value="">채널 전체</option>
+          <option value="naver">네이버</option>
+          <option value="coupang">쿠팡</option>
+        </select>
+        <select
+          v-if="filterSourceChannel === 'coupang'"
+          v-model="filterFulfillmentType"
+          class="select tab-search-select"
+        >
+          <option value="">쿠팡 유형 전체</option>
+          <option value="marketplace">판매자배송</option>
+          <option value="rocket_growth">로켓그로스</option>
+        </select>
       </div>
 
       <!-- 체험단 매칭 결과 -->
@@ -123,6 +137,7 @@
                 <th>주문번호</th>
                 <th>구매자</th>
                 <th>상품명</th>
+                <th>채널</th>
                 <th>매칭 단계</th>
                 <th>매칭 체험단원</th>
                 <th>결과</th>
@@ -138,6 +153,7 @@
                 <td class="font-medium" style="font-family: var(--font-mono); font-size: 0.75rem;">{{ r.orderId }}</td>
                 <td>{{ r.buyer }}</td>
                 <td class="truncate" style="max-width:180px;">{{ r.product }}</td>
+                <td>{{ r.sourceScopeLabel }}</td>
                 <td>
                   <StatusBadge :label="r.rank > 0 ? `${r.rank}단계` : '수동'" :variant="rankVariant(r.rank)" />
                 </td>
@@ -164,6 +180,7 @@
                 <th>구매자</th>
                 <th>상품명</th>
                 <th>옵션</th>
+                <th>채널</th>
                 <th>주문일</th>
                 <th>현재 결과</th>
                 <th></th>
@@ -180,6 +197,7 @@
                 <td>{{ rp.buyer }}</td>
                 <td class="truncate" style="max-width:200px;">{{ rp.product }}</td>
                 <td class="truncate" style="max-width:140px;">{{ rp.optionInfo }}</td>
+                <td>{{ rp.sourceScopeLabel }}</td>
                 <td>{{ rp.orderDate }}</td>
                 <td>
                   <StatusBadge :label="rp.result === 'fake' ? '체험단' : '실구매'" :variant="rp.result === 'fake' ? 'danger' : 'success'" />
@@ -258,6 +276,7 @@
                 <th>주문번호</th>
                 <th>구매자</th>
                 <th>상품명</th>
+                <th>채널</th>
                 <th>현재 결과</th>
                 <th></th>
               </tr>
@@ -272,6 +291,7 @@
                 <td style="font-family: var(--font-mono); font-size: 0.75rem;">{{ m.orderId }}</td>
                 <td>{{ m.buyer }}</td>
                 <td class="truncate" style="max-width:180px;">{{ m.product }}</td>
+                <td>{{ m.sourceScopeLabel }}</td>
                 <td><StatusBadge :label="m.result === 'fake' ? '체험단' : '실구매'" :variant="m.result === 'fake' ? 'danger' : 'success'" /></td>
                 <td>
                   <div v-if="!isViewer" class="flex gap-sm">
@@ -397,6 +417,10 @@
                 <span class="detail-value">{{ selectedItem.product }}</span>
               </div>
               <div class="detail-item">
+                <span class="detail-label">채널</span>
+                <span class="detail-value">{{ selectedItem.sourceScopeLabel || '-' }}</span>
+              </div>
+              <div class="detail-item">
                 <span class="detail-label">주문일</span>
                 <span class="detail-value">{{ selectedItem.orderDate || '-' }}</span>
               </div>
@@ -498,6 +522,11 @@ import {
   extractExperienceOptionKeyword,
   deduplicateExperiences,
 } from '~/composables/useFilterMatching'
+import {
+  normalizePurchaseSourceScope,
+  purchaseSourceScopeSelectColumns,
+  supportsPurchaseSourceScopeColumns,
+} from '~/composables/usePurchaseSourceFields'
 import { matchesSearchQuery } from '~/composables/useTextSearch'
 import { FILTER_VER } from '../../shared/filterVersion'
 
@@ -523,6 +552,8 @@ interface PurchaseRow {
   is_manual: boolean
   filter_ver: string | null
   quantity_warning: boolean
+  source_channel?: string | null
+  source_fulfillment_type?: string | null
 }
 
 interface ExperienceRow {
@@ -555,6 +586,9 @@ interface ResultRow {
   matchedExpId: number | null
   result: 'fake' | 'real'
   needsReview: boolean
+  sourceChannel: string
+  sourceFulfillmentType: string
+  sourceScopeLabel: string
 }
 
 interface UnmatchedRow {
@@ -619,6 +653,8 @@ const { createNotification } = useNotifications()
 const { selectedMonth } = useAnalysisPeriod()
 const { setFilterResult, setPendingReview } = useMonthlyWorkflow()
 
+// 필터 화면 UI 상태
+// rank / realPurchase / unmatched / manual 탭이 모두 이 상태들을 기반으로 그려진다.
 const activeTab = ref<'rank' | 'realPurchase' | 'unmatched' | 'manual'>('rank')
 const filterState = ref<'idle' | 'running' | 'completed' | 'manual_review' | 'failed'>('idle')
 const progressPercent = ref(0)
@@ -639,8 +675,11 @@ const realPurchaseResults = ref<ResultRow[]>([])
 const unmatchedResults = ref<UnmatchedRow[]>([])
 const manualResults = ref<ResultRow[]>([])
 const searchQuery = ref('')
+const filterSourceChannel = ref('')
+const filterFulfillmentType = ref('')
 const fetchSeq = ref(0)
 
+// DB update는 건수가 많을 수 있으므로 일정 개수씩 병렬 처리한다.
 async function runConcurrentUpdates<T>(items: T[], worker: (item: T) => Promise<void>, chunkSize = UPDATE_CONCURRENCY) {
   for (let i = 0; i < items.length; i += chunkSize) {
     const batch = items.slice(i, i + chunkSize)
@@ -648,6 +687,7 @@ async function runConcurrentUpdates<T>(items: T[], worker: (item: T) => Promise<
   }
 }
 
+// 화면 표시용 파생 상태들
 const isRunning = computed(() => filterState.value === 'running')
 const manualRows = computed(() => manualResults.value)
 const hasAnyResult = computed(() => {
@@ -671,25 +711,55 @@ const confidenceScore = computed(() => {
   return Number(((stableMatches / totalFake) * 100).toFixed(1))
 })
 
-// 검색 필터링
+// 결과 탭 내 검색 필터링
 function matchesSearch(query: string, ...fields: string[]): boolean {
   return matchesSearchQuery(query, ...fields)
 }
 
-const filteredRank = computed(() => rankResults.value.filter((r) => matchesSearch(searchQuery.value, r.orderId, r.buyer, r.product, r.matchedName)))
-const filteredReal = computed(() => realPurchaseResults.value.filter((r) => matchesSearch(searchQuery.value, r.orderId, r.buyer, r.product, r.optionInfo)))
-const filteredUnmatched = computed(() => unmatchedResults.value.filter((u) => matchesSearch(
-  searchQuery.value,
-  u.orderId,
-  u.buyer,
-  u.product,
-  u.reason,
-  u.mismatchSummary,
-  u.mismatchTags.join(' '),
-  u.topCandidate?.purchaseId || '',
-  u.topCandidate?.buyerName || '',
-)))
-const filteredManual = computed(() => manualRows.value.filter((m) => matchesSearch(searchQuery.value, m.orderId, m.buyer, m.product)))
+function sourceChannelLabel(channel: string): string {
+  if (channel === 'naver') return '네이버'
+  if (channel === 'coupang') return '쿠팡'
+  if (channel === 'excel') return '엑셀'
+  return channel || '기타'
+}
+
+function sourceFulfillmentLabel(channel: string, fulfillmentType: string): string {
+  if (channel !== 'coupang') return '-'
+  if (fulfillmentType === 'marketplace') return '판매자배송'
+  if (fulfillmentType === 'rocket_growth') return '로켓그로스'
+  return '기타'
+}
+
+function buildSourceScopeLabel(channel: string, fulfillmentType: string): string {
+  if (channel === 'coupang') return `쿠팡 · ${sourceFulfillmentLabel(channel, fulfillmentType)}`
+  return sourceChannelLabel(channel)
+}
+
+function matchesSourceScope(row: Pick<ResultRow, 'sourceChannel' | 'sourceFulfillmentType'>): boolean {
+  if (filterSourceChannel.value && row.sourceChannel !== filterSourceChannel.value) return false
+  if (filterFulfillmentType.value && row.sourceFulfillmentType !== filterFulfillmentType.value) return false
+  return true
+}
+
+const filteredRank = computed(() => rankResults.value.filter((r) => matchesSourceScope(r) && matchesSearch(searchQuery.value, r.orderId, r.buyer, r.product, r.matchedName, r.sourceScopeLabel)))
+const filteredReal = computed(() => realPurchaseResults.value.filter((r) => matchesSourceScope(r) && matchesSearch(searchQuery.value, r.orderId, r.buyer, r.product, r.optionInfo, r.sourceScopeLabel)))
+const filteredUnmatched = computed(() => {
+  if (filterSourceChannel.value && filterSourceChannel.value !== 'naver') return []
+  if (filterFulfillmentType.value) return []
+  return unmatchedResults.value.filter((u) => matchesSearch(
+    searchQuery.value,
+    u.orderId,
+    u.buyer,
+    u.product,
+    u.reason,
+    u.mismatchSummary,
+    u.mismatchTags.join(' '),
+    u.topCandidate?.purchaseId || '',
+    u.topCandidate?.buyerName || '',
+    '네이버',
+  ))
+})
+const filteredManual = computed(() => manualRows.value.filter((m) => matchesSourceScope(m) && matchesSearch(searchQuery.value, m.orderId, m.buyer, m.product, m.sourceScopeLabel)))
 
 const tabs = computed(() => [
   { key: 'rank', label: '체험단 매칭', count: rankResults.value.length },
@@ -698,6 +768,7 @@ const tabs = computed(() => [
   { key: 'manual', label: '확인 필요', count: manualRows.value.length },
 ])
 
+// 상세 모달에서 실제로 수정 가능한지 여부
 const isResultEditable = computed(() => {
   if (!selectedSource.value || !selectedItem.value) return false
   if (selectedSource.value === 'unmatched') return false
@@ -709,6 +780,7 @@ const hasPendingResultChange = computed(() => {
   return selectedItem.value.result !== originalResult.value
 })
 
+// 배지/표시용 보조 함수
 function rankVariant(rank: number): BadgeVariant {
   if (rank <= 0) return 'neutral'
   if (rank <= 2) return 'primary'
@@ -762,12 +834,15 @@ function diffDays(a: string, b: string): number {
   return Math.floor(ms / (1000 * 60 * 60 * 24))
 }
 
+// 아이디 비교는 앞 4자리 prefix 기준
 function idsMatch(purchase: PurchaseRow, exp: ExperienceRow): boolean {
   const left = idPrefix(purchase.buyer_id)
   const right = idPrefix(exp.naver_id)
   return Boolean(left) && Boolean(right) && left === right
 }
 
+// 이름 비교는 buyer_name / receiver_name 둘 다 허용하고,
+// API 마스킹 이름(예: 황*호)도 허용한다.
 function namesMatch(purchase: PurchaseRow, exp: ExperienceRow): boolean {
   const target = normalizeNameText(exp.receiver_name)
   if (!target) return false
@@ -791,6 +866,7 @@ function namesEquivalent(left: string, right: string): boolean {
   return true
 }
 
+// 상품명 키워드 비교
 function productMatches(purchase: PurchaseRow, exp: ExperienceRow): boolean {
   const purchaseKw = extractProductKeyword(purchase.product_name)
   const expKw = extractProductKeyword(exp.mission_product_name)
@@ -803,6 +879,8 @@ function productMatches(purchase: PurchaseRow, exp: ExperienceRow): boolean {
   return pName === eName || pName.includes(eName) || eName.includes(pName)
 }
 
+// 상품별 옵션 비교 규칙
+// 츄라잇처럼 옵션이 중요한 상품은 더 엄격하게 비교한다.
 function optionsMatch(purchase: PurchaseRow, exp: ExperienceRow): boolean {
   const productKw = extractProductKeyword(purchase.product_name)
   if (productKw === '츄르짜개') return true
@@ -830,6 +908,8 @@ function optionsMatch(purchase: PurchaseRow, exp: ExperienceRow): boolean {
   return purchaseOptionKw === expOptionKw
 }
 
+// 미매칭 체험단 상세 설명 생성
+// "왜 안 붙었는지"를 사람이 읽을 수 있는 문장과 태그로 만든다.
 function buildUnmatchedInsight(exp: ExperienceRow, purchases: PurchaseRow[]): UnmatchedInsight {
   const reason = exp.unmatch_reason || computeUnmatchReasonUtil(exp as any, purchases as any)
 
@@ -909,8 +989,10 @@ function buildUnmatchedInsight(exp: ExperienceRow, purchases: PurchaseRow[]): Un
   }
 }
 
+// purchases row + experiences row를 화면 표 한 줄용 구조로 변환
 function toResultRow(purchase: PurchaseRow, expMap: Map<number, ExperienceRow>): ResultRow {
   const exp = purchase.matched_exp_id ? expMap.get(Number(purchase.matched_exp_id)) : null
+  const scope = normalizePurchaseSourceScope(purchase)
   return {
     purchaseId: purchase.purchase_id,
     orderId: purchase.purchase_id,
@@ -928,9 +1010,13 @@ function toResultRow(purchase: PurchaseRow, expMap: Map<number, ExperienceRow>):
     matchedExpId: purchase.matched_exp_id ? Number(purchase.matched_exp_id) : null,
     result: purchase.is_fake ? 'fake' : 'real',
     needsReview: Boolean(purchase.needs_review),
+    sourceChannel: scope.sourceChannel,
+    sourceFulfillmentType: scope.sourceFulfillmentType,
+    sourceScopeLabel: buildSourceScopeLabel(scope.sourceChannel, scope.sourceFulfillmentType),
   }
 }
 
+// 현재 결과 상태에 맞춰 상단 배지/상태 문구를 조정한다.
 function syncFilterState() {
   if (isRunning.value) return
   if (manualRows.value.length > 0) {
@@ -944,6 +1030,7 @@ function syncFilterState() {
   filterState.value = 'idle'
 }
 
+// 필터 실행 실패 시 이전 판정값으로 자동 복원하는 롤백 함수
 async function restoreFilterSnapshots(
   purchaseSnapshots: PurchaseFilterSnapshot[],
   experienceReasonSnapshots: Map<number, string | null>,
@@ -974,14 +1061,24 @@ async function restoreFilterSnapshots(
   })
 }
 
+// filter 화면의 원본 데이터 로딩
+// - purchases: 주문 원본
+// - experiences: 체험단 원본
+// 둘 다 현재 월 기준으로 읽어온다.
 async function loadRawData(month: string): Promise<{ purchases: PurchaseRow[]; experiences: ExperienceRow[] }> {
   const purchaseData: any[] = []
   const expData: any[] = []
+  const includeSourceScopeColumns = await supportsPurchaseSourceScopeColumns(supabase)
 
   for (let from = 0; ; from += FETCH_PAGE_SIZE) {
     let purchaseQuery = supabase
       .from('purchases')
-      .select('purchase_id, target_month, buyer_id, buyer_name, receiver_name, product_id, product_name, option_info, quantity, order_date, is_fake, match_reason, match_rank, matched_exp_id, needs_review, is_manual, filter_ver, quantity_warning')
+      .select(
+        purchaseSourceScopeSelectColumns(
+          'purchase_id, target_month, buyer_id, buyer_name, receiver_name, product_id, product_name, option_info, quantity, order_date, is_fake, match_reason, match_rank, matched_exp_id, needs_review, is_manual, filter_ver, quantity_warning',
+          includeSourceScopeColumns,
+        ),
+      )
       .order('order_date', { ascending: true })
       .order('purchase_id', { ascending: true })
       .range(from, from + FETCH_PAGE_SIZE - 1)
@@ -1030,6 +1127,8 @@ async function loadRawData(month: string): Promise<{ purchases: PurchaseRow[]; e
       is_manual: Boolean(row.is_manual),
       filter_ver: row.filter_ver || null,
       quantity_warning: Boolean(row.quantity_warning),
+      source_channel: row.source_channel || null,
+      source_fulfillment_type: row.source_fulfillment_type || null,
     })),
     experiences: (expData as any[]).map((row) => ({
       id: Number(row.id),
@@ -1046,6 +1145,8 @@ async function loadRawData(month: string): Promise<{ purchases: PurchaseRow[]; e
   }
 }
 
+// 필터 화면 재진입 시 기존 결과를 다시 읽어와
+// 탭별 리스트와 상단 숫자를 복원한다.
 async function fetchFilterData() {
   const seq = ++fetchSeq.value
   loading.value = true
@@ -1132,6 +1233,8 @@ async function fetchFilterData() {
   }
 }
 
+// filter_logs 기록
+// 월별 필터를 언제, 누가, 어떤 결과로 실행했는지 남긴다.
 async function persistFilterLog(payload: {
   status: 'success' | 'error'
   durationSec?: number
@@ -1182,6 +1285,13 @@ async function persistFilterLog(payload: {
   })
 }
 
+// 필터 핵심 실행 함수
+// 1) 월 잠금 획득
+// 2) purchases / experiences 로드
+// 3) 기존 자동 판정 초기화
+// 4) buildMatchingResultUtil로 1~5단계 매칭
+// 5) purchases/experiences 업데이트
+// 6) filter_logs 기록
 async function runFilter() {
   if (isViewer.value || isRunning.value || selectedMonth.value === 'all') return
   showConfirmModal.value = false
@@ -1451,6 +1561,7 @@ async function runFilter() {
   }
 }
 
+// 상세 모달 열기/닫기
 function openDetail(item: any, type: SourceType) {
   selectedItem.value = { ...item }
   selectedSource.value = type
@@ -1465,6 +1576,7 @@ function closeDetail() {
   originalResult.value = null
 }
 
+// 상세 모달에서 수동으로 체험단/실구매 판정을 바꿀 때 사용하는 저장 함수
 async function saveDetailResult() {
   if (!selectedItem.value || !hasPendingResultChange.value) {
     closeDetail()
@@ -1541,6 +1653,7 @@ async function saveDetailResult() {
   closeDetail()
 }
 
+// 확인 필요 큐에서 "검토 완료" 처리
 async function markReviewed(item: ResultRow) {
   if (isViewer.value) return
   const purchaseId = String(item.purchaseId || '')
@@ -1564,10 +1677,12 @@ async function markReviewed(item: ResultRow) {
   toast.info(`${item.buyer} 건을 확인 완료 처리했습니다.`)
 }
 
+// 현재 화면에 보이는 필터 결과를 엑셀로 내보낸다.
 function downloadFilteredCsv() {
   const rows = [
     ...rankResults.value.map((row) => ({
       주문번호: row.orderId,
+      채널: row.sourceScopeLabel,
       구매자: row.buyer,
       구매자ID: row.buyerId,
       상품명: row.product,
@@ -1581,6 +1696,7 @@ function downloadFilteredCsv() {
     })),
     ...manualRows.value.map((row) => ({
       주문번호: row.orderId,
+      채널: row.sourceScopeLabel,
       구매자: row.buyer,
       구매자ID: row.buyerId,
       상품명: row.product,
@@ -1612,6 +1728,15 @@ watch(
   },
   { immediate: true },
 )
+
+watch(
+  () => filterSourceChannel.value,
+  (channel) => {
+    if (channel !== 'coupang' && filterFulfillmentType.value) {
+      filterFulfillmentType.value = ''
+    }
+  },
+)
 </script>
 
 <style scoped>
@@ -1624,10 +1749,19 @@ watch(
 .tab-search {
   padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
 }
 
 .tab-search-input {
   max-width: 400px;
+  flex: 1 1 320px;
+}
+
+.tab-search-select {
+  min-width: 160px;
 }
 
 .filter-state-card {

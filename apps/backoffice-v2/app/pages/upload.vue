@@ -284,6 +284,7 @@ const { createNotification } = useNotifications()
 const { selectedMonth, refreshMonths } = useAnalysisPeriod()
 const { getWorkflow, setUploadResult, setMappingPending, setUnmappedProducts } = useMonthlyWorkflow()
 
+// 체험단 파일 업로드 상태
 const sourceFile = ref<File | null>(null)
 const influencerValidation = ref<ColumnValidation | null>(null)
 const sourceDragOver = ref(false)
@@ -297,12 +298,17 @@ const monthSyncSeq = ref(0)
 const isSourceParsing = ref(false)
 
 type UploadState = 'empty' | 'uploading' | 'uploaded' | 'mapping_required'
+
+// 이 페이지의 핵심 상태:
+// - uploaded: 체험단 데이터 적재 완료
+// - mapping_required: 체험단 상품명 중 products와 연결되지 않은 항목이 남아 있음
 const uploadState = ref<UploadState>('empty')
 const mappingFailedItems = ref<MappingItem[]>([])
 const uploadResultTimestamp = ref('')
 
 const uploadResultStats = ref({ orderNew: 0, orderExcluded: 0, expInserted: 0 })
 
+// 화면 표시용 파생 상태
 const isUploading = computed(() => uploadState.value === 'uploading')
 const hasResult = computed(() => uploadState.value === 'uploaded' || uploadState.value === 'mapping_required')
 const needsMapping = computed(() => uploadState.value === 'mapping_required')
@@ -312,6 +318,7 @@ const remainingMappingCount = computed(() => Math.max(0, mappingFailedItems.valu
 type NaverSyncMode = 'dry-run' | 'live'
 type SyncLogLevel = 'info' | 'success' | 'warning' | 'error'
 
+// 아래 타입들은 주문 동기화 UI에서 쓰는 응답/로그 구조
 interface NaverSyncLogEntry {
   time: string
   level: SyncLogLevel
@@ -384,6 +391,7 @@ const naverSyncLastRunAt = ref('')
 let naverSyncPulseTimer: ReturnType<typeof setInterval> | null = null
 const isNaverSyncRunning = ref(false)
 
+// 주문 동기화 실행 가능 여부와 결과 요약
 const hasNaverSyncResult = computed(() => Boolean(naverSyncSummary.value) || naverSyncLogs.value.length > 0 || Boolean(naverSyncError.value))
 
 const naverSyncRangeLabel = computed(() => {
@@ -482,6 +490,7 @@ const uploadBlockReason = computed(() => {
   return ''
 })
 
+// 체험단 시트 탐지/검증용 기준값
 const influencerRequiredColumns = ['미션상품명', '옵션정보', '수취인명', '아이디', '구매인증일', '캠페인명']
 const experienceSheetAliases = ['웨이프로젝트', '웨이 프로젝트', '체험단']
 const unmappedOptionDelimiter = '__OPT__'
@@ -490,6 +499,7 @@ const DB_BATCH_SIZE = 50
 const DB_REQUEST_TIMEOUT_MS = 20000
 const DB_REQUEST_MAX_RETRIES = 3
 
+// Supabase 요청 재시도용 보조 함수들
 function sleep(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms)
@@ -544,6 +554,7 @@ async function runQueryWithRetry<T>(
   throw new Error(`${label} 요청이 실패했습니다.`)
 }
 
+// 대량 insert/update를 안전하게 쪼개기 위한 chunk 함수
 function chunkArray<T>(items: T[], chunkSize = DB_BATCH_SIZE): T[][] {
   if (items.length === 0) return []
   const size = Math.max(1, Math.floor(chunkSize))
@@ -554,6 +565,7 @@ function chunkArray<T>(items: T[], chunkSize = DB_BATCH_SIZE): T[][] {
   return chunks
 }
 
+// option_info가 빈 값인 경우까지 함께 다루기 위한 공통 조건 함수
 function applyOptionFilter(query: any, optionValue: string) {
   if (optionValue) {
     return query.eq('option_info', optionValue)
@@ -561,6 +573,7 @@ function applyOptionFilter(query: any, optionValue: string) {
   return query.or('option_info.is.null,option_info.eq.')
 }
 
+// 업로드 실패 시 롤백할 수 있도록 기존 experiences 스냅샷을 읽어둔다.
 async function fetchCampaignExperiencesSnapshot(month: string, campaignId: number): Promise<ExperienceDbRow[]> {
   const { data, error } = await runQueryWithRetry(
     '업로드 롤백용 기존 체험단 스냅샷 조회',
@@ -619,6 +632,7 @@ async function restoreCampaignExperiencesSnapshot(rows: ExperienceDbRow[]) {
 }
 
 // 상품 카탈로그 (Supabase 실 데이터)
+// 체험단 행의 상품명을 products와 연결하려면 현재 상품 목록을 먼저 읽어야 한다.
 const productCatalog = ref<ProductCatalogItem[]>([])
 
 async function loadProductCatalog() {
@@ -653,6 +667,7 @@ async function loadProductCatalog() {
 }
 onMounted(loadProductCatalog)
 
+// 업로드/동기화 시간 표시 포맷
 function formatUploadTimestamp(value: string): string {
   if (!value) return ''
   const d = new Date(value)
@@ -681,6 +696,7 @@ function appendNaverSyncLog(message: string, level: SyncLogLevel = 'info', time 
   })
 }
 
+// sync.post.ts에서 받은 stdout/stderr를 화면 로그로 번역한다.
 function buildNaverSyncLogs(stdout: string, stderr: string): NaverSyncLogEntry[] {
   const nextLogs: NaverSyncLogEntry[] = []
   const normalizeStdout = (() => {
@@ -711,6 +727,7 @@ function buildNaverSyncLogs(stdout: string, stderr: string): NaverSyncLogEntry[]
   return nextLogs.slice(-20)
 }
 
+// 주문 동기화 UI 상태 초기화/가짜 진행률 표시용 함수
 function resetNaverSyncResult(mode: NaverSyncMode) {
   naverSyncMode.value = mode
   naverSyncError.value = ''
@@ -745,6 +762,7 @@ function applyNaverSyncPreset(preset: keyof typeof NAVER_SYNC_PRESETS) {
   naverSyncEndDate.value = selected.end
 }
 
+// 동기화 범위를 포함하는 월 목록 계산
 function expandMonthRange(start: string, end: string): string[] {
   if (!isValidDateInput(start) || !isValidDateInput(end) || start > end) return []
   const startDate = new Date(`${start}T00:00:00`)
@@ -797,6 +815,7 @@ async function fetchMonthUploadMeta(month: string): Promise<{ expCount: number; 
   }
 }
 
+// 동일 체험단 행이 중복 삽입되지 않도록 dedup key를 만든다.
 function buildExperienceDedupKey(row: ExperienceInsertRow): string {
   const campaign = String(row.campaign_id || '')
   const product = normalizeForMatch(row.mission_product_name || '')
@@ -844,6 +863,10 @@ function productDisplayName(product: ProductCatalogItem): string {
   return product.option_name ? `${product.product_name} / ${product.option_name}` : product.product_name
 }
 
+// 업로드된 엑셀 안에서 체험단 시트를 찾는 우선순위:
+// 1) 시트명
+// 2) 필수 컬럼
+// 3) 레거시 패턴
 function pickExperienceSheet(sheets: ParsedWorkbookSheet[], excludedNames: string[]): ParsedWorkbookSheet | null {
   return (
     findSheetByPreferredNames(sheets, experienceSheetAliases, excludedNames)
@@ -852,7 +875,8 @@ function pickExperienceSheet(sheets: ParsedWorkbookSheet[], excludedNames: strin
   )
 }
 
-// ── 파일 선택 시 체험단 시트 파싱 ──
+// 파일 선택 시 체험단 시트 파싱
+// 이 단계는 아직 DB에 쓰지 않고, "이 파일이 체험단 업로드 가능한지"만 확인한다.
 async function processSourceFile(file: File) {
   if (/^~\$/.test(file.name)) {
     toast.error('엑셀 임시 잠금 파일(~$)입니다. 원본 파일을 선택해 주세요.')
@@ -910,7 +934,7 @@ function handleSourceDrop(e: DragEvent) {
   if (f) processSourceFile(f)
 }
 
-// ── 매핑 (Supabase 실 데이터) ──
+// 체험단 상품명 -> products 연결 UI 보조 함수
 function suggestionsFor(item: MappingItem) {
   const q = item.searchQuery.trim()
   if (!q) return []
@@ -1052,6 +1076,8 @@ async function registerAsNew(item: MappingItem) {
   }
 }
 
+// 네이버 주문 동기화 실행
+// 현재는 전용 페이지가 따로 있지만, 이 업로드 페이지에서도 같은 로직 상태를 재사용한다.
 async function startNaverSync(mode: NaverSyncMode) {
   if (!canRunNaverSync.value || isNaverSyncRunning.value) return
 
@@ -1143,7 +1169,12 @@ async function startNaverSync(mode: NaverSyncMode) {
   }
 }
 
-// ── 핵심: 업로드 실행 (Supabase 연동) ──
+// 핵심 업로드 함수
+// 1) campaign 찾기/생성
+// 2) 기존 experiences 스냅샷 확보
+// 3) 체험단 엑셀 rows 전처리
+// 4) experiences insert
+// 5) 미매핑 상품 수집
 async function startUpload() {
   if (isViewer.value || selectedMonth.value === 'all') return
   uploadState.value = 'uploading'

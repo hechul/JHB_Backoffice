@@ -1,33 +1,55 @@
 <template>
   <div class="customers-page">
-    <!-- Filters Row -->
-    <div class="card filter-bar">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1 class="page-title">고객 분석</h1>
+        <span class="page-caption">실구매 고객 중심</span>
+      </div>
+      <div class="page-header-actions">
+        <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
+      </div>
+    </div>
+
+    <div class="customer-summary-grid">
+      <div class="customer-summary-card">
+        <span class="customer-summary-label">신규 고객</span>
+        <strong class="customer-summary-value">{{ customerOverviewMetrics.entryCustomers.toLocaleString() }}명</strong>
+        <span class="customer-summary-meta">구매 1회</span>
+      </div>
+      <div class="customer-summary-card">
+        <span class="customer-summary-label">재구매 고객</span>
+        <strong class="customer-summary-value">{{ customerOverviewMetrics.repeatCustomers.toLocaleString() }}명</strong>
+        <span class="customer-summary-meta">구매 2회 이상</span>
+      </div>
+      <div class="customer-summary-card">
+        <span class="customer-summary-label">고객당 주문수</span>
+        <strong class="customer-summary-value">{{ customerOverviewMetrics.ordersPerCustomer }}</strong>
+        <span class="customer-summary-meta">현재 조건 기준</span>
+      </div>
+      <div class="customer-summary-card">
+        <span class="customer-summary-label">조회 고객</span>
+        <strong class="customer-summary-value">{{ filteredCustomers.length.toLocaleString() }}명</strong>
+        <span class="customer-summary-meta">{{ selectedPeriodLabel }}</span>
+      </div>
+    </div>
+
+    <div class="filter-bar">
       <div class="filter-row">
         <SearchInput v-model="searchQuery" placeholder="이름, ID 검색..." width="240px" />
         <SearchInput v-model="filterProductName" placeholder="상품명 검색..." width="240px" />
+
+        <select v-model="filterSourceChannel" class="select">
+          <option value="">채널 전체</option>
+          <option value="naver">네이버</option>
+          <option value="coupang">쿠팡</option>
+          <option value="excel">엑셀</option>
+        </select>
 
         <select v-model="filterPetType" class="select">
           <option value="">펫 타입 전체</option>
           <option value="DOG">강아지</option>
           <option value="CAT">고양이</option>
           <option value="BOTH">모두</option>
-        </select>
-
-        <select v-model="filterStage" class="select">
-          <option value="">성장 단계 전체</option>
-          <option value="Entry">신규</option>
-          <option value="Growth">성장</option>
-          <option value="Premium">단골</option>
-          <option value="Core">핵심</option>
-        </select>
-
-        <select v-model="filterPurchaseIntensity" class="select">
-          <option value="">구매 강도 전체</option>
-          <option value="Dormant">휴면</option>
-          <option value="Low">낮음</option>
-          <option value="Medium">보통</option>
-          <option value="High">높음</option>
-          <option value="VeryHigh">매우 높음</option>
         </select>
 
         <select v-model="filterChurn" class="select">
@@ -45,6 +67,28 @@
           <option value="5">5회 이상</option>
           <option value="10">10회 이상</option>
         </select>
+        <button class="btn btn-secondary btn-sm filter-toggle-btn" @click="showAdvancedFilters = !showAdvancedFilters">
+          {{ showAdvancedFilterPanel ? '상세 필터 접기' : '상세 필터' }}
+        </button>
+      </div>
+
+      <div v-if="showAdvancedFilterPanel" class="filter-row filter-row-advanced">
+        <select v-model="filterStage" class="select">
+          <option value="">성장 단계 전체</option>
+          <option value="Entry">신규</option>
+          <option value="Growth">성장</option>
+          <option value="Premium">단골</option>
+          <option value="Core">핵심</option>
+        </select>
+
+        <select v-model="filterPurchaseIntensity" class="select">
+          <option value="">구매 강도 전체</option>
+          <option value="Dormant">휴면</option>
+          <option value="Low">낮음</option>
+          <option value="Medium">보통</option>
+          <option value="High">높음</option>
+          <option value="VeryHigh">매우 높음</option>
+        </select>
 
         <select v-if="selectedMonth !== 'all'" v-model="filterWeek" class="select">
           <option value="">주차 전체</option>
@@ -52,10 +96,8 @@
         </select>
 
         <input v-model="filterOrderDate" type="date" class="input date-input" />
-
       </div>
 
-      <!-- Active filters -->
       <div v-if="activeFilters.length > 0" class="filter-chips mt-md">
         <div v-for="f in activeFilters" :key="f.key" class="filter-chip">
           <span>{{ f.label }}</span>
@@ -67,7 +109,6 @@
       </div>
     </div>
 
-    <!-- Results -->
     <div class="card">
       <div class="card-header">
         <h3 class="card-title">고객 목록</h3>
@@ -86,16 +127,13 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th>이름</th>
-              <th>ID</th>
+              <th>고객</th>
               <th>펫 타입</th>
               <th>성장 단계</th>
               <th>구매 강도</th>
-              <th>구매 횟수</th>
-              <th>구매 상품 수</th>
+              <th>구매</th>
               <th v-if="hasProductFilter">검색상품 구매횟수</th>
-              <th>구매 날짜</th>
-              <th>최근 주문</th>
+              <th>구매 흐름</th>
               <th>현재 상태</th>
               <th>이탈 위험</th>
             </tr>
@@ -107,25 +145,33 @@
               class="clickable"
               @click="openCustomerDetail(c)"
             >
-              <td class="font-medium">{{ c.name }}</td>
-              <td style="font-family: var(--font-mono); font-size: 0.75rem;">{{ c.id }}</td>
-              <td><StatusBadge :label="c.petType === 'DOG' ? '강아지' : c.petType === 'CAT' ? '고양이' : '모두'" :variant="c.petType === 'DOG' ? 'primary' : c.petType === 'CAT' ? 'warning' : 'neutral'" /></td>
               <td>
-                <div class="stage-indicator">
-                  <div class="stage-progress">
-                    <div class="stage-fill" :style="{ width: stagePercent(c.stage) + '%' }"></div>
+                <div class="customer-table-identity">
+                  <strong>{{ c.name }}</strong>
+                  <span>{{ c.id }}</span>
+                  <div class="customer-source-badges">
+                    <StatusBadge
+                      v-for="label in customerSourceScopeLabels(c)"
+                      :key="`${c.customerKey}-${label}`"
+                      :label="label"
+                      variant="neutral"
+                    />
                   </div>
-                  <span class="text-sm">{{ stageLabel(c.stage) }}</span>
                 </div>
               </td>
+              <td><StatusBadge :label="c.petType === 'DOG' ? '강아지' : c.petType === 'CAT' ? '고양이' : '모두'" :variant="c.petType === 'DOG' ? 'primary' : c.petType === 'CAT' ? 'warning' : 'neutral'" /></td>
+              <td class="text-sm text-secondary">{{ stageLabel(c.stage) }}</td>
               <td>
                 <StatusBadge :label="intensityLabel(c.purchaseIntensity)" :variant="intensityVariant(c.purchaseIntensity)" />
               </td>
-              <td>{{ c.purchaseCount }}회</td>
-              <td>{{ formatQuantityCount(c.productCount) }}개</td>
+              <td class="customer-table-purchase">{{ c.purchaseCount }}회 · {{ formatQuantityCount(c.productCount) }}개</td>
               <td v-if="hasProductFilter">{{ matchingProductPurchaseCount(c) }}회</td>
-              <td class="text-sm text-secondary">{{ currentPurchaseDate(c) }}</td>
-              <td class="text-sm text-secondary">{{ c.lastOrder }}</td>
+              <td>
+                <div class="customer-table-flow">
+                  <span>{{ currentPurchaseDate(c) }}</span>
+                  <span>최근 {{ c.lastOrder }}</span>
+                </div>
+              </td>
               <td>
                 <StatusBadge
                   :label="c.currentOrderStatus"
@@ -141,7 +187,7 @@
               </td>
             </tr>
             <tr v-if="filteredCustomers.length === 0">
-              <td :colspan="hasProductFilter ? 12 : 11" class="empty-row">조건에 맞는 고객이 없습니다.</td>
+              <td :colspan="hasProductFilter ? 9 : 8" class="empty-row">조건에 맞는 고객이 없습니다.</td>
             </tr>
           </tbody>
         </table>
@@ -158,6 +204,14 @@
             <div class="customer-mobile-title">
               <strong>{{ c.name }}</strong>
               <span class="customer-mobile-id">{{ c.id }}</span>
+              <div class="customer-source-badges">
+                <StatusBadge
+                  v-for="label in customerSourceScopeLabels(c)"
+                  :key="`mobile-${c.customerKey}-${label}`"
+                  :label="label"
+                  variant="neutral"
+                />
+              </div>
             </div>
             <StatusBadge
               :label="c.petType === 'DOG' ? '강아지' : c.petType === 'CAT' ? '고양이' : '모두'"
@@ -175,24 +229,16 @@
               <StatusBadge :label="intensityLabel(c.purchaseIntensity)" :variant="intensityVariant(c.purchaseIntensity)" />
             </div>
             <div class="customer-mobile-item">
-              <span class="customer-mobile-label">구매 횟수</span>
-              <span class="customer-mobile-value">{{ c.purchaseCount }}회</span>
-            </div>
-            <div class="customer-mobile-item">
-              <span class="customer-mobile-label">구매 상품 수</span>
-              <span class="customer-mobile-value">{{ formatQuantityCount(c.productCount) }}개</span>
+              <span class="customer-mobile-label">구매</span>
+              <span class="customer-mobile-value">{{ c.purchaseCount }}회 · {{ formatQuantityCount(c.productCount) }}개</span>
             </div>
             <div v-if="hasProductFilter" class="customer-mobile-item">
               <span class="customer-mobile-label">검색상품 구매횟수</span>
               <span class="customer-mobile-value">{{ matchingProductPurchaseCount(c) }}회</span>
             </div>
             <div class="customer-mobile-item">
-              <span class="customer-mobile-label">구매 날짜</span>
-              <span class="customer-mobile-value customer-mobile-muted">{{ currentPurchaseDate(c) }}</span>
-            </div>
-            <div class="customer-mobile-item">
-              <span class="customer-mobile-label">최근 주문</span>
-              <span class="customer-mobile-value customer-mobile-muted">{{ c.lastOrder }}</span>
+              <span class="customer-mobile-label">구매 흐름</span>
+              <span class="customer-mobile-value customer-mobile-muted">{{ currentPurchaseDate(c) }} · 최근 {{ c.lastOrder }}</span>
             </div>
             <div class="customer-mobile-item">
               <span class="customer-mobile-label">현재 상태</span>
@@ -217,7 +263,7 @@
         </div>
       </div>
 
-      <!-- Pagination -->
+      <!-- 페이지네이션 -->
       <div class="pagination">
         <span class="pagination-info">{{ paginationInfoLabel }}</span>
         <div class="pagination-controls">
@@ -287,6 +333,17 @@
               />
             </div>
             <div class="detail-item">
+              <span class="detail-label">주문 채널</span>
+              <div class="detail-value detail-value-stack">
+                <StatusBadge
+                  v-for="label in customerSourceScopeLabels(selectedCustomer)"
+                  :key="`detail-${selectedCustomer.customerKey}-${label}`"
+                  :label="label"
+                  variant="neutral"
+                />
+              </div>
+            </div>
+            <div class="detail-item">
               <span class="detail-label">이탈 위험</span>
               <div class="detail-value detail-value-stack">
                 <StatusBadge
@@ -311,6 +368,8 @@
             <thead>
               <tr>
                 <th>날짜</th>
+                <th>채널</th>
+                <th>유형</th>
                 <th>상품</th>
                 <th>옵션</th>
                 <th>상태</th>
@@ -320,6 +379,8 @@
             <tbody>
               <tr v-for="(order, i) in customerOrders" :key="i">
                 <td class="text-sm">{{ order.date }}</td>
+                <td class="text-sm">{{ order.sourceChannelLabel }}</td>
+                <td class="text-sm">{{ order.sourceFulfillmentLabel }}</td>
                 <td class="text-sm">{{ order.product }}</td>
                 <td class="text-sm">{{ order.optionInfo }}</td>
                 <td class="text-sm">
@@ -372,7 +433,15 @@ import {
 import { matchesSearchQuery } from '~/composables/useTextSearch'
 import { formatOrderStatusLabel, orderStatusBadgeVariant } from '~/composables/useOrderStatusLabel'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
-import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
+import {
+  normalizePurchaseSourceScope,
+  purchaseQuantityInput,
+  purchaseSelectColumns,
+  purchaseSourceScopeSelectColumns,
+  supportsPurchaseSourceColumns,
+  supportsPurchaseSourceScopeColumns,
+  type PurchaseSourceScope,
+} from '~/composables/usePurchaseSourceFields'
 import { buildWeekOptions, weekCodeFromDate, weekLabelFromCode } from '~/composables/useWeekFilter'
 
 type CustomerStage = 'Entry' | 'Growth' | 'Premium' | 'Core' | 'Other'
@@ -409,10 +478,15 @@ interface CustomerRow {
   productStats: CustomerProductStat[]
   purchaseWeeks: string[]
   purchaseDates: string[]
+  sourceScopes: PurchaseSourceScope[]
 }
 
 interface CustomerOrderRow {
   date: string
+  sourceChannel: string
+  sourceChannelLabel: string
+  sourceFulfillmentType: string
+  sourceFulfillmentLabel: string
   product: string
   optionInfo: string
   status: string
@@ -431,6 +505,8 @@ interface PurchaseRow {
   option_info: string
   source_product_name?: string
   source_option_info?: string
+  source_channel?: string | null
+  source_fulfillment_type?: string | null
   quantity: number
   order_date: string
   target_month: string
@@ -451,6 +527,7 @@ const { selectedMonth, selectedPeriodLabel, availableMonths, selectMonth } = use
 const route = useRoute()
 const router = useRouter()
 
+// 고객현황 화면 필터 상태
 const searchQuery = ref('')
 const filterPetType = ref('')
 const filterStage = ref('')
@@ -458,8 +535,10 @@ const filterPurchaseIntensity = ref('')
 const filterChurn = ref('')
 const filterPurchaseCount = ref('')
 const filterProductName = ref('')
+const filterSourceChannel = ref('')
 const filterWeek = ref('')
 const filterOrderDate = ref('')
+const showAdvancedFilters = ref(false)
 const syncingFromQuery = ref(false)
 const showCustomerDetail = ref(false)
 const selectedCustomer = ref<CustomerRow | null>(null)
@@ -467,6 +546,10 @@ const loading = ref(false)
 const customersFetchSeq = ref(0)
 const customerOrdersFetchSeq = ref(0)
 
+// 이 화면의 핵심 원본/가공 상태
+// - customers: 고객 단위로 다시 묶은 결과
+// - customerOrders: 상세 패널에서 한 명의 주문 이력
+// - customerPurchaseRows: 현재 월 범위에서 읽은 purchases 원본
 const customers = ref<CustomerRow[]>([])
 const customerOrders = ref<CustomerOrderRow[]>([])
 const customerPurchaseRows = ref<PurchaseRow[]>([])
@@ -476,11 +559,14 @@ const hasExpectedConsumptionConfig = ref(false)
 const PAGE_SIZE = 10
 const DB_FETCH_PAGE_SIZE = 1000
 const currentPage = ref(1)
+
+// 현재 월에서 선택 가능한 주차 목록
 const weekOptions = computed(() => {
   if (selectedMonth.value === 'all') return []
   return buildWeekOptions(selectedMonth.value)
 })
 
+// 날짜/상품명/펫 타입 정규화 보조 함수들
 function parseOrderDate(value: string): Date {
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? new Date('1970-01-01') : d
@@ -515,6 +601,7 @@ function normalizeMissionProductName(rawName: string): string {
   return name
 }
 
+// products 메타를 화면 친화적으로 쓰기 위한 정리 함수
 function sanitizePetType(value: unknown): ProductMeta['pet_type'] {
   const type = String(value || '').toUpperCase()
   if (type === 'DOG') return 'DOG'
@@ -537,6 +624,7 @@ function mergeProductMeta(prev: ProductMeta | undefined, next: ProductMeta): Pro
   }
 }
 
+// 상품 메타가 없을 때 상품명 자체에서 펫 타입을 추론한다.
 function inferPetTypeFromName(productName: string): ProductMeta['pet_type'] {
   const normalized = normalizeForMatch(productName)
   const hasDog = normalized.includes('강아지') || normalized.includes('강견') || normalized.includes('견')
@@ -547,6 +635,7 @@ function inferPetTypeFromName(productName: string): ProductMeta['pet_type'] {
   return 'BOTH'
 }
 
+// 한 고객이 산 모든 상품을 보고 대표 펫 타입을 정한다.
 function derivePetType(rows: PurchaseRow[]): 'DOG' | 'CAT' | 'BOTH' {
   let hasDog = false
   let hasCat = false
@@ -569,12 +658,14 @@ function derivePetType(rows: PurchaseRow[]): 'DOG' | 'CAT' | 'BOTH' {
   return 'BOTH'
 }
 
+// 고객 성장 단계는 구매가 몇 개월에 걸쳐 이어졌는가를 기준으로 계산한다.
 function deriveStage(rows: PurchaseRow[]): CustomerStage {
   const dates = [...new Set(rows.map((row) => purchaseDateKey(row)).filter(Boolean))].sort()
   if (!dates.length) return 'Other'
   return computeCustomerStage(countDistinctPurchaseMonths(dates))
 }
 
+// 이탈 위험 계산에 필요한 expected_consumption_days lookup
 function resolveExpectedConsumptionDays(row: Pick<PurchaseRow, 'product_id' | 'product_name'>): number | null {
   const idKey = String(row.product_id || '').trim()
   const metaById = idKey ? productMetaById.value[idKey] : null
@@ -585,6 +676,7 @@ function resolveExpectedConsumptionDays(row: Pick<PurchaseRow, 'product_id' | 'p
   return metaByName?.expected_consumption_days ?? null
 }
 
+// 고객 화면에서 말하는 "구매 강도"는 최근 구매일수/구매월수를 다시 계산한 값이다.
 function derivePurchaseIntensity(rows: PurchaseRow[]): { purchaseMonthCount: number; recentPurchaseDayCount: number; purchaseIntensity: PurchaseIntensityCode } {
   const dates = [...new Set(rows.map((row) => purchaseDateKey(row)).filter(Boolean))].sort()
   const purchaseMonthCount = countDistinctPurchaseMonths(dates)
@@ -596,6 +688,7 @@ function derivePurchaseIntensity(rows: PurchaseRow[]): { purchaseMonthCount: num
   }
 }
 
+// 고객 통계에서 날짜/상품 그룹핑용 키
 function purchaseDateKey(row: Pick<PurchaseRow, 'order_date'>): string {
   return String(row.order_date || '').slice(0, 10)
 }
@@ -610,6 +703,7 @@ function productGroupKey(row: Pick<PurchaseRow, 'product_id' | 'product_name'>):
   return `raw:${String(row.product_name || '').trim()}`
 }
 
+// 고객 한 명이 어떤 상품을 몇 번, 얼마나 샀는지 상세 통계를 만든다.
 function buildCustomerProductStats(rows: PurchaseRow[]): CustomerProductStat[] {
   const statMap = new Map<string, { name: string; dates: Set<string>; totalQuantity: number; lastOrder: string }>()
 
@@ -648,6 +742,33 @@ function buildCustomerProductStats(rows: PurchaseRow[]): CustomerProductStat[] {
     .sort((a, b) => parseOrderDate(b.lastOrder).getTime() - parseOrderDate(a.lastOrder).getTime())
 }
 
+function sourceChannelLabel(channel: string): string {
+  if (channel === 'naver') return '네이버'
+  if (channel === 'coupang') return '쿠팡'
+  if (channel === 'excel') return '엑셀'
+  return channel || '-'
+}
+
+function sourceFulfillmentLabel(channel: string, fulfillmentType: string): string {
+  if (channel !== 'coupang') return '-'
+  if (fulfillmentType === 'marketplace') return '판매자배송'
+  if (fulfillmentType === 'rocket_growth') return '로켓그로스'
+  return fulfillmentType || '-'
+}
+
+function customerSourceScopeLabels(customer: CustomerRow): string[] {
+  return Array.from(new Set(
+    customer.sourceScopes.map((scope) => sourceChannelLabel(scope.sourceChannel)),
+  ))
+}
+
+function rowMatchesSourceFilters(row: Pick<PurchaseRow, 'source_channel' | 'source_fulfillment_type'>): boolean {
+  const scope = normalizePurchaseSourceScope(row)
+  if (filterSourceChannel.value && scope.sourceChannel !== filterSourceChannel.value) return false
+  return true
+}
+
+// 원본 값 대신 정규화된 상품명/옵션을 보여주기 위한 표시 함수
 function purchaseDisplayProductName(
   row: Pick<PurchaseRow, 'product_name' | 'source_product_name'>,
 ): string {
@@ -661,6 +782,7 @@ function purchaseDisplayOptionInfo(
   return String(row.source_option_info || row.option_info || '').trim() || '-'
 }
 
+// 배지 라벨/색상은 공용 유틸을 감싸서 쓴다.
 function intensityLabel(intensity: PurchaseIntensityCode | string) {
   return purchaseIntensityLabel(intensity)
 }
@@ -688,6 +810,8 @@ function isRiskChurn(status: ChurnStatusCode | string) {
   return effectiveChurnStatus(status) === 'Risk'
 }
 
+// expected_consumption_days 설정이 없는 환경에서는
+// 이탈 위험 계산 결과를 강제로 Excluded 처리한다.
 function applyChurnConfigGuardToCustomers() {
   if (hasExpectedConsumptionConfig.value) return
   if (!customers.value.length) return
@@ -705,6 +829,7 @@ function applyChurnConfigGuardToCustomers() {
   }
 }
 
+// products 메타 lookup 재조회
 async function loadProductMeta() {
   const { data, error } = await supabase
     .from('products')
@@ -755,6 +880,11 @@ async function loadProductMeta() {
   hasExpectedConsumptionConfig.value = hasConfiguredExpectedConsumptionDays
 }
 
+// 고객현황의 원본 조회 시작점
+// 1) products 메타 재조회
+// 2) purchases 읽기
+// 3) 월 범위에 맞게 scopeRows 자르기
+// 4) 고객 단위로 다시 그룹핑
 async function fetchCustomers() {
   const requestSeq = ++customersFetchSeq.value
   const monthSnapshot = selectedMonth.value
@@ -766,11 +896,17 @@ async function fetchCustomers() {
 
     const collected: any[] = []
     const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
+    const includeSourceScopeColumns = await supportsPurchaseSourceScopeColumns(supabase)
     const baseColumns = 'purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month, order_status, claim_status'
     for (let from = 0; ; from += DB_FETCH_PAGE_SIZE) {
       const query = supabase
         .from('purchases')
-        .select(purchaseSelectColumns(baseColumns, includeSourceColumns))
+        .select(
+          purchaseSourceScopeSelectColumns(
+            purchaseSelectColumns(baseColumns, includeSourceColumns),
+            includeSourceScopeColumns,
+          ),
+        )
         .not('filter_ver', 'is', null)
         .eq('is_fake', false)
         .eq('needs_review', false)
@@ -820,6 +956,12 @@ async function fetchCustomers() {
       const historySorted = [...historyRows].sort((a, b) => parseOrderDate(b.order_date).getTime() - parseOrderDate(a.order_date).getTime())
       const latest = sorted[0]
       const latestHistory = historySorted[0] || latest
+      const sourceScopes = Array.from(new Map(
+        historyRows.map((row) => {
+          const scope = normalizePurchaseSourceScope(row)
+          return [`${scope.sourceChannel}:${scope.sourceFulfillmentType}`, scope]
+        }),
+      ).values())
       if (!latest) continue
 
       const purchaseCount = new Set(customerRows.map((row) => purchaseDateKey(row)).filter(Boolean)).size
@@ -863,6 +1005,7 @@ async function fetchCustomers() {
             : weekCodeFromDate(row.order_date)
         )).filter(Boolean))).sort(),
         purchaseDates: Array.from(new Set(customerRows.map((row) => purchaseDateKey(row)).filter(Boolean))).sort(),
+        sourceScopes,
       })
     }
 
@@ -875,16 +1018,24 @@ async function fetchCustomers() {
   }
 }
 
+// 우측 상세 패널에서 한 고객의 주문 이력을 다시 읽는다.
+// 고객 목록은 고객 단위 요약이고, 이 함수는 주문 단위 세부 내역을 담당한다.
 async function fetchCustomerOrders(customer: CustomerRow) {
   const requestSeq = ++customerOrdersFetchSeq.value
   const monthSnapshot = selectedMonth.value
   const weekSnapshot = filterWeek.value
   const orderDateSnapshot = filterOrderDate.value
   const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
+  const includeSourceScopeColumns = await supportsPurchaseSourceScopeColumns(supabase)
   const baseColumns = 'order_date, product_name, option_info, quantity, target_month, order_status, claim_status'
   let query = supabase
     .from('purchases')
-    .select(purchaseSelectColumns(baseColumns, includeSourceColumns))
+    .select(
+      purchaseSourceScopeSelectColumns(
+        purchaseSelectColumns(baseColumns, includeSourceColumns),
+        includeSourceScopeColumns,
+      ),
+    )
         .not('filter_ver', 'is', null)
         .eq('is_fake', false)
         .eq('needs_review', false)
@@ -912,21 +1063,28 @@ async function fetchCustomerOrders(customer: CustomerRow) {
     return
   }
 
-  const orders = ((data || []) as any[]).map((row) => ({
-    date: String(row.order_date || '').slice(0, 10),
-    product: row.product_name || '-',
-    optionInfo: String(row.option_info || '').trim() || '-',
-    status: formatOrderStatusLabel(row.order_status, row.claim_status),
-    orderStatus: String(row.order_status || ''),
-    claimStatus: String(row.claim_status || ''),
-    itemCount: computePurchaseQuantity(purchaseQuantityInput({
-      product_name: String(row.product_name || ''),
-      option_info: String(row.option_info || ''),
-      source_product_name: String(row.source_product_name || ''),
-      source_option_info: String(row.source_option_info || ''),
-      quantity: Number(row.quantity) || 1,
-    })).totalCount,
-  }))
+  const orders = ((data || []) as any[]).map((row) => {
+    const scope = normalizePurchaseSourceScope(row)
+    return {
+      date: String(row.order_date || '').slice(0, 10),
+      sourceChannel: scope.sourceChannel,
+      sourceChannelLabel: sourceChannelLabel(scope.sourceChannel),
+      sourceFulfillmentType: scope.sourceFulfillmentType,
+      sourceFulfillmentLabel: sourceFulfillmentLabel(scope.sourceChannel, scope.sourceFulfillmentType),
+      product: row.product_name || '-',
+      optionInfo: String(row.option_info || '').trim() || '-',
+      status: formatOrderStatusLabel(row.order_status, row.claim_status),
+      orderStatus: String(row.order_status || ''),
+      claimStatus: String(row.claim_status || ''),
+      itemCount: computePurchaseQuantity(purchaseQuantityInput({
+        product_name: String(row.product_name || ''),
+        option_info: String(row.option_info || ''),
+        source_product_name: String(row.source_product_name || ''),
+        source_option_info: String(row.source_option_info || ''),
+        quantity: Number(row.quantity) || 1,
+      })).totalCount,
+    }
+  })
 
   if (requestSeq !== customerOrdersFetchSeq.value) return
 
@@ -937,12 +1095,40 @@ async function fetchCustomerOrders(customer: CustomerRow) {
   if (orderDateSnapshot) {
     filteredOrders = filteredOrders.filter((order) => order.date === orderDateSnapshot)
   }
+  if (filterSourceChannel.value) {
+    filteredOrders = filteredOrders.filter((order) => order.sourceChannel === filterSourceChannel.value)
+  }
 
   customerOrders.value = filteredOrders
 }
 
+// 상품명 검색이 켜져 있는지 여부
 const hasProductFilter = computed(() => Boolean(filterProductName.value.trim()))
 
+const showAdvancedFilterPanel = computed(() => {
+  return showAdvancedFilters.value
+    || Boolean(filterStage.value || filterPurchaseIntensity.value || filterWeek.value || filterOrderDate.value)
+})
+
+// 상단 KPI 카드 계산
+const customerOverviewMetrics = computed(() => {
+  const totalCustomers = filteredCustomers.value.length
+  const repeatCustomers = filteredCustomers.value.filter((customer) => customer.purchaseCount >= 2).length
+  const entryCustomers = filteredCustomers.value.filter((customer) => customer.purchaseCount === 1).length
+  const totalOrders = filteredCustomers.value.reduce((sum, customer) => sum + customer.purchaseCount, 0)
+  const ordersPerCustomer = totalCustomers > 0
+    ? (Math.round((totalOrders / totalCustomers) * 10) / 10).toFixed(1)
+    : '0.0'
+
+  return {
+    totalCustomers,
+    repeatCustomers,
+    entryCustomers,
+    ordersPerCustomer,
+  }
+})
+
+// 현재 상품 필터와 실제로 맞는 고객별 상품 통계만 뽑는다.
 function matchedProductStats(customer: CustomerRow): CustomerProductStat[] {
   const query = filterProductName.value.trim()
   if (!query) return []
@@ -953,12 +1139,15 @@ function matchingProductPurchaseCount(customer: CustomerRow): number {
   return matchedProductStats(customer).reduce((sum, stat) => sum + stat.purchaseCount, 0)
 }
 
+// 화면에 실제로 보이는 고객 목록
+// 모든 필터가 최종적으로 이 computed 안에서 적용된다.
 const filteredCustomers = computed(() => {
   return customers.value.filter((c) => {
-    if (!matchesSearchQuery(searchQuery.value, c.name, c.id, c.buyerName, c.buyerId, stageLabel(c.stage), intensityLabel(c.purchaseIntensity), churnLabel(c.churnStatus))) return false
+    if (!matchesSearchQuery(searchQuery.value, c.name, c.id, c.buyerName, c.buyerId, stageLabel(c.stage), intensityLabel(c.purchaseIntensity), churnLabel(c.churnStatus), ...customerSourceScopeLabels(c))) return false
     if (hasProductFilter.value) {
       if (matchedProductStats(c).length === 0) return false
     }
+    if (filterSourceChannel.value && !c.sourceScopes.some((scope) => scope.sourceChannel === filterSourceChannel.value)) return false
     if (filterPetType.value && c.petType !== filterPetType.value) return false
     if (filterStage.value && c.stage !== filterStage.value) return false
     if (filterPurchaseIntensity.value && c.purchaseIntensity !== filterPurchaseIntensity.value) return false
@@ -976,11 +1165,14 @@ const filteredCustomers = computed(() => {
   })
 })
 
+// 현재 필터 조건(주차/날짜/상품)에 걸리는 "현재 구매 날짜"를 다시 계산한다.
+// 최근 주문과 달리, 지금 검색 범위 안에서의 날짜라는 점이 중요하다.
 const currentPurchaseDateByCustomer = computed(() => {
   const result = new Map<string, string>()
   const productQuery = filterProductName.value.trim()
 
   for (const row of customerPurchaseRows.value) {
+    if (!rowMatchesSourceFilters(row)) continue
     if (filterWeek.value && selectedMonth.value !== 'all' && weekCodeFromDate(row.order_date, selectedMonth.value) !== filterWeek.value) continue
     if (filterOrderDate.value && purchaseDateKey(row) !== filterOrderDate.value) continue
     if (productQuery && !matchesSearchQuery(productQuery, purchaseDisplayProductName(row), row.product_name, row.source_product_name)) continue
@@ -1002,6 +1194,7 @@ function currentPurchaseDate(customer: CustomerRow): string {
   return currentPurchaseDateByCustomer.value.get(customer.customerKey) || customer.lastOrder
 }
 
+// 페이지네이션 관련 계산
 const totalPages = computed(() => {
   const total = filteredCustomers.value.length
   return Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -1058,10 +1251,12 @@ function goNextPage() {
   goPage(currentPage.value + 1)
 }
 
+// 현재 화면에서 실제로 적용 중인 필터를 칩용 데이터로 변환한다.
 const activeFilters = computed(() => {
   const filters: { key: string; label: string }[] = []
   if (searchQuery.value) filters.push({ key: 'search', label: `검색: ${searchQuery.value}` })
   if (filterProductName.value) filters.push({ key: 'productName', label: `상품: ${filterProductName.value}` })
+  if (filterSourceChannel.value) filters.push({ key: 'sourceChannel', label: `채널: ${sourceChannelLabel(filterSourceChannel.value)}` })
   const petMap: Record<string, string> = { DOG: '강아지', CAT: '고양이', BOTH: '모두' }
   if (filterPetType.value) filters.push({ key: 'petType', label: `펫: ${petMap[filterPetType.value]}` })
   if (filterStage.value) filters.push({ key: 'stage', label: `단계: ${customerStageLabel(filterStage.value)}` })
@@ -1083,10 +1278,12 @@ const activeFilters = computed(() => {
   return filters
 })
 
+// 칩 하나만 제거 / 전체 제거
 function clearFilter(key: string) {
   const map: Record<string, any> = {
     search: searchQuery,
     productName: filterProductName,
+    sourceChannel: filterSourceChannel,
     petType: filterPetType,
     stage: filterStage,
     purchaseIntensity: filterPurchaseIntensity,
@@ -1101,6 +1298,7 @@ function clearFilter(key: string) {
 function clearAllFilters() {
   searchQuery.value = ''
   filterProductName.value = ''
+  filterSourceChannel.value = ''
   filterPetType.value = ''
   filterStage.value = ''
   filterPurchaseIntensity.value = ''
@@ -1114,6 +1312,7 @@ function stageLabel(stage: string) {
   return customerStageLabel(stage)
 }
 
+// URL query <-> 화면 필터 동기화용 보조 함수들
 function asSingleQueryValue(val: string | string[] | null | undefined): string {
   if (Array.isArray(val)) return val[0] || ''
   return val || ''
@@ -1123,6 +1322,9 @@ function applyFiltersFromQuery(query: LocationQuery) {
   syncingFromQuery.value = true
   searchQuery.value = asSingleQueryValue(query.q) || asSingleQueryValue(query.search)
   filterProductName.value = asSingleQueryValue(query.product) || asSingleQueryValue(query.productName)
+
+  const sourceChannel = asSingleQueryValue(query.sourceChannel) || asSingleQueryValue(query.channel)
+  filterSourceChannel.value = sourceChannel === 'naver' || sourceChannel === 'coupang' || sourceChannel === 'excel' ? sourceChannel : ''
 
   const month = asSingleQueryValue(query.month)
   const isValidMonth = month === 'all' || availableMonths.value.some((option) => option.value === month)
@@ -1168,6 +1370,8 @@ const managedKeys = new Set([
   'search',
   'product',
   'productName',
+  'sourceChannel',
+  'channel',
   'purchaseType',
   'is_fake',
   'petType',
@@ -1193,6 +1397,7 @@ function syncFiltersToQuery() {
 
   if (searchQuery.value.trim()) next.q = searchQuery.value.trim()
   if (filterProductName.value.trim()) next.product = filterProductName.value.trim()
+  if (filterSourceChannel.value) next.sourceChannel = filterSourceChannel.value
   if (filterPetType.value) next.petType = filterPetType.value
   if (filterStage.value) next.stage = filterStage.value
   if (filterPurchaseIntensity.value) next.intensity = filterPurchaseIntensity.value
@@ -1205,6 +1410,7 @@ function syncFiltersToQuery() {
   const currentCanonical = { ...current }
   delete currentCanonical.search
   delete currentCanonical.productName
+  delete currentCanonical.channel
   delete currentCanonical.pet
   delete currentCanonical.purchaseIntensity
   delete currentCanonical.purchaseType
@@ -1216,10 +1422,12 @@ function syncFiltersToQuery() {
   }
 }
 
+// URL이 바뀌면 화면 필터를 다시 맞춘다.
 watch(() => route.query, (query) => {
   applyFiltersFromQuery(query)
 }, { immediate: true })
 
+// 월 목록이 늦게 들어오는 경우에도 URL month 값을 다시 적용한다.
 watch(
   () => availableMonths.value.length,
   (len, prev) => {
@@ -1229,6 +1437,7 @@ watch(
   },
 )
 
+// 월이 바뀌면 이전 월의 주차/날짜 필터는 비워야 한다.
 watch(
   () => selectedMonth.value,
   (month, prevMonth) => {
@@ -1242,14 +1451,16 @@ watch(
   { flush: 'sync' },
 )
 
+// 필터값이 바뀌면 항상 1페이지로 이동하고 URL도 동기화한다.
 watch(
-  [searchQuery, filterProductName, filterPetType, filterStage, filterPurchaseIntensity, filterChurn, filterPurchaseCount, filterWeek, filterOrderDate, selectedMonth],
+  [searchQuery, filterProductName, filterSourceChannel, filterPetType, filterStage, filterPurchaseIntensity, filterChurn, filterPurchaseCount, filterWeek, filterOrderDate, selectedMonth],
   () => {
     currentPage.value = 1
     syncFiltersToQuery()
   },
 )
 
+// 현재 월에 존재하지 않는 주차값이 남아 있으면 자동 정리
 watch(
   () => [selectedMonth.value, weekOptions.value.map((option) => option.value).join(',')],
   () => {
@@ -1264,6 +1475,7 @@ watch(
   },
 )
 
+// 필터 결과가 줄어들어 현재 페이지가 범위를 벗어나면 마지막 페이지로 보정
 watch(
   () => filteredCustomers.value.length,
   () => {
@@ -1273,6 +1485,7 @@ watch(
   },
 )
 
+// 상품 메타 설정에 따라 이탈 위험 표시를 다시 정리
 watch(
   () => hasExpectedConsumptionConfig.value,
   () => {
@@ -1281,6 +1494,7 @@ watch(
   { immediate: true },
 )
 
+// 월/프로필 상태가 바뀌면 고객 데이터 재조회
 watch(
   () => [selectedMonth.value, profileLoaded.value, profileRevision.value],
   async ([month, loaded]) => {
@@ -1293,6 +1507,7 @@ watch(
   { immediate: true },
 )
 
+// 상세 패널이 열려 있을 때는 주차/날짜 필터 변경 시 주문 이력도 같이 갱신
 watch(
   () => [filterWeek.value, filterOrderDate.value],
   async () => {
@@ -1306,16 +1521,18 @@ function stagePercent(stage: string): number {
   return customerStagePercent(stage)
 }
 
+// 고객 카드/행 클릭 시 우측 상세 패널 열기
 async function openCustomerDetail(customer: CustomerRow) {
   selectedCustomer.value = customer
   showCustomerDetail.value = true
   await fetchCustomerOrders(customer)
 }
 
+// 현재 필터 조건이 적용된 고객-주문 데이터를 엑셀로 내보낸다.
 function downloadFilteredCustomers() {
   const header = ['이름', 'ID', '펫타입', '성장단계', '누적구매월', '구매강도', '최근90일 구매일수', '구매횟수', '구매상품수']
   if (hasProductFilter.value) header.push('검색상품 구매횟수')
-  header.push('구매일', '상품명', '옵션', '상품 개수', '최근주문', '이탈상태', '이탈기준일수')
+  header.push('구매일', '채널', '유형', '상품명', '옵션', '상품 개수', '최근주문', '이탈상태', '이탈기준일수')
 
   const customerMap = new Map(filteredCustomers.value.map((customer) => [customer.customerKey, customer]))
   const productQuery = filterProductName.value.trim()
@@ -1323,6 +1540,7 @@ function downloadFilteredCustomers() {
     .filter((row) => {
       const customerKey = row.customer_key || `${row.buyer_id}_${row.buyer_name}`
       if (!customerMap.has(customerKey)) return false
+      if (!rowMatchesSourceFilters(row)) return false
       if (filterWeek.value && weekCodeFromDate(row.order_date, selectedMonth.value) !== filterWeek.value) return false
       if (filterOrderDate.value && purchaseDateKey(row) !== filterOrderDate.value) return false
       if (productQuery && !matchesSearchQuery(productQuery, purchaseDisplayProductName(row), row.product_name, row.source_product_name)) return false
@@ -1364,6 +1582,8 @@ function downloadFilteredCustomers() {
       customer?.productCount || 0,
       ...(hasProductFilter.value ? [customer ? matchingProductPurchaseCount(customer) : 0] : []),
       purchaseDateKey(row),
+      sourceChannelLabel(normalizePurchaseSourceScope(row).sourceChannel),
+      sourceFulfillmentLabel(normalizePurchaseSourceScope(row).sourceChannel, normalizePurchaseSourceScope(row).sourceFulfillmentType),
       purchaseDisplayProductName(row),
       purchaseDisplayOptionInfo(row),
       quantity,
@@ -1380,7 +1600,8 @@ function downloadFilteredCustomers() {
 }
 
 onMounted(async () => {
-  // 초기 메타 로드(안전망). 실제 고객 집계 시에도 loadProductMeta를 선행 호출한다.
+  // 초기 메타 로드(안전망)
+  // 실제 fetchCustomers에서도 다시 읽지만, 첫 진입 시 빈 상태를 줄이기 위해 한 번 더 읽는다.
   await loadProductMeta()
 })
 </script>
@@ -1391,8 +1612,88 @@ onMounted(async () => {
   gap: var(--space-xl);
 }
 
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.page-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--color-text);
+}
+
+.page-caption {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.customer-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 26px;
+  overflow: hidden;
+}
+
+.customer-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 24px;
+  background: transparent;
+}
+
+.customer-summary-card + .customer-summary-card {
+  border-left: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.customer-summary-label {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.customer-summary-value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.customer-summary-meta {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
 .filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
   padding: var(--space-lg) var(--space-xl);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .filter-row {
@@ -1410,30 +1711,13 @@ onMounted(async () => {
   min-width: 168px;
 }
 
+.filter-row-advanced {
+  padding-top: 2px;
+}
+
 .filter-row :deep(.input-with-icon) {
   min-width: 240px;
   flex: 1 1 240px;
-}
-
-.stage-indicator {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.stage-progress {
-  width: 48px;
-  height: 4px;
-  background: #F3F4F6;
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.stage-fill {
-  height: 100%;
-  background: var(--color-primary);
-  border-radius: 2px;
-  transition: width 0.3s ease;
 }
 
 .detail-value-stack {
@@ -1443,11 +1727,46 @@ onMounted(async () => {
   gap: 6px;
 }
 
+.customer-table-identity,
+.customer-table-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.customer-table-identity strong {
+  font-size: 0.95rem;
+  color: var(--color-text);
+}
+
+.customer-table-identity span,
+.customer-table-flow span {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.customer-source-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.customer-table-purchase {
+  white-space: nowrap;
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
 .customer-card-list {
   display: none;
 }
 
 @media (max-width: 1024px) {
+  .customer-summary-card + .customer-summary-card {
+    border-left: none;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+  }
+
   .filter-bar {
     padding: var(--space-md) var(--space-lg);
   }
@@ -1478,6 +1797,10 @@ onMounted(async () => {
     align-items: stretch;
   }
 
+  .page-header-actions {
+    width: 100%;
+  }
+
   .filter-row :deep(.input-with-icon) {
     width: 100% !important;
     min-width: 0;
@@ -1494,14 +1817,6 @@ onMounted(async () => {
     min-width: 0;
     width: 100%;
     flex: 1 1 calc(50% - var(--space-sm));
-  }
-
-  .stage-indicator {
-    gap: 6px;
-  }
-
-  .stage-progress {
-    width: 40px;
   }
 
   .card-header {

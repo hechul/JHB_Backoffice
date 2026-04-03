@@ -6,6 +6,7 @@ import {
 } from '../../../app/composables/useFilterMatching.ts'
 import { FILTER_VER } from '../../../shared/filterVersion.ts'
 
+// 서버/백그라운드 월별 재필터에서 쓰는 기본 단위
 const FETCH_PAGE_SIZE = 1000
 const UPDATE_CONCURRENCY = 30
 
@@ -52,6 +53,7 @@ export interface MonthlyFilterRunResult {
   pendingReviewCount: number
 }
 
+// 브라우저 세션 없이 서버에서 직접 Supabase를 다루기 위한 admin client
 function getAdminClient() {
   const supabaseUrl = String(process.env.NUXT_PUBLIC_SUPABASE_URL || '').trim()
   const serviceKey = String(process.env.SUPABASE_SERVICE_KEY || '').trim()
@@ -64,6 +66,7 @@ function getAdminClient() {
   })
 }
 
+// YYYY-MM 형식 검증
 function normalizeMonth(value: unknown): string | null {
   const normalized = String(value || '').trim()
   return /^\d{4}-\d{2}$/.test(normalized) ? normalized : null
@@ -79,6 +82,7 @@ export function normalizeTargetMonths(months: readonly unknown[]): string[] {
   ).sort()
 }
 
+// 대량 update를 일정 개수씩 병렬 처리
 async function runConcurrentUpdates<T>(
   items: T[],
   worker: (item: T) => Promise<void>,
@@ -90,6 +94,7 @@ async function runConcurrentUpdates<T>(
   }
 }
 
+// 특정 월의 purchases / experiences 원본을 서버에서 직접 읽는다.
 async function loadFilterRows(month: string): Promise<{
   purchases: PurchaseFilterRow[]
   experiences: ExperienceFilterRow[]
@@ -167,6 +172,7 @@ async function loadFilterRows(month: string): Promise<{
   }
 }
 
+// 백그라운드 재필터도 수동 필터와 동일한 형식으로 실행 로그를 남긴다.
 async function persistFilterLog(input: PersistFilterLogInput) {
   const admin = getAdminClient()
   const totalMatched = Number(input.totalMatched || 0)
@@ -205,6 +211,7 @@ async function persistFilterLog(input: PersistFilterLogInput) {
   if (error) throw error
 }
 
+// 확인 필요 건수 집계
 async function countPendingReviews(month: string): Promise<number> {
   const admin = getAdminClient()
   const { count, error } = await admin
@@ -217,6 +224,7 @@ async function countPendingReviews(month: string): Promise<number> {
   return Number(count || 0)
 }
 
+// 체험단이 없는 달은 자동 판정 흔적만 초기화하면 실구매 상태로 정리할 수 있다.
 async function resetMonthMatchingState(
   admin: ReturnType<typeof getAdminClient>,
   month: string,
@@ -236,18 +244,26 @@ async function resetMonthMatchingState(
   if (error) throw error
 }
 
+/**
+ * 주어진 월 목록 중 experiences 테이블에 실제 데이터가 있는 월만 반환한다.
+ * 이유: 동기화 후 자동 재필터 시 체험단 유무에 따라 처리 경로가 다르다.
+ *       체험단 있는 월 → 무거운 매칭 알고리즘 → 백그라운드 프로세스
+ *       체험단 없는 월 → 간단한 초기화만 → 인라인 즉시 실행
+ */
 export async function findMonthsWithExperiences(months: readonly unknown[]): Promise<string[]> {
-  const normalizedMonths = normalizeTargetMonths(months)
+  const normalizedMonths = normalizeTargetMonths(months) // YYYY-MM 형식 정규화 + 중복 제거
   if (normalizedMonths.length === 0) return []
 
   const admin = getAdminClient()
-  const matchedMonths = new Set<string>()
+  const matchedMonths = new Set<string>() // 체험단이 존재하는 월을 중복 없이 수집
 
+  // FETCH_PAGE_SIZE(1000) 단위로 페이지네이션해서 전체 조회
+  // (체험단이 매우 많은 경우를 대비해 한 번에 다 가져오지 않음)
   for (let from = 0; ; from += FETCH_PAGE_SIZE) {
     const { data, error } = await admin
       .from('experiences')
-      .select('target_month')
-      .in('target_month', normalizedMonths)
+      .select('target_month')                          // target_month 컬럼만 조회 (불필요한 데이터 최소화)
+      .in('target_month', normalizedMonths)            // 대상 월에 해당하는 행만 필터
       .order('target_month', { ascending: true })
       .range(from, from + FETCH_PAGE_SIZE - 1)
 
@@ -256,11 +272,12 @@ export async function findMonthsWithExperiences(months: readonly unknown[]): Pro
     const rows = data || []
     for (const row of rows as any[]) {
       const month = normalizeMonth(row.target_month)
-      if (month) matchedMonths.add(month)
+      if (month) matchedMonths.add(month) // Set이라 같은 월이 여러 행 나와도 중복 없이 수집
     }
-    if (rows.length < FETCH_PAGE_SIZE) break
+    if (rows.length < FETCH_PAGE_SIZE) break // 마지막 페이지면 종료
   }
 
+  // 입력된 월 중 실제로 체험단이 존재하는 월만 걸러서 반환
   return normalizedMonths.filter((month) => matchedMonths.has(month))
 }
 
@@ -282,10 +299,12 @@ export async function runMonthlyFilter(
   let experiences: ExperienceFilterRow[] = []
 
   try {
+    // 1) 대상 월의 주문/체험단 원본 로딩
     const loaded = await loadFilterRows(normalizedMonth)
     purchases = loaded.purchases
     experiences = loaded.experiences
 
+    // 주문이 하나도 없는 달은 더 진행할 필요가 없다.
     if (purchases.length === 0) {
       return {
         month: normalizedMonth,
@@ -298,6 +317,8 @@ export async function runMonthlyFilter(
       }
     }
 
+    // 체험단이 없는 달은 무거운 매칭 알고리즘 없이
+    // "실구매 상태 초기화 + filter_ver 각인"만 해도 충분하다.
     if (experiences.length === 0) {
       await resetMonthMatchingState(admin, normalizedMonth)
       const { error: stampFilterVersionError } = await admin
@@ -337,10 +358,13 @@ export async function runMonthlyFilter(
       }
     }
 
+    // 체험단이 있는 달은 월 전체를 다시 계산한다.
     const matching = buildMatchingResult(purchases, experiences)
 
+    // 2) 기존 자동 판정 초기화
     await resetMonthMatchingState(admin, normalizedMonth)
 
+    // 자동 계산 메타도 함께 초기화
     const { error: resetMetaError } = await admin
       .from('purchases')
       .update({
@@ -351,6 +375,7 @@ export async function runMonthlyFilter(
       .eq('is_manual', false)
     if (resetMetaError) throw resetMetaError
 
+    // 3) 체험단으로 판정된 주문 반영
     await runConcurrentUpdates(matching.matches, async (match) => {
       const { error } = await admin
         .from('purchases')
@@ -367,6 +392,7 @@ export async function runMonthlyFilter(
       if (error) throw error
     })
 
+    // 4) 다중 후보라 사람이 확인해야 하는 주문 반영
     if (matching.reviewPurchaseIds.length > 0) {
       for (let index = 0; index < matching.reviewPurchaseIds.length; index += 50) {
         const batch = matching.reviewPurchaseIds.slice(index, index + 50)
@@ -386,6 +412,7 @@ export async function runMonthlyFilter(
       }
     }
 
+    // 5) experiences.unmatch_reason 초기화 후 다시 기록
     const { error: clearReasonError } = await admin
       .from('experiences')
       .update({ unmatch_reason: null })
@@ -401,6 +428,7 @@ export async function runMonthlyFilter(
       if (error) throw error
     })
 
+    // 6) 실구매로 남은 주문도 분석 화면에서 읽히도록 filter_ver를 찍어준다.
     const { error: stampFilterVersionError } = await admin
       .from('purchases')
       .update({ filter_ver: FILTER_VER })
@@ -412,6 +440,7 @@ export async function runMonthlyFilter(
     const pendingReviewCount = await countPendingReviews(normalizedMonth)
     const durationSec = (Date.now() - startedAt) / 1000
 
+    // 7) 실행 로그 저장
     await persistFilterLog({
       month: normalizedMonth,
       actorName,
@@ -439,6 +468,7 @@ export async function runMonthlyFilter(
       pendingReviewCount,
     }
   } catch (error) {
+    // 실패 시에도 로그는 남겨서 운영에서 원인을 추적할 수 있게 한다.
     const durationSec = (Date.now() - startedAt) / 1000
     await persistFilterLog({
       month: normalizedMonth,

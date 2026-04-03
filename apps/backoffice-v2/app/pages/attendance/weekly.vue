@@ -471,7 +471,6 @@ const weekSummaryCards = computed(() => {
   if (!isAdmin.value) {
     const countBy = (predicate: (entry: typeof personalWeeklyEntries.value[number]) => boolean) => personalWeeklyEntries.value.filter(predicate).length
     return [
-      { label: '기록 일수', value: `${personalWeeklyEntries.value.length}일`, tone: 'summary-tone-slate', icon: CalendarRange },
       { label: '정상/근무', value: `${countBy((entry) => ['done', 'working'].includes(entry.status))}일`, tone: 'summary-tone-blue', icon: BriefcaseBusiness },
       { label: '지각/조퇴', value: `${countBy((entry) => ['late', 'late_early', 'early_leave'].includes(entry.status))}일`, tone: 'summary-tone-amber', icon: CircleAlert },
       { label: '휴가/반차', value: `${countBy((entry) => entry.status.includes('leave'))}일`, tone: 'summary-tone-purple', icon: Plane },

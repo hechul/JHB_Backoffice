@@ -6,14 +6,12 @@
 
     <div v-else-if="!isAdmin" class="card empty-state">
       <div class="empty-state-title">접근 권한이 없습니다</div>
-      <div class="empty-state-desc">근무 기준 설정은 관리자 계정에서만 가능합니다.</div>
     </div>
 
     <template v-else>
       <div class="settings-header">
         <div>
           <h1 class="settings-title">근무 기준 설정</h1>
-          <div class="settings-subtitle">근태 상태 자동 판정에 사용할 회사 기본 기준입니다.</div>
         </div>
       </div>
 
@@ -26,19 +24,16 @@
         <section class="settings-group">
           <div class="settings-group-head">
             <h2>출퇴근 기준</h2>
-            <p>하루 기본 시작과 종료 시각입니다.</p>
           </div>
           <div class="form-grid">
             <label class="field">
               <span>기본 출근 시간</span>
               <input v-model="form.work_start_time" type="time" class="input" :disabled="saving || tableMissing" />
-              <small class="field-help">직원 출근 판정의 기준 시각입니다.</small>
             </label>
 
             <label class="field">
               <span>기본 퇴근 시간</span>
               <input v-model="form.work_end_time" type="time" class="input" :disabled="saving || tableMissing" />
-              <small class="field-help">정상 퇴근 기준으로 사용됩니다.</small>
             </label>
           </div>
         </section>
@@ -46,19 +41,16 @@
         <section class="settings-group">
           <div class="settings-group-head">
             <h2>판정 기준</h2>
-            <p>지각과 조퇴를 언제부터 볼지 정합니다.</p>
           </div>
           <div class="form-grid">
             <label class="field">
               <span>지각 허용 분</span>
               <input v-model.number="form.late_grace_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
-              <small class="field-help">이 분까지는 지각으로 보지 않습니다.</small>
             </label>
 
             <label class="field">
               <span>조퇴 기준 분</span>
               <input v-model.number="form.early_leave_grace_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
-              <small class="field-help">이 분 이상 일찍 퇴근하면 조퇴로 봅니다.</small>
             </label>
           </div>
         </section>
@@ -66,19 +58,16 @@
         <section class="settings-group">
           <div class="settings-group-head">
             <h2>근무시간 기준</h2>
-            <p>자동 집계에 반영할 휴게시간과 기준 근무시간입니다.</p>
           </div>
           <div class="form-grid">
             <label class="field">
               <span>점심 차감 분</span>
               <input v-model.number="form.lunch_break_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
-              <small class="field-help">자동 계산 시 점심시간으로 차감할 분입니다.</small>
             </label>
 
             <label class="field">
               <span>기준 근무시간(분)</span>
               <input v-model.number="form.standard_work_minutes" type="number" min="0" class="input" :disabled="saving || tableMissing" />
-              <small class="field-help">하루 기준 근무시간으로 사용할 값입니다.</small>
             </label>
           </div>
         </section>

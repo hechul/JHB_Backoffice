@@ -6,14 +6,12 @@
 
     <div v-else-if="!isAdmin" class="card empty-state">
       <div class="empty-state-title">접근 권한이 없습니다</div>
-      <div class="empty-state-desc">휴가 승인은 관리자 계정에서만 확인할 수 있습니다.</div>
     </div>
 
     <template v-else>
       <div class="page-header">
         <div>
           <h1 class="page-title">휴가 승인</h1>
-          <div class="page-subtitle">모바일에서는 대기 건을 먼저 보고, 카드에서 바로 승인 또는 반려할 수 있습니다.</div>
         </div>
         <div class="page-actions">
           <input v-model="selectedMonth" type="month" class="input month-input" />

@@ -13,6 +13,12 @@ describe('useCommerceProductCatalog', () => {
     expect(getCanonicalGroupBySourceProductId('13031643891')).toBe('엔자이츄')
     expect(getPackMultiplierBySourceProductId('13031643891')).toBe(2)
     expect(getPackMultiplierBySourceProductId('11750107226')).toBe(6)
+    expect(getPackMultiplierBySourceProductId('94855858569')).toBe(2)
+    expect(getPackMultiplierBySourceProductId('94782798350')).toBe(3)
+    expect(getPackMultiplierBySourceProductId('94165125993')).toBe(1)
+    expect(getPackMultiplierBySourceProductId('94132827866')).toBe(1)
+    expect(getPackMultiplierBySourceProductId('94363315737')).toBe(3)
+    expect(getPackMultiplierBySourceProductId('94879329299')).toBe(6)
   })
 
   it('marks option-sensitive source products correctly', () => {
@@ -24,6 +30,7 @@ describe('useCommerceProductCatalog', () => {
   it('detects three-flavor set source products', () => {
     expect(isThreeFlavorSetSourceProduct('12825618625')).toBe(true)
     expect(isThreeFlavorSetSourceProduct('12825547641')).toBe(false)
+    expect(isThreeFlavorSetSourceProduct('91677910749')).toBe(true)
   })
 
   it('canonicalizes dispenser color by source product id', () => {

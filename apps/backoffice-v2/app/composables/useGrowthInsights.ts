@@ -58,7 +58,11 @@ export interface GrowthCustomerInsight {
   recentPurchaseDayCount: number
   purchaseIntensity: PurchaseIntensityCode
   firstOrder: string
+  secondOrder: string | null
+  thirdOrder: string | null
   lastOrder: string
+  daysToSecondPurchase: number | null
+  daysToThirdPurchase: number | null
   daysSinceLastOrder: number
   churnRisk: boolean
   transitions: GrowthTransition[]
@@ -125,6 +129,13 @@ export interface GrowthInsightsResult {
   customers: GrowthCustomerInsight[]
   totalCustomers: number
   realPurchases: number
+  repurchaseStats: {
+    secondPurchaseCustomers: number
+    thirdPurchaseCustomers: number
+    secondPurchaseRate: number
+    thirdPurchaseRate: number
+    averageDaysToSecondPurchase: number
+  }
 }
 
 const DB_FETCH_PAGE_SIZE = 1000
@@ -384,6 +395,9 @@ export async function fetchGrowthInsights(supabase: any, month: string): Promise
     ['Growth->Premium', 0],
     ['Premium->Core', 0],
   ])
+  let secondPurchaseCustomers = 0
+  let thirdPurchaseCustomers = 0
+  let totalDaysToSecondPurchase = 0
   const productBuckets = new Map<CustomerStageCode, Map<string, GrowthTopProduct>>(
     STAGE_ORDER.map((stage) => [stage, new Map()]),
   )
@@ -395,11 +409,28 @@ export async function fetchGrowthInsights(supabase: any, month: string): Promise
 
     const sortedDates = [...new Set(historyRows.map((row) => purchaseDateKey(row)).filter(Boolean))].sort()
     const purchaseCount = sortedDates.length
+    if (purchaseCount >= 2) {
+      secondPurchaseCustomers += 1
+      const first = parseOrderDate(sortedDates[0] || '')
+      const second = parseOrderDate(sortedDates[1] || '')
+      totalDaysToSecondPurchase += Math.max(0, Math.round((second.getTime() - first.getTime()) / (1000 * 60 * 60 * 24)))
+    }
+    if (purchaseCount >= 3) {
+      thirdPurchaseCustomers += 1
+    }
     const purchaseMonthCount = countDistinctPurchaseMonths(sortedDates)
     const recentPurchaseDayCount = countRecentPurchaseDays(sortedDates)
     const purchaseIntensity = computePurchaseIntensity(recentPurchaseDayCount)
     const firstOrder = sortedDates[0] || ''
+    const secondOrder = sortedDates[1] || null
+    const thirdOrder = sortedDates[2] || null
     const lastOrder = sortedDates[sortedDates.length - 1] || String(latest.order_date || '').slice(0, 10)
+    const daysToSecondPurchase = firstOrder && secondOrder
+      ? Math.max(0, Math.round((parseOrderDate(secondOrder).getTime() - parseOrderDate(firstOrder).getTime()) / (1000 * 60 * 60 * 24)))
+      : null
+    const daysToThirdPurchase = firstOrder && thirdOrder
+      ? Math.max(0, Math.round((parseOrderDate(thirdOrder).getTime() - parseOrderDate(firstOrder).getTime()) / (1000 * 60 * 60 * 24)))
+      : null
     const petType = derivePetType(historyRows, byId, byName)
     const { finalStage, transitions } = buildStageJourney(sortedDates)
     const churn = computeChurnRisk(historyRows.map((row) => ({
@@ -435,7 +466,11 @@ export async function fetchGrowthInsights(supabase: any, month: string): Promise
       recentPurchaseDayCount,
       purchaseIntensity,
       firstOrder,
+      secondOrder,
+      thirdOrder,
       lastOrder,
+      daysToSecondPurchase,
+      daysToThirdPurchase,
       daysSinceLastOrder: churn.daysSinceLastOrder,
       churnRisk: churn.churnRisk,
       transitions: customerTransitions,
@@ -563,6 +598,11 @@ export async function fetchGrowthInsights(supabase: any, month: string): Promise
     },
   ]
 
+  const totalCustomers = customers.length
+  const averageDaysToSecondPurchase = secondPurchaseCustomers > 0
+    ? Math.round((totalDaysToSecondPurchase / secondPurchaseCustomers) * 10) / 10
+    : 0
+
   return {
     summaries,
     transitions,
@@ -572,8 +612,15 @@ export async function fetchGrowthInsights(supabase: any, month: string): Promise
     stageProducts,
     candidates,
     customers: customers.sort((a, b) => parseOrderDate(b.lastOrder).getTime() - parseOrderDate(a.lastOrder).getTime()),
-    totalCustomers: customers.length,
+    totalCustomers,
     realPurchases: scopeRows.length,
+    repurchaseStats: {
+      secondPurchaseCustomers,
+      thirdPurchaseCustomers,
+      secondPurchaseRate: totalCustomers > 0 ? Math.round((secondPurchaseCustomers / totalCustomers) * 100) : 0,
+      thirdPurchaseRate: totalCustomers > 0 ? Math.round((thirdPurchaseCustomers / totalCustomers) * 100) : 0,
+      averageDaysToSecondPurchase,
+    },
   }
 }
 

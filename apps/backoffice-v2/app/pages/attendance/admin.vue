@@ -6,7 +6,6 @@
 
     <div v-else-if="!isAdmin" class="card empty-state">
       <div class="empty-state-title">접근 권한이 없습니다</div>
-      <div class="empty-state-desc">금일 근태 이력은 관리자 계정에서만 확인할 수 있습니다.</div>
     </div>
 
     <template v-else>
@@ -114,7 +113,6 @@
             </div>
 
             <div v-if="row.record?.id" class="today-card-actions">
-              <span class="today-card-action-hint">잘못 입력된 오늘 기록은 여기서 바로 수정하거나 삭제할 수 있습니다.</span>
               <div class="today-card-action-buttons">
                 <button
                   type="button"

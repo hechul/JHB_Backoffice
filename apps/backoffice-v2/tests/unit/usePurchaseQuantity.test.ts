@@ -40,6 +40,38 @@ describe('usePurchaseQuantity', () => {
     expect(result.dashboardBreakdown[0]?.count).toBe(2)
   })
 
+  it('treats Coupang 츄라잇 14/28/42/84개 SKU as 1/2/3/6 boxes', () => {
+    const singleBox = computePurchaseQuantity({
+      productName: '츄라잇',
+      optionInfo: '14개 10g 종합영양제',
+      sourceProductId: '94132827866',
+      quantity: 1,
+    })
+    const doubleBox = computePurchaseQuantity({
+      productName: '츄라잇',
+      optionInfo: '28개 10g 유리너리+장건강',
+      sourceProductId: '94363413993',
+      quantity: 1,
+    })
+    const tripleBox = computePurchaseQuantity({
+      productName: '츄라잇',
+      optionInfo: '42개 10g 눈물개선/눈건강',
+      sourceProductId: '94363315735',
+      quantity: 1,
+    })
+    const sixBox = computePurchaseQuantity({
+      productName: '츄라잇',
+      optionInfo: '84개 10g 종합영양제',
+      sourceProductId: '94879329297',
+      quantity: 1,
+    })
+
+    expect(singleBox.totalCount).toBe(1)
+    expect(doubleBox.totalCount).toBe(2)
+    expect(tripleBox.totalCount).toBe(3)
+    expect(sixBox.totalCount).toBe(6)
+  })
+
   it('splits 애착트릿 3종세트 into 북어/연어/치킨', () => {
     const result = computePurchaseQuantity({
       productName: '애착트릿 3종세트',
@@ -142,6 +174,42 @@ describe('usePurchaseQuantity', () => {
     expect(result.totalCount).toBe(2)
   })
 
+  it('uses Coupang SKU multiplier for 이즈바이트 instead of gram fallback', () => {
+    const single = computePurchaseQuantity({
+      productName: '이즈바이트',
+      optionInfo: '1개 꿀고구마맛 91g',
+      sourceProductId: '94165125993',
+      quantity: 1,
+    })
+    const double = computePurchaseQuantity({
+      productName: '이즈바이트',
+      optionInfo: '2개 꿀고구마맛 91g',
+      sourceProductId: '94380472325',
+      quantity: 1,
+    })
+
+    expect(single.totalCount).toBe(1)
+    expect(double.totalCount).toBe(2)
+  })
+
+  it('multiplies Coupang treatbag and dispenser SKU counts by order quantity', () => {
+    const treatbag = computePurchaseQuantity({
+      productName: '트릿백',
+      optionInfo: '1개 민트+퍼플',
+      sourceProductId: '94855858569',
+      quantity: 2,
+    })
+    const dispenser = computePurchaseQuantity({
+      productName: '츄르짜개',
+      optionInfo: '1개 블루+옐로+퍼플',
+      sourceProductId: '94782798350',
+      quantity: 2,
+    })
+
+    expect(treatbag.totalCount).toBe(4)
+    expect(dispenser.totalCount).toBe(6)
+  })
+
   it('applies 케어푸/두부모래 n개 * quantity rule', () => {
     const carefu = computePurchaseQuantity({
       productName: '케어푸 90포, 3개',
@@ -209,6 +277,24 @@ describe('usePurchaseQuantity', () => {
       optionInfo: '-',
       quantity: 5,
     }).totalCount).toBe(5)
+  })
+
+  it('uses Coupang SKU multiplier for 트릿백 and 짜개 combination items', () => {
+    const treatBagCombo = computePurchaseQuantity({
+      productName: '미니 트릿백',
+      optionInfo: '1개 민트+퍼플',
+      sourceProductId: '94855858569',
+      quantity: 1,
+    })
+    const dispenserTriple = computePurchaseQuantity({
+      productName: '츄르짜개 (고양이 간식 디스펜서)',
+      optionInfo: '1개 블루+옐로+퍼플',
+      sourceProductId: '94782798350',
+      quantity: 1,
+    })
+
+    expect(treatBagCombo.totalCount).toBe(2)
+    expect(dispenserTriple.totalCount).toBe(3)
   })
 
   it('formats count for UI display', () => {

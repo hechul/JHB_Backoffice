@@ -21,6 +21,10 @@
       </div>
       <div class="home-header-right">
         <span class="home-date">{{ today }}</span>
+        <span v-if="homeAttendanceBadge" class="home-attendance-badge" :class="homeAttendanceBadge.toneClass">
+          <component :is="homeAttendanceBadge.icon" :size="13" :stroke-width="2" />
+          <span>{{ homeAttendanceBadge.label }}</span>
+        </span>
         <div class="home-user">
           <div class="home-user-avatar">{{ avatarInitial }}</div>
           <div class="home-user-info">
@@ -35,17 +39,33 @@
     </header>
 
     <!-- Content -->
-    <main class="home-content">
+    <main class="home-content" :class="{ 'home-content--landing': route.path === '/' }">
       <slot />
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { LogOut, House, ChevronLeft } from 'lucide-vue-next'
+import { LogOut, House, ChevronLeft, BriefcaseBusiness, CheckCircle2, CircleAlert, CircleDashed, CircleSlash2, Plane } from 'lucide-vue-next'
+import type { AttendanceRecord, AttendanceSettings, LeaveRequest } from '~/composables/useAttendance'
 
 const { user, profileLoaded, logout } = useCurrentUser()
 const route = useRoute()
+const supabase = useSupabaseClient()
+const {
+  DEFAULT_ATTENDANCE_SETTINGS,
+  computeAttendanceStatus,
+  getKstDateKey,
+  normalizeAttendanceSettings,
+} = useAttendance()
+
+const todayDate = ref(getKstDateKey())
+const todayRecord = ref<AttendanceRecord | null>(null)
+const todayApprovedLeave = ref<LeaveRequest | null>(null)
+const attendanceSettings = ref<AttendanceSettings>(normalizeAttendanceSettings(DEFAULT_ATTENDANCE_SETTINGS))
+const attendanceTableMissing = ref(false)
+const leaveTableMissing = ref(false)
+const settingsTableMissing = ref(false)
 
 const today = computed(() => {
   const d = new Date()
@@ -61,6 +81,124 @@ const roleLabel = computed(() => {
   return 'Viewer'
 })
 const showHeaderNavButtons = computed(() => route.path !== '/')
+
+function isMissingTableError(error: any, tableName: string) {
+  const code = String(error?.code || '').toUpperCase()
+  const msg = String(error?.message || '').toLowerCase()
+  return code === '42P01' || msg.includes(tableName)
+}
+
+function homeStatusIcon(code?: string) {
+  const normalized = String(code || '')
+  if (normalized === 'done') return CheckCircle2
+  if (normalized === 'working') return BriefcaseBusiness
+  if (normalized === 'late' || normalized === 'late_early' || normalized === 'early_leave') return CircleAlert
+  if (normalized.includes('leave')) return Plane
+  if (normalized === 'absent') return CircleSlash2
+  return CircleDashed
+}
+
+function homeStatusTone(code?: string) {
+  const normalized = String(code || '')
+  if (normalized === 'done') return 'home-attendance-badge--done'
+  if (normalized === 'working') return 'home-attendance-badge--working'
+  if (normalized.includes('leave')) return 'home-attendance-badge--leave'
+  if (normalized === 'late' || normalized === 'late_early' || normalized === 'early_leave') return 'home-attendance-badge--alert'
+  if (normalized === 'absent') return 'home-attendance-badge--absent'
+  return 'home-attendance-badge--default'
+}
+
+async function fetchHomeAttendance() {
+  if (!user.value.id) return
+  todayDate.value = getKstDateKey()
+
+  const settingsQuery = supabase
+    .from('attendance_settings')
+    .select('id, work_start_time, work_end_time, late_grace_minutes, early_leave_grace_minutes, lunch_break_minutes, standard_work_minutes, created_at, updated_at')
+    .order('id', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  const recordQuery = supabase
+    .from('attendance_records')
+    .select('id, user_id, work_date, check_in_at, check_out_at, check_in_note, check_out_note, updated_by, created_at, updated_at')
+    .eq('user_id', user.value.id)
+    .eq('work_date', todayDate.value)
+    .maybeSingle()
+
+  const leaveQuery = supabase
+    .from('leave_requests')
+    .select('id, user_id, leave_type, start_date, end_date, status, reason, approved_by, approved_at, created_at, updated_at')
+    .eq('user_id', user.value.id)
+    .eq('status', 'approved')
+    .lte('start_date', todayDate.value)
+    .gte('end_date', todayDate.value)
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const [settingsResult, recordResult, leaveResult] = await Promise.all([settingsQuery, recordQuery, leaveQuery])
+
+  if (settingsResult.error) {
+    if (isMissingTableError(settingsResult.error, 'attendance_settings')) settingsTableMissing.value = true
+    else throw settingsResult.error
+  } else {
+    settingsTableMissing.value = false
+    attendanceSettings.value = normalizeAttendanceSettings((settingsResult.data as any) || DEFAULT_ATTENDANCE_SETTINGS)
+  }
+
+  if (recordResult.error) {
+    if (isMissingTableError(recordResult.error, 'attendance_records')) {
+      attendanceTableMissing.value = true
+      todayRecord.value = null
+    } else {
+      throw recordResult.error
+    }
+  } else {
+    attendanceTableMissing.value = false
+    todayRecord.value = (recordResult.data as AttendanceRecord | null) || null
+  }
+
+  if (leaveResult.error) {
+    if (isMissingTableError(leaveResult.error, 'leave_requests')) {
+      leaveTableMissing.value = true
+      todayApprovedLeave.value = null
+    } else {
+      throw leaveResult.error
+    }
+  } else {
+    leaveTableMissing.value = false
+    todayApprovedLeave.value = (leaveResult.data as LeaveRequest | null) || null
+  }
+}
+
+const homeAttendanceBadge = computed(() => {
+  if (attendanceTableMissing.value) return null
+
+  const status = computeAttendanceStatus({
+    workDate: todayDate.value,
+    checkInAt: todayRecord.value?.check_in_at,
+    checkOutAt: todayRecord.value?.check_out_at,
+    settings: attendanceSettings.value,
+    approvedLeave: todayApprovedLeave.value,
+    todayDate: todayDate.value,
+  })
+
+  return {
+    label: status.label,
+    icon: homeStatusIcon(status.code),
+    toneClass: homeStatusTone(status.code),
+  }
+})
+
+watch(
+  () => user.value.id,
+  async (id) => {
+    if (!id) return
+    await fetchHomeAttendance()
+  },
+  { immediate: true },
+)
 
 async function goHomeWithFallback() {
   try {
@@ -191,6 +329,47 @@ async function handleLogout() {
   color: var(--color-text-muted);
 }
 
+.home-attendance-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.home-attendance-badge--working {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+.home-attendance-badge--done {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+
+.home-attendance-badge--leave {
+  background: rgba(14, 165, 233, 0.12);
+  color: #0284c7;
+}
+
+.home-attendance-badge--alert {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+.home-attendance-badge--absent {
+  background: rgba(107, 114, 128, 0.16);
+  color: #4b5563;
+}
+
+.home-attendance-badge--default {
+  background: rgba(100, 116, 139, 0.14);
+  color: #475569;
+}
+
 .home-user {
   display: flex;
   align-items: center;
@@ -258,6 +437,12 @@ async function handleLogout() {
   padding: var(--space-3xl);
 }
 
+.home-content--landing {
+  max-width: none;
+  width: 100%;
+  padding: 0;
+}
+
 .home-content > * {
   animation: homeContentIn 0.3s var(--ease-emphasized) both;
 }
@@ -297,6 +482,7 @@ async function handleLogout() {
   .home-header-right {
     justify-content: flex-end;
     gap: var(--space-md);
+    flex-wrap: wrap;
   }
 
   .home-logo-sub {
@@ -309,6 +495,10 @@ async function handleLogout() {
 
   .home-date {
     display: none;
+  }
+
+  .home-attendance-badge {
+    margin-left: auto;
   }
 
   .home-user-info {

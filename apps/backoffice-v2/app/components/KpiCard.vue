@@ -55,8 +55,8 @@ const changePrefix = computed(() => {
 
 <style scoped>
 .kpi-card {
-  padding: var(--space-xl);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  padding: 22px 24px;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .kpi-card.card-clickable {
@@ -67,8 +67,8 @@ const changePrefix = computed(() => {
 }
 
 .kpi-card.card-clickable:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
 
 .kpi-header {
@@ -79,23 +79,24 @@ const changePrefix = computed(() => {
 }
 
 .kpi-label {
-  font-size: 0.96rem;
+  font-size: 0.88rem;
   color: var(--color-text-secondary);
-  font-weight: 450;
+  font-weight: 600;
 }
 
 .kpi-icon-wrap {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md);
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .kpi-value {
-  font-size: 2.2rem;
-  font-weight: 700;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
   color: var(--color-text);
   line-height: 1.2;
 }

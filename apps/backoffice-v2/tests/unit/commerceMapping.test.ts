@@ -153,4 +153,69 @@ describe('commerce mapping lookup', () => {
     expect(resolved.matched).toBe(false)
     expect(resolved.needsReview).toBe(true)
   })
+
+  it('prefers fulfillment-specific rows over default rows when both exist', () => {
+    const lookup = buildCommerceProductMappingLookup([
+      {
+        source_channel: 'coupang',
+        source_fulfillment_type: 'default',
+        source_account_key: 'default',
+        commerce_product_id: '94132809744',
+        commerce_option_code: '',
+        commerce_product_name: '엔자이츄',
+        commerce_option_name: '',
+        internal_product_id: 'P-DEFAULT',
+        matching_mode: 'product_id_only',
+        canonical_variant: '',
+        rule_json: {},
+        priority: 20,
+        is_active: true,
+      },
+      {
+        source_channel: 'coupang',
+        source_fulfillment_type: 'rocket_growth',
+        source_account_key: 'default',
+        commerce_product_id: '94132809744',
+        commerce_option_code: '',
+        commerce_product_name: '엔자이츄',
+        commerce_option_name: '',
+        internal_product_id: 'P-RG',
+        matching_mode: 'product_id_only',
+        canonical_variant: '',
+        rule_json: {},
+        priority: 10,
+        is_active: true,
+      },
+    ])
+
+    const resolved = resolveCommerceProductMapping({
+      lookup,
+      sourceFulfillmentType: 'rocket_growth',
+      sourceAccountKey: 'default',
+      commerceProductId: '94132809744',
+      productName: '굿포펫 엔자이츄',
+      optionInfo: '',
+    })
+
+    expect(resolved).toMatchObject({
+      matched: true,
+      internalProductId: 'P-RG',
+      matchingMode: 'product_id_only',
+    })
+
+    const fallbackResolved = resolveCommerceProductMapping({
+      lookup,
+      sourceFulfillmentType: 'marketplace',
+      sourceAccountKey: 'default',
+      commerceProductId: '94132809744',
+      productName: '굿포펫 엔자이츄',
+      optionInfo: '',
+    })
+
+    expect(fallbackResolved).toMatchObject({
+      matched: true,
+      internalProductId: 'P-DEFAULT',
+      matchingMode: 'product_id_only',
+    })
+  })
 })

@@ -15,7 +15,7 @@ export interface ResolvedCommerceSourceProduct {
   reason: string
 }
 
-const SOURCE_PRODUCT_RULES: CommerceSourceProductRule[] = [
+const LEGACY_SOURCE_PRODUCT_RULES: CommerceSourceProductRule[] = [
   { sourceProductId: '11749388704', canonicalGroup: '두부모래', packMultiplier: 1 },
   { sourceProductId: '11750103214', canonicalGroup: '두부모래', packMultiplier: 3 },
   { sourceProductId: '11750107226', canonicalGroup: '두부모래', packMultiplier: 6 },
@@ -41,6 +41,189 @@ const SOURCE_PRODUCT_RULES: CommerceSourceProductRule[] = [
   { sourceProductId: '11034374158', canonicalGroup: '동결건조리뉴얼전', packMultiplier: 1 },
   { sourceProductId: '11034381845', canonicalGroup: '동결건조리뉴얼전', packMultiplier: 1 },
   { sourceProductId: '11687327189', canonicalGroup: '동결건조리뉴얼전', packMultiplier: 3 },
+]
+
+function parseCoupangPackMultiplier(itemName: string): number | undefined {
+  const normalized = trimOption(itemName)
+  if (!normalized) return undefined
+
+  const comboMatch = normalized.match(/^\d+개\s+(.+)$/)
+  if (comboMatch?.[1]) {
+    const comboCount = comboMatch[1]
+      .split('+')
+      .map((segment) => segment.trim())
+      .filter(Boolean)
+      .length
+    if (comboCount > 1) return comboCount
+  }
+
+  const countMatch = normalized.match(/^(\d+)개/)
+  if (!countMatch) return undefined
+  const count = Number.parseInt(countMatch[1] || '', 10)
+  return Number.isFinite(count) && count > 0 ? count : undefined
+}
+
+function buildCoupangRule(
+  sourceProductId: string,
+  canonicalGroup: string,
+  itemName: string,
+  options: {
+    optionSensitive?: boolean
+    threeFlavorSet?: boolean
+    packMultiplier?: number
+  } = {},
+): CommerceSourceProductRule {
+  return {
+    sourceProductId,
+    canonicalGroup,
+    optionSensitive: Boolean(options.optionSensitive),
+    threeFlavorSet: Boolean(options.threeFlavorSet),
+    packMultiplier: options.threeFlavorSet
+      ? undefined
+      : (options.packMultiplier || parseCoupangPackMultiplier(itemName)),
+  }
+}
+
+const COUPANG_SOURCE_PRODUCT_RULES: CommerceSourceProductRule[] = [
+  // 트릿백
+  buildCoupangRule('94054315326', '트릿백', '1개 민트', { optionSensitive: true }),
+  buildCoupangRule('94165163695', '트릿백', '1개 민트', { optionSensitive: true }),
+  buildCoupangRule('94054315325', '트릿백', '1개 퍼플', { optionSensitive: true }),
+  buildCoupangRule('94165163696', '트릿백', '1개 퍼플', { optionSensitive: true }),
+  buildCoupangRule('94855858568', '트릿백', '1개 민트+퍼플', { optionSensitive: true }),
+  buildCoupangRule('94855858569', '트릿백', '1개 민트+퍼플', { optionSensitive: true }),
+  buildCoupangRule('94659189888', '트릿백', '2개 민트', { optionSensitive: true }),
+  buildCoupangRule('94659189884', '트릿백', '2개 퍼플', { optionSensitive: true }),
+  buildCoupangRule('94659189887', '트릿백', '3개 민트', { optionSensitive: true }),
+  buildCoupangRule('94659189882', '트릿백', '3개 퍼플', { optionSensitive: true }),
+
+  // 짜개
+  buildCoupangRule('94054186931', '츄르짜개', '1개 블루', { optionSensitive: true }),
+  buildCoupangRule('94165160425', '츄르짜개', '1개 블루', { optionSensitive: true }),
+  buildCoupangRule('94054186932', '츄르짜개', '1개 옐로', { optionSensitive: true }),
+  buildCoupangRule('94165160424', '츄르짜개', '1개 옐로', { optionSensitive: true }),
+  buildCoupangRule('94054186933', '츄르짜개', '1개 퍼플', { optionSensitive: true }),
+  buildCoupangRule('94165160423', '츄르짜개', '1개 퍼플', { optionSensitive: true }),
+  buildCoupangRule('94782798347', '츄르짜개', '1개 블루+옐로', { optionSensitive: true }),
+  buildCoupangRule('94782798352', '츄르짜개', '1개 블루+옐로', { optionSensitive: true }),
+  buildCoupangRule('94782798348', '츄르짜개', '1개 블루+퍼플', { optionSensitive: true }),
+  buildCoupangRule('94782798354', '츄르짜개', '1개 블루+퍼플', { optionSensitive: true }),
+  buildCoupangRule('94782798351', '츄르짜개', '1개 옐로+퍼플', { optionSensitive: true }),
+  buildCoupangRule('94782798353', '츄르짜개', '1개 옐로+퍼플', { optionSensitive: true }),
+  buildCoupangRule('94782798349', '츄르짜개', '1개 블루+옐로+퍼플', { optionSensitive: true }),
+  buildCoupangRule('94782798350', '츄르짜개', '1개 블루+옐로+퍼플', { optionSensitive: true }),
+  buildCoupangRule('94659189252', '츄르짜개', '2개 블루', { optionSensitive: true }),
+  buildCoupangRule('94659189253', '츄르짜개', '2개 옐로', { optionSensitive: true }),
+  buildCoupangRule('94659189250', '츄르짜개', '2개 퍼플', { optionSensitive: true }),
+  buildCoupangRule('94659189248', '츄르짜개', '3개 블루', { optionSensitive: true }),
+  buildCoupangRule('94659189251', '츄르짜개', '3개 옐로', { optionSensitive: true }),
+  buildCoupangRule('94659189249', '츄르짜개', '3개 퍼플', { optionSensitive: true }),
+
+  // 츄라잇
+  buildCoupangRule('93923679757', '츄라잇', '14개 10g 종합영양제', { optionSensitive: true, packMultiplier: 1 }),
+  buildCoupangRule('94132827866', '츄라잇', '14개 10g 종합영양제', { optionSensitive: true, packMultiplier: 1 }),
+  buildCoupangRule('93923679755', '츄라잇', '14개 10g 유리너리+장건강', { optionSensitive: true, packMultiplier: 1 }),
+  buildCoupangRule('94132827864', '츄라잇', '14개 10g 유리너리+장건강', { optionSensitive: true, packMultiplier: 1 }),
+  buildCoupangRule('93923679756', '츄라잇', '14개 10g 눈물개선/눈건강', { optionSensitive: true, packMultiplier: 1 }),
+  buildCoupangRule('94132827865', '츄라잇', '14개 10g 눈물개선/눈건강', { optionSensitive: true, packMultiplier: 1 }),
+  buildCoupangRule('94363413994', '츄라잇', '28개 10g 종합영양제', { optionSensitive: true, packMultiplier: 2 }),
+  buildCoupangRule('94363413993', '츄라잇', '28개 10g 유리너리+장건강', { optionSensitive: true, packMultiplier: 2 }),
+  buildCoupangRule('94363413992', '츄라잇', '28개 10g 눈물개선/눈건강', { optionSensitive: true, packMultiplier: 2 }),
+  buildCoupangRule('94363315737', '츄라잇', '42개 10g 종합영양제', { optionSensitive: true, packMultiplier: 3 }),
+  buildCoupangRule('94363315736', '츄라잇', '42개 10g 유리너리+장건강', { optionSensitive: true, packMultiplier: 3 }),
+  buildCoupangRule('94363315735', '츄라잇', '42개 10g 눈물개선/눈건강', { optionSensitive: true, packMultiplier: 3 }),
+  buildCoupangRule('94879329297', '츄라잇', '84개 10g 종합영양제', { optionSensitive: true, packMultiplier: 6 }),
+  buildCoupangRule('94879329298', '츄라잇', '84개 10g 유리너리+장건강', { optionSensitive: true, packMultiplier: 6 }),
+  buildCoupangRule('94879329299', '츄라잇', '84개 10g 눈물개선/눈건강', { optionSensitive: true, packMultiplier: 6 }),
+
+  // 이즈바이트
+  buildCoupangRule('93885445344', '이즈바이트', '1개 꿀고구마맛 91g'),
+  buildCoupangRule('94165125993', '이즈바이트', '1개 꿀고구마맛 91g'),
+  buildCoupangRule('94380472325', '이즈바이트', '2개 꿀고구마맛 91g'),
+  buildCoupangRule('94879358700', '이즈바이트', '3개 꿀고구마맛 91g'),
+  buildCoupangRule('94879358699', '이즈바이트', '4개 꿀고구마맛 91g'),
+
+  // 엔자이츄
+  buildCoupangRule('93885404452', '엔자이츄', '1개 꿀고구마맛 100g'),
+  buildCoupangRule('94132809744', '엔자이츄', '1개 꿀고구마맛 100g'),
+  buildCoupangRule('94380474419', '엔자이츄', '2개 꿀고구마맛 100g'),
+  buildCoupangRule('94380474418', '엔자이츄', '3개 꿀고구마맛 100g'),
+  buildCoupangRule('94854392237', '엔자이츄', '4개 꿀고구마맛 100g'),
+  buildCoupangRule('94854392236', '엔자이츄', '5개 꿀고구마맛 100g'),
+  buildCoupangRule('94854392235', '엔자이츄', '6개 꿀고구마맛 100g'),
+
+  // 케어푸
+  buildCoupangRule('93671525655', '케어푸', '1개 60g 장건강/유산균'),
+  buildCoupangRule('94165127355', '케어푸', '1개 60g 장건강/유산균'),
+  buildCoupangRule('94380487590', '케어푸', '2개 60g 장건강/유산균'),
+  buildCoupangRule('94380487588', '케어푸', '3개 60g 장건강/유산균'),
+
+  // 애착트릿 3종
+  buildCoupangRule('91677910749', '애착트릿', '단일상품', { threeFlavorSet: true }),
+
+  // 애착트릿 치킨
+  buildCoupangRule('91677888252', '애착트릿', '1개 치킨 100g'),
+  buildCoupangRule('94311402237', '애착트릿', '1개 치킨 100g'),
+  buildCoupangRule('94362822522', '애착트릿', '2개 치킨 100g'),
+  buildCoupangRule('91677888261', '애착트릿', '3개 치킨 100g'),
+  buildCoupangRule('94311402236', '애착트릿', '3개 치킨 100g'),
+  buildCoupangRule('91677888265', '애착트릿', '6개 치킨 100g'),
+  buildCoupangRule('94311402240', '애착트릿', '6개 치킨 100g'),
+  buildCoupangRule('91677888256', '애착트릿', '12개 치킨 100g'),
+  buildCoupangRule('94311402238', '애착트릿', '12개 치킨 100g'),
+  buildCoupangRule('94285648516', '애착트릿', '1개 치킨 120g'),
+  buildCoupangRule('94311402239', '애착트릿', '1개 치킨 120g'),
+  buildCoupangRule('94492529867', '애착트릿', '2개 치킨 120g'),
+  buildCoupangRule('94285648517', '애착트릿', '3개 치킨 120g'),
+  buildCoupangRule('94311402234', '애착트릿', '3개 치킨 120g'),
+  buildCoupangRule('94285648518', '애착트릿', '6개 치킨 120g'),
+  buildCoupangRule('94311402235', '애착트릿', '6개 치킨 120g'),
+  buildCoupangRule('94285648519', '애착트릿', '12개 치킨 120g'),
+  buildCoupangRule('94311402233', '애착트릿', '12개 치킨 120g'),
+
+  // 애착트릿 연어
+  buildCoupangRule('91677861362', '애착트릿', '1개 연어 90g'),
+  buildCoupangRule('94311465300', '애착트릿', '1개 연어 90g'),
+  buildCoupangRule('94362984875', '애착트릿', '2개 연어 90g'),
+  buildCoupangRule('91677861356', '애착트릿', '3개 연어 90g'),
+  buildCoupangRule('94311465302', '애착트릿', '3개 연어 90g'),
+  buildCoupangRule('91677861369', '애착트릿', '6개 연어 90g'),
+  buildCoupangRule('94311465305', '애착트릿', '6개 연어 90g'),
+  buildCoupangRule('91677861350', '애착트릿', '12개 연어 90g'),
+  buildCoupangRule('94311465306', '애착트릿', '12개 연어 90g'),
+  buildCoupangRule('94285608620', '애착트릿', '1개 연어 110g'),
+  buildCoupangRule('94311465299', '애착트릿', '1개 연어 110g'),
+  buildCoupangRule('94380460125', '애착트릿', '2개 연어 110g'),
+  buildCoupangRule('94285608619', '애착트릿', '3개 연어 110g'),
+  buildCoupangRule('94311465304', '애착트릿', '3개 연어 110g'),
+  buildCoupangRule('94285608622', '애착트릿', '6개 연어 110g'),
+  buildCoupangRule('94311465301', '애착트릿', '6개 연어 110g'),
+  buildCoupangRule('94285608621', '애착트릿', '12개 연어 110g'),
+  buildCoupangRule('94311465303', '애착트릿', '12개 연어 110g'),
+
+  // 애착트릿 북어
+  buildCoupangRule('91677861786', '애착트릿', '1개 북어 80g'),
+  buildCoupangRule('94311404991', '애착트릿', '1개 북어 80g'),
+  buildCoupangRule('91677861797', '애착트릿', '3개 북어 80g'),
+  buildCoupangRule('94311404989', '애착트릿', '3개 북어 80g'),
+  buildCoupangRule('91677861803', '애착트릿', '6개 북어 80g'),
+  buildCoupangRule('94311404992', '애착트릿', '6개 북어 80g'),
+  buildCoupangRule('91677861791', '애착트릿', '12개 북어 80g'),
+  buildCoupangRule('94311404986', '애착트릿', '12개 북어 80g'),
+  buildCoupangRule('94285626060', '애착트릿', '1개 북어 100g'),
+  buildCoupangRule('94311404987', '애착트릿', '1개 북어 100g'),
+  buildCoupangRule('94380451365', '애착트릿', '2개 북어 100g'),
+  buildCoupangRule('94285626059', '애착트릿', '3개 북어 100g'),
+  buildCoupangRule('94311404988', '애착트릿', '3개 북어 100g'),
+  buildCoupangRule('94285626057', '애착트릿', '6개 북어 100g'),
+  buildCoupangRule('94311404990', '애착트릿', '6개 북어 100g'),
+  buildCoupangRule('94285626058', '애착트릿', '12개 북어 100g'),
+  buildCoupangRule('94311404993', '애착트릿', '12개 북어 100g'),
+]
+
+const SOURCE_PRODUCT_RULES: CommerceSourceProductRule[] = [
+  ...LEGACY_SOURCE_PRODUCT_RULES,
+  ...COUPANG_SOURCE_PRODUCT_RULES,
 ]
 
 const SOURCE_PRODUCT_RULE_MAP = new Map(
