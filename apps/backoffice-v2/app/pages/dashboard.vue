@@ -13,7 +13,7 @@
     <div class="card period-compare-card">
       <div class="card-header">
         <div>
-          <h3 class="card-title">이번 달 핵심 변화</h3>
+          <h3 class="card-title">{{ comparisonCardTitle }}</h3>
           <span class="section-caption">{{ comparisonPeriodCaption }}</span>
         </div>
       </div>
@@ -468,12 +468,64 @@ const comparisonMonthToken = computed(() => {
 
 const previousComparisonMonthToken = computed(() => shiftMonthToken(comparisonMonthToken.value, -1))
 
+const isAllPeriodSelected = computed(() => selectedMonth.value === 'all')
+
+const comparisonCardTitle = computed(() => {
+  return isAllPeriodSelected.value ? '전체 기간 요약' : '이번 달 핵심 변화'
+})
+
 const comparisonPeriodCaption = computed(() => {
+  if (isAllPeriodSelected.value) {
+    const tokens = buildTrendMonths('all', dashboardRows.value)
+    if (tokens.length === 0) return '선택 가능한 기간의 누적 금액입니다.'
+    if (tokens.length === 1) return `${formatMonthLabel(tokens[0])} 누적 금액입니다.`
+    return `${formatMonthLabel(tokens[0])} ~ ${formatMonthLabel(tokens[tokens.length - 1])} 누적 금액입니다.`
+  }
   return `${formatMonthLabel(comparisonMonthToken.value)} 기준으로 직전 월과 비교합니다.`
 })
 
 const monthlyComparisonCards = computed<MonthlyComparisonCard[]>(() => {
   const realRows = dashboardRows.value.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
+
+  if (isAllPeriodSelected.value) {
+    const tokens = buildTrendMonths('all', realRows)
+    const rangeLabel = tokens.length === 0
+      ? '집계 기간'
+      : tokens.length === 1
+        ? formatMonthLabel(tokens[0])
+        : `${formatMonthLabel(tokens[0])} ~ ${formatMonthLabel(tokens[tokens.length - 1])}`
+    const overallPayment = summarizeKnownAmount(realRows, hasKnownPaymentAmount, resolveRowPaymentAmount)
+    const overallSettlement = summarizeKnownAmount(realRows, hasKnownExpectedSettlementAmount, resolveRowExpectedSettlementAmount)
+    const overallCommission = summarizeKnownAmount(realRows, hasKnownCommissionAmount, resolveRowPaymentCommissionAmount)
+
+    return [
+      {
+        label: '결제 금액',
+        currentValueLabel: formatOptionalCurrency(overallPayment),
+        previousLabel: '대상 기간',
+        previousValueLabel: rangeLabel,
+        changeLabel: '전체 누적',
+        changeClass: 'is-neutral',
+      },
+      {
+        label: '정산 예정',
+        currentValueLabel: formatOptionalCurrency(overallSettlement),
+        previousLabel: '대상 기간',
+        previousValueLabel: rangeLabel,
+        changeLabel: '전체 누적',
+        changeClass: 'is-neutral',
+      },
+      {
+        label: '총 수수료',
+        currentValueLabel: formatOptionalCurrency(overallCommission),
+        previousLabel: '대상 기간',
+        previousValueLabel: rangeLabel,
+        changeLabel: '전체 누적',
+        changeClass: 'is-neutral',
+      },
+    ]
+  }
+
   const currentRows = realRows.filter((row) => row.target_month === comparisonMonthToken.value)
   const previousRows = realRows.filter((row) => row.target_month === previousComparisonMonthToken.value)
   const currentPayment = summarizeKnownAmount(currentRows, hasKnownPaymentAmount, resolveRowPaymentAmount)
