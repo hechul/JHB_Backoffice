@@ -70,10 +70,6 @@
       </div>
     </section>
 
-    <NuxtLink to="/stress" class="stress-entry" aria-label="스트레스 게임 열기">
-      <span class="stress-entry-line" />
-      <span class="stress-entry-label">스트레스</span>
-    </NuxtLink>
   </div>
 </template>
 
@@ -683,49 +679,6 @@ watch(
   color: #94a3b8;
 }
 
-.stress-entry {
-  position: fixed;
-  right: 24px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
-  z-index: 25;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(18px);
-  color: rgba(17, 24, 39, 0.68);
-  text-decoration: none;
-  transition:
-    transform 0.18s ease,
-    box-shadow 0.18s ease,
-    color 0.18s ease,
-    border-color 0.18s ease;
-}
-
-.stress-entry:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.12);
-  border-color: rgba(59, 130, 246, 0.24);
-  color: rgba(17, 24, 39, 0.88);
-}
-
-.stress-entry-line {
-  width: 18px;
-  height: 1px;
-  border-radius: 999px;
-  background: rgba(59, 130, 246, 0.5);
-}
-
-.stress-entry-label {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
 .feature-pill {
   min-width: 198px;
   min-height: 96px;
@@ -844,16 +797,6 @@ watch(
     align-items: flex-start;
   }
 
-  .stress-entry {
-    right: 16px;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
-    padding: 9px 12px;
-    gap: 8px;
-  }
-
-  .stress-entry-label {
-    font-size: 11px;
-  }
 }
 
 @media (max-width: 480px) {
