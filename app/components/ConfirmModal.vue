@@ -7,7 +7,7 @@
         role="dialog"
         aria-modal="true"
         :aria-label="title"
-        tabindex="-1"
+        tabindex="-1" 
         @click.stop
       >
         <div class="flex items-center gap-md mb-lg">
