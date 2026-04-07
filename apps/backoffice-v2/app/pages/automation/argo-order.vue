@@ -2,24 +2,27 @@
   <div class="argo-page">
     <div v-if="isViewer" class="status-banner">
       <AlertTriangle :size="16" :stroke-width="2" />
-      <span>열람자 권한에서는 변환/다운로드를 실행할 수 없습니다.</span>
+      <span>열람자 권한에서는 변환과 다운로드를 실행할 수 없습니다.</span>
     </div>
 
     <div class="page-header">
       <div>
         <h1 class="page-title">아르고 발주 변환</h1>
-        <p class="page-subtitle">배송지 파일 여러 개를 한 번에 업로드해 아르고 발주 양식으로 통합 변환합니다.</p>
+        <p class="page-subtitle">여러 배송지 파일을 한 번에 아르고 발주 양식으로 정리합니다.</p>
       </div>
       <NuxtLink to="/automation" class="btn btn-secondary btn-sm">자동화 홈</NuxtLink>
     </div>
 
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title">
-          <FileSpreadsheet :size="18" :stroke-width="1.8" style="color: var(--color-primary)" />
-          배송지 파일 업로드 (다중 파일)
-        </h3>
-        <StatusBadge v-if="sourceFileItems.length > 0" :label="`파일 ${sourceFileItems.length}개`" variant="success" dot />
+        <div>
+          <h3 class="card-title">
+            <FileSpreadsheet :size="18" :stroke-width="1.8" style="color: var(--color-primary)" />
+            배송지 파일
+          </h3>
+          <p class="card-copy">여러 파일을 함께 분석하고 한 번에 변환합니다.</p>
+        </div>
+        <span v-if="sourceFileItems.length > 0" class="card-meta">파일 {{ sourceFileItems.length }}개</span>
       </div>
 
       <div
@@ -111,8 +114,11 @@
 
     <div v-if="editableRows.length > 0" class="card">
       <div class="card-header">
-        <h3 class="card-title">사람별 상품/수량 입력</h3>
-        <StatusBadge :label="`${editableRows.length}건`" variant="warning" dot />
+        <div>
+          <h3 class="card-title">사람별 상품과 수량</h3>
+          <p class="card-copy">누락된 상품명과 수량만 빠르게 보정합니다.</p>
+        </div>
+        <span class="card-meta">{{ editableRows.length }}건</span>
       </div>
       <div class="table-wrapper">
         <table class="data-table">
@@ -159,8 +165,11 @@
 
     <div v-if="hasResult" class="card">
       <div class="card-header">
-        <h3 class="card-title">변환 결과</h3>
-        <StatusBadge :label="`${resultOrders.length}건 생성`" variant="success" dot />
+        <div>
+          <h3 class="card-title">변환 결과</h3>
+          <p class="card-copy">다운로드 직전 결과를 한 번 더 확인합니다.</p>
+        </div>
+        <span class="card-meta">{{ resultOrders.length }}건 생성</span>
       </div>
       <div class="summary-grid">
         <div class="summary-item">
@@ -181,7 +190,10 @@
 
     <div v-if="resultOrders.length > 0" class="card">
       <div class="card-header">
-        <h3 class="card-title">생성 미리보기 (상위 20건)</h3>
+        <div>
+          <h3 class="card-title">생성 미리보기</h3>
+          <p class="card-copy">상위 20건만 먼저 보여줍니다.</p>
+        </div>
       </div>
       <div class="table-wrapper">
         <table class="data-table">
@@ -211,11 +223,14 @@
 
     <div v-if="unresolvedRows.length > 0" class="card">
       <div class="card-header">
-        <h3 class="card-title">
-          <AlertTriangle :size="16" :stroke-width="2" style="color: var(--color-warning)" />
-          미해결 행
-        </h3>
-        <StatusBadge :label="`${unresolvedRows.length}건`" variant="warning" />
+        <div>
+          <h3 class="card-title">
+            <AlertTriangle :size="16" :stroke-width="2" style="color: var(--color-warning)" />
+            미해결 행
+          </h3>
+          <p class="card-copy">직접 확인이 필요한 행만 따로 남겼습니다.</p>
+        </div>
+        <span class="card-meta warning">{{ unresolvedRows.length }}건</span>
       </div>
       <div class="table-wrapper">
         <table class="data-table">
@@ -251,7 +266,6 @@ import {
   FileSpreadsheet,
   Download,
 } from 'lucide-vue-next'
-import StatusBadge from '~/components/StatusBadge.vue'
 import {
   buildArgoOrders,
   collectAddressesWithoutPostcode,
@@ -646,11 +660,11 @@ async function convertAndDownload() {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--color-warning-light);
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fff8e8;
   color: #92400E;
-  border: 1px solid #FDE68A;
+  border: 1px solid #f6d58d;
   font-size: 0.8125rem;
 }
 
@@ -662,8 +676,8 @@ async function convertAndDownload() {
 }
 
 .page-title {
-  font-size: 1.125rem;
-  font-weight: 700;
+  font-size: 1.25rem;
+  font-weight: 760;
   color: var(--color-text);
   margin-bottom: 4px;
 }
@@ -673,17 +687,60 @@ async function convertAndDownload() {
   color: var(--color-text-secondary);
 }
 
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.card-copy {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.card-meta {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(223, 231, 240, 0.96);
+  background: #f8fafc;
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-meta.warning {
+  background: #fff8e8;
+  border-color: #f6d58d;
+  color: #92400E;
+}
+
 .drop-zone {
   border: 1px dashed #D1D5DB;
-  border-radius: var(--radius-lg);
+  border-radius: 16px;
   padding: var(--space-2xl);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  background: #FCFCFD;
-  transition: all 0.16s ease;
+  background: #fcfdff;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
   cursor: pointer;
 }
 
@@ -749,15 +806,18 @@ async function convertAndDownload() {
 .hint-grid {
   margin-top: var(--space-lg);
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-sm) var(--space-lg);
 }
 
 .hint-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm);
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid rgba(223, 231, 240, 0.96);
+  border-radius: 16px;
+  background: #fbfcfe;
 }
 
 .hint-label {
@@ -766,9 +826,9 @@ async function convertAndDownload() {
 }
 
 .hint-value {
-  font-size: 0.8125rem;
+  font-size: 1rem;
   color: var(--color-text);
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .actions {
@@ -786,13 +846,13 @@ async function convertAndDownload() {
 }
 
 .summary-item {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-md);
+  border: 1px solid rgba(223, 231, 240, 0.96);
+  border-radius: 16px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  background: #FCFCFD;
+  gap: 6px;
+  background: #fbfcfe;
 }
 
 .summary-label {
@@ -815,8 +875,12 @@ async function convertAndDownload() {
     align-items: flex-start;
   }
 
+  .card-header {
+    flex-direction: column;
+  }
+
   .hint-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .summary-grid {

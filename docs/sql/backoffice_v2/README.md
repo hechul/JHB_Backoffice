@@ -17,7 +17,9 @@
 5. `103_extend_purchases_source_columns.sql`
 6. `104_automation_jobs.sql`
 7. `105_blog_media_storage_bucket.sql`
-8. `106_month_count_rpc.sql`
+8. `106_add_source_fulfillment_type.sql`
+9. `106_month_count_rpc.sql`
+10. `107_extend_purchases_amount_columns.sql`
 
 기능별 추가 SQL:
 

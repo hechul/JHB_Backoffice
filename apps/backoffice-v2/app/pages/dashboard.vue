@@ -2,129 +2,101 @@
   <div class="dashboard">
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">실구매 요약</h1>
-        <span class="page-caption">오늘, 이번 주, 이번 달</span>
+        <h1 class="page-title">경영 요약</h1>
+        <span class="page-caption">{{ selectedPeriodLabel }} 기준 월별 흐름과 핵심 지표</span>
       </div>
       <div class="page-header-actions">
-        <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
-        <StatusBadge v-if="selectedMonth !== 'all' && dashboardWeekFilter" :label="weekLabelFromCode(selectedMonth, dashboardWeekFilter)" variant="info" />
         <StatusBadge v-if="dashboardLoading" label="불러오는 중" variant="info" />
-        <select v-if="selectedMonth !== 'all'" v-model="dashboardWeekFilter" class="select select-compact header-select">
-          <option value="">주차 전체</option>
-          <option v-for="week in dashboardWeekOptions" :key="week.value" :value="week.value">{{ week.label }}</option>
-        </select>
       </div>
     </div>
 
-    <div class="overview-grid">
-      <div class="overview-card">
-        <div class="overview-head">
-          <span class="overview-label">오늘</span>
-          <span class="overview-meta">{{ overviewMetrics.today.label }}</span>
-        </div>
-        <div class="overview-list">
-          <div class="overview-list-row">
-            <span>주문수</span>
-            <strong>{{ overviewMetrics.today.orders.toLocaleString() }}</strong>
-          </div>
-          <div class="overview-list-row">
-            <span>실구매 주문수</span>
-            <strong>{{ overviewMetrics.today.realOrders.toLocaleString() }}</strong>
-          </div>
-          <div class="overview-list-row">
-            <span>실구매 고객수</span>
-            <strong>{{ overviewMetrics.today.realCustomers.toLocaleString() }}</strong>
-          </div>
+    <div class="card period-compare-card">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">이번 달 핵심 변화</h3>
+          <span class="section-caption">{{ comparisonPeriodCaption }}</span>
         </div>
       </div>
-      <div class="overview-card">
-        <div class="overview-head">
-          <span class="overview-label">이번 주</span>
-          <span class="overview-meta">{{ overviewMetrics.week.label }}</span>
-        </div>
-        <div class="overview-list">
-          <div class="overview-list-row">
-            <span>주문수</span>
-            <strong>{{ overviewMetrics.week.orders.toLocaleString() }}</strong>
-          </div>
-          <div class="overview-list-row">
-            <span>실구매 주문수</span>
-            <strong>{{ overviewMetrics.week.realOrders.toLocaleString() }}</strong>
-          </div>
-          <div class="overview-list-row">
-            <span>실구매 고객수</span>
-            <strong>{{ overviewMetrics.week.realCustomers.toLocaleString() }}</strong>
-          </div>
-        </div>
-      </div>
-      <div class="overview-card">
-        <div class="overview-head">
-          <span class="overview-label">이번 달</span>
-          <span class="overview-meta">{{ overviewMetrics.month.label }}</span>
-        </div>
-        <div class="overview-list">
-          <div class="overview-list-row">
-            <span>주문수</span>
-            <strong>{{ overviewMetrics.month.orders.toLocaleString() }}</strong>
-          </div>
-          <div class="overview-list-row">
-            <span>실구매 주문수</span>
-            <strong>{{ overviewMetrics.month.realOrders.toLocaleString() }}</strong>
-          </div>
-          <div class="overview-list-row">
-            <span>실구매 고객수</span>
-            <strong>{{ overviewMetrics.month.realCustomers.toLocaleString() }}</strong>
+      <div class="period-compare-grid">
+        <div v-for="card in monthlyComparisonCards" :key="card.label" class="period-compare-item">
+          <span class="period-compare-label">{{ card.label }}</span>
+          <strong class="period-compare-value">{{ card.currentValueLabel }}</strong>
+          <div class="period-compare-foot">
+            <span>{{ card.previousLabel }} {{ card.previousValueLabel }}</span>
+            <span class="period-compare-change" :class="card.changeClass">{{ card.changeLabel }}</span>
           </div>
         </div>
       </div>
     </div>
 
     <div class="kpi-grid">
-      <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers()">
-        <KpiCard
-          label="실구매 고객 수"
-          :value="currentMetrics.realCustomers"
-          :icon="UserPlus"
-          icon-bg="#EFF6FF"
-          icon-color="#2563EB"
-        />
-      </div>
-      <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers()">
-        <KpiCard
-          label="실구매 건수"
-          :value="currentMetrics.realPurchase"
-          :icon="CheckCircle"
-          icon-bg="#ECFDF5"
-          icon-color="#10B981"
-        />
-      </div>
-      <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers({ purchaseCount: '2' })">
-        <KpiCard
-          label="재구매 고객"
-          :value="currentMetrics.repeatCustomers"
-          :icon="UserCheck"
-          icon-bg="#F0FDF4"
-          icon-color="#16A34A"
-        />
-      </div>
-      <div class="card card-clickable kpi-wrapper" @click="navigateToCustomers({ churn: 'true' })">
-        <KpiCard
-          label="이탈 위험 고객"
-          :value="effectiveChurnCount"
-          :icon="MoveRight"
-          icon-bg="#FEF2F2"
-          icon-color="#DC2626"
-        />
-      </div>
+      <KpiCard
+        label="구매 주문"
+        :value="currentMetrics.realPurchase"
+        :icon="LineChart"
+        :to="reportSectionLink('/channel-analysis')"
+        icon-bg="#EFF6FF"
+        icon-color="#2563EB"
+      />
+      <KpiCard
+        label="구매 고객"
+        :value="currentMetrics.realCustomers"
+        :icon="UserPlus"
+        :to="reportSectionLink('/customers')"
+        icon-bg="#F0FDF4"
+        icon-color="#16A34A"
+      />
+      <KpiCard
+        label="객단가"
+        :value="currentMetrics.averageOrderValue"
+        :icon="TrendingUp"
+        format="currency"
+        icon-bg="#ECFDF5"
+        icon-color="#10B981"
+      />
+      <KpiCard
+        label="재구매 전환율"
+        :value="currentMetrics.repeatCustomerRate"
+        :icon="UserCheck"
+        suffix="%"
+        :to="reportSectionLink('/growth-stages')"
+        icon-bg="#EEF2FF"
+        icon-color="#4F46E5"
+      />
     </div>
 
     <div class="charts-grid">
       <div class="card">
-        <div class="card-header">
-          <div class="dashboard-card-head">
-            <h3 class="card-title">{{ trendTitle }}</h3>
+        <div class="card-header card-header-stack">
+          <div class="dashboard-card-head dashboard-card-head-between">
+            <div class="trend-card-copy">
+              <h3 class="card-title">월별 결제 금액 추이</h3>
+              <div class="trend-drill-path">
+                <button type="button" class="trend-drill-pill" :class="{ active: !trendDrillMonth }" @click="resetTrendDrilldown">
+                  전체
+                </button>
+                <button
+                  v-if="trendDrillMonth"
+                  type="button"
+                  class="trend-drill-pill"
+                  :class="{ active: !!trendDrillMonth && !trendDrillWeek }"
+                  @click="clearTrendWeek"
+                >
+                  {{ formatMonthLabel(trendDrillMonth) }}
+                </button>
+                <span v-if="trendDrillWeek" class="trend-drill-pill active">
+                  {{ weekLabelFromCode(trendDrillMonth || '', trendDrillWeek) }}
+                </span>
+              </div>
+            </div>
+            <div class="trend-card-actions">
+              <StatusBadge :label="trendRangeLabel" variant="neutral" />
+              <button v-if="trendCanGoBack" type="button" class="btn btn-secondary btn-sm" @click="stepBackTrendDrilldown">
+                뒤로가기
+              </button>
+            </div>
           </div>
-          <StatusBadge :label="trendRangeLabel" variant="neutral" />
+          <span class="trend-card-helper">{{ trendHelperLabel }}</span>
         </div>
         <div class="trend-chart">
           <div class="trend-chart-area trend-chart-area-with-growth">
@@ -144,44 +116,49 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card signal-card">
         <div class="card-header">
           <div class="dashboard-card-head">
-            <h3 class="card-title">실구매 고객 펫 타입</h3>
+            <h3 class="card-title">핵심 지표</h3>
           </div>
         </div>
-        <div class="pet-chart">
-          <div class="pet-donut">
-            <canvas ref="petChartCanvas"></canvas>
-          </div>
-          <div class="pet-legend">
-            <div v-for="p in petData" :key="p.label" class="pet-legend-item">
-              <span class="legend-dot" :style="{ background: p.color }"></span>
-              <div class="legend-copy">
-                <span class="legend-label">{{ p.label }}</span>
-                <div class="legend-stats">
-                  <strong class="legend-count">{{ p.count }}명</strong>
-                  <span class="legend-percent">{{ p.value }}%</span>
-                </div>
-              </div>
+        <div class="signal-list">
+          <div class="signal-row signal-row--primary">
+            <div class="signal-copy">
+              <span class="signal-label">결제 금액</span>
+              <strong class="signal-value">{{ monthlyComparisonCards[0]?.currentValueLabel || '—' }}</strong>
             </div>
+            <span class="signal-change" :class="monthlyComparisonCards[0]?.changeClass">
+              {{ monthlyComparisonCards[0]?.changeLabel || '비교 없음' }}
+            </span>
+          </div>
+          <div class="signal-row">
+            <div class="signal-copy">
+              <span class="signal-label">정산 예정</span>
+              <strong class="signal-value">{{ monthlyComparisonCards[1]?.currentValueLabel || '—' }}</strong>
+            </div>
+            <span class="signal-change" :class="monthlyComparisonCards[1]?.changeClass">
+              {{ monthlyComparisonCards[1]?.changeLabel || '비교 없음' }}
+            </span>
+          </div>
+          <div class="signal-row">
+            <div class="signal-copy">
+              <span class="signal-label">재구매 고객</span>
+              <strong class="signal-value">{{ currentMetrics.repeatCustomers.toLocaleString() }}명</strong>
+            </div>
+            <span class="signal-support">전환율 {{ currentMetrics.repeatCustomerRate.toFixed(1) }}%</span>
+          </div>
+          <div class="signal-row">
+            <div class="signal-copy">
+              <span class="signal-label">이탈 위험 고객</span>
+              <strong class="signal-value">{{ effectiveChurnCount.toLocaleString() }}명</strong>
+            </div>
+            <span class="signal-support">{{ churnCountLabel }}</span>
           </div>
         </div>
-      </div>
-    </div>
-
-    <div class="single-grid">
-      <div class="card">
-        <div class="card-header">
-          <div class="dashboard-card-head">
-            <h3 class="card-title">{{ dailySalesTitle }}</h3>
-          </div>
-          <StatusBadge :label="dailySalesRangeLabel" variant="neutral" />
-        </div>
-        <div class="trend-chart">
-          <div class="trend-chart-area">
-            <canvas ref="dailySalesChartCanvas"></canvas>
-          </div>
+        <div class="signal-actions">
+          <NuxtLink to="/customers" class="btn btn-secondary btn-sm">고객 보기</NuxtLink>
+          <NuxtLink to="/growth-stages" class="btn btn-ghost btn-sm">재구매 흐름</NuxtLink>
         </div>
       </div>
     </div>
@@ -190,21 +167,21 @@
       <div class="card">
         <div class="card-header">
           <div class="dashboard-card-head">
-            <h3 class="card-title">실구매 인기 상품 TOP 5</h3>
+            <h3 class="card-title">상품 매출 상위 5개</h3>
           </div>
           <StatusBadge :label="`${selectedPeriodLabel} 기준`" variant="neutral" />
         </div>
-        <div v-if="topProducts.length === 0" class="empty-inline">실구매 상품 데이터가 없습니다.</div>
+        <div v-if="topProducts.length === 0" class="empty-inline">상품 데이터가 없습니다.</div>
         <div v-else class="top-products">
           <div v-for="(item, idx) in topProducts" :key="item.name + idx" class="top-product-item">
             <span class="top-product-rank" :class="'rank-' + (idx + 1)">{{ idx + 1 }}</span>
             <div class="top-product-info">
               <span class="top-product-name">{{ item.name }}</span>
-              <span class="top-product-option">옵션: {{ item.optionInfo || '-' }}</span>
               <span class="top-product-meta">{{ item.pet }} · {{ item.stage }}</span>
             </div>
             <div class="top-product-stats">
-              <span class="top-product-count">{{ formatQuantityCount(item.count) }}개</span>
+              <span class="top-product-count">{{ formatCurrency(item.amount) }}</span>
+              <span class="top-product-sub">{{ formatQuantityCount(item.count) }}개</span>
               <div class="top-product-bar-wrap">
                 <div class="top-product-bar" :style="{ width: item.percent + '%' }"></div>
               </div>
@@ -215,41 +192,9 @@
 
       <div class="card">
         <div class="card-header">
-          <div class="dashboard-card-head">
-            <h3 class="card-title">고객 성장 단계</h3>
-          </div>
-        </div>
-        <div class="stage-bars">
-          <div v-for="s in stageData" :key="s.name" class="stage-item">
-            <div class="stage-bar-outer">
-              <div class="stage-bar-inner" :style="{ height: s.percent + '%' }"></div>
-            </div>
-            <span class="stage-count">{{ s.count }}</span>
-            <span class="stage-name">{{ s.name }}</span>
-          </div>
-        </div>
-        <div class="stage-actions">
-          <button
-            v-for="s in stageData"
-            :key="`stage-action-${s.name}`"
-            class="btn btn-ghost btn-sm stage-action-btn"
-            @click="navigateToCustomers({ stage: stageQueryByName(s.name) })"
-          >
-            {{ s.name }} 고객 목록 보기
-          </button>
-        </div>
-        <NuxtLink to="/growth-stages" class="btn btn-secondary btn-sm stage-detail-link">
-          고객 성장 단계 자세히 보기
-          <MoveRight :size="14" :stroke-width="2" />
-        </NuxtLink>
-      </div>
-    </div>
-
-    <div class="single-grid">
-      <div class="card">
-        <div class="card-header">
           <div>
             <h3 class="card-title">이탈 위험 고객</h3>
+            <span class="section-caption">소비 주기를 넘긴 고객부터 먼저 정리합니다.</span>
           </div>
           <StatusBadge :label="churnCountLabel" variant="danger" dot />
         </div>
@@ -278,16 +223,18 @@
 
 <script setup lang="ts">
 import {
-  CheckCircle,
+  LineChart,
   UserCheck,
   UserPlus,
   MoveRight,
+  TrendingUp,
 } from 'lucide-vue-next'
 import { Chart, DoughnutController, ArcElement, Tooltip, Legend, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler, BarController, BarElement } from 'chart.js'
 import { computeCustomerStage, countDistinctPurchaseMonths, customerStageLabel, productStageLabel } from '~/composables/useGrowthStage'
 import { computeChurnRisk, normalizeExpectedConsumptionDays } from '~/composables/useChurnRisk'
+import { formatCompactCurrency, formatCurrency } from '~/composables/useMoneyFormat'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
-import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
+import { purchaseAmountSelectColumns, purchaseQuantityInput, purchaseSelectColumns, resolvePurchaseCommissionTotal, resolvePurchaseExpectedSettlementAmount, resolvePurchasePaymentAmount, supportsPurchaseAmountColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
 import { computeTrendGrowthRates, formatTrendGrowthRate, trendGrowthVariant } from '~/composables/useTrendGrowth'
 import { buildWeekOptions, weekCodeFromDate, weekDateTokensFromCode, weekLabelFromCode } from '~/composables/useWeekFilter'
 
@@ -304,6 +251,13 @@ interface PurchaseRow {
   source_product_name?: string
   source_option_info?: string
   quantity: number
+  payment_amount: number | null
+  order_discount_amount: number | null
+  delivery_fee_amount: number | null
+  delivery_discount_amount: number | null
+  expected_settlement_amount: number | null
+  payment_commission: number | null
+  sale_commission: number | null
   order_date: string
   target_month: string
   is_fake: boolean
@@ -331,23 +285,24 @@ interface CustomerAgg {
 }
 
 interface DashboardMetrics {
+  paymentAmount: number
+  expectedSettlementAmount: number
+  paymentCommissionAmount: number
   realCustomers: number
   realPurchase: number
   repeatCustomers: number
+  averageOrderValue: number
+  repeatCustomerRate: number
   churnCount: number
 }
 
-interface OverviewScopeMetric {
+interface MonthlyComparisonCard {
   label: string
-  orders: number
-  realOrders: number
-  realCustomers: number
-}
-
-interface OverviewMetrics {
-  today: OverviewScopeMetric
-  week: OverviewScopeMetric
-  month: OverviewScopeMetric
+  currentValueLabel: string
+  previousLabel: string
+  previousValueLabel: string
+  changeLabel: string
+  changeClass: string
 }
 
 interface PetDatum {
@@ -363,6 +318,7 @@ interface TopProductRow {
   pet: string
   stage: string
   count: number
+  amount: number
   percent: number
 }
 
@@ -415,15 +371,15 @@ const dailySalesChartInstance = shallowRef<Chart | null>(null)
 // 화면용 KPI/차트 데이터로 다시 계산한 값을 여기에 담는다.
 const dashboardLoading = ref(false)
 const currentMetrics = ref<DashboardMetrics>({
+  paymentAmount: 0,
+  expectedSettlementAmount: 0,
+  paymentCommissionAmount: 0,
   realCustomers: 0,
   realPurchase: 0,
   repeatCustomers: 0,
+  averageOrderValue: 0,
+  repeatCustomerRate: 0,
   churnCount: 0,
-})
-const overviewMetrics = ref<OverviewMetrics>({
-  today: { label: '', orders: 0, realOrders: 0, realCustomers: 0 },
-  week: { label: '', orders: 0, realOrders: 0, realCustomers: 0 },
-  month: { label: '', orders: 0, realOrders: 0, realCustomers: 0 },
 })
 const petData = ref<PetDatum[]>([
   { label: '강아지', count: 0, value: 0, color: '#2563EB' },
@@ -441,12 +397,14 @@ const churnData = ref<ChurnRow[]>([])
 const trendLabels = ref<string[]>([])
 const trendValues = ref<number[]>([])
 const trendGrowthRates = ref<Array<number | null>>([])
+const trendClickKeys = ref<string[]>([])
 const dailySalesLabels = ref<string[]>([])
 const dailySalesValues = ref<number[]>([])
 const dailySalesKeys = ref<string[]>([])
-const dashboardWeekFilter = ref('')
 const dashboardFetchSeq = ref(0)
 const dashboardRows = ref<PurchaseRow[]>([])
+const trendDrillMonth = ref<string | null>(null)
+const trendDrillWeek = ref('')
 
 // products 메타 lookup
 // - product_id 기준
@@ -456,28 +414,15 @@ const productMetaById = ref<Record<string, ProductMeta>>({})
 const productMetaByName = ref<Record<string, ProductMeta>>({})
 const hasExpectedConsumptionConfig = ref(false)
 
-// 현재 월에서 선택 가능한 주차 목록
-const dashboardWeekOptions = computed(() => {
-  if (selectedMonth.value === 'all') return []
-  return buildWeekOptions(selectedMonth.value)
-})
-
-// 메인 추이 차트 제목은 월/주차 상태에 따라 달라진다.
-const trendTitle = computed(() => {
-  if (selectedMonth.value === 'all') return '월별 실구매 추이'
-  if (dashboardWeekFilter.value) return '일별 실구매 추이'
-  return '주차별 실구매 추이'
-})
-
 // 차트 범위를 사람이 읽기 쉬운 라벨로 만든다.
 const trendRangeLabel = computed(() => {
-  if (selectedMonth.value === 'all') {
+  if (!trendDrillMonth.value) {
     if (trendLabels.value.length === 0) return '최근 6개월'
     if (trendLabels.value.length === 1) return trendLabels.value[0]
     return `${trendLabels.value[0]} ~ ${trendLabels.value[trendLabels.value.length - 1]}`
   }
-  if (dashboardWeekFilter.value) return weekLabelFromCode(selectedMonth.value, dashboardWeekFilter.value)
-  return `${selectedPeriodLabel.value} 기준`
+  if (!trendDrillWeek.value) return `${formatMonthLabel(trendDrillMonth.value)} · 주차별`
+  return `${weekLabelFromCode(trendDrillMonth.value, trendDrillWeek.value)} · 일별`
 })
 
 // 구간별 성장률을 차트 위에 바로 표시하기 위한 중간 데이터
@@ -494,7 +439,7 @@ const trendTransitionRows = computed<TrendTransitionRow[]>(() => {
       key: `${previousLabel}-${currentLabel}-${index}`,
       label: `${previousLabel} -> ${currentLabel}`,
       rateLabel: formatTrendGrowthRate(rate),
-      valueLabel: `${previousValue.toLocaleString()}건 -> ${currentValue.toLocaleString()}건`,
+      valueLabel: `${formatCurrency(previousValue)} -> ${formatCurrency(currentValue)}`,
       variant: trendGrowthVariant(rate),
       left: `${((index - 0.5) / Math.max(trendLabels.value.length - 1, 1)) * 100}%`,
     })
@@ -502,14 +447,74 @@ const trendTransitionRows = computed<TrendTransitionRow[]>(() => {
   return rows
 })
 
-// 템플릿에서는 transitionRows를 그대로 사용하므로 별칭처럼 한 번 더 감싼다.
-const trendInlineMarkers = computed(() => trendTransitionRows.value)
+const trendInlineMarkers = computed(() => {
+  if (trendDrillWeek.value) return []
+  return trendTransitionRows.value
+})
+
+const trendCanGoBack = computed(() => Boolean(trendDrillWeek.value || trendDrillMonth.value))
+
+const trendHelperLabel = computed(() => {
+  if (!trendDrillMonth.value) return '월을 누르면 해당 월의 주차별 흐름을 볼 수 있습니다.'
+  if (!trendDrillWeek.value) return '주차를 누르면 일별 흐름으로 내려갑니다.'
+  return '뒤로가기를 누르면 이전 범위로 돌아갑니다.'
+})
+
+const comparisonMonthToken = computed(() => {
+  if (selectedMonth.value !== 'all' && isMonthToken(selectedMonth.value)) return selectedMonth.value
+  const tokens = buildTrendMonths('all', dashboardRows.value)
+  return tokens[tokens.length - 1] || toMonthToken(new Date())
+})
+
+const previousComparisonMonthToken = computed(() => shiftMonthToken(comparisonMonthToken.value, -1))
+
+const comparisonPeriodCaption = computed(() => {
+  return `${formatMonthLabel(comparisonMonthToken.value)} 기준으로 직전 월과 비교합니다.`
+})
+
+const monthlyComparisonCards = computed<MonthlyComparisonCard[]>(() => {
+  const realRows = dashboardRows.value.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
+  const currentRows = realRows.filter((row) => row.target_month === comparisonMonthToken.value)
+  const previousRows = realRows.filter((row) => row.target_month === previousComparisonMonthToken.value)
+  const currentPayment = summarizeKnownAmount(currentRows, hasKnownPaymentAmount, resolveRowPaymentAmount)
+  const previousPayment = summarizeKnownAmount(previousRows, hasKnownPaymentAmount, resolveRowPaymentAmount)
+  const currentSettlement = summarizeKnownAmount(currentRows, hasKnownExpectedSettlementAmount, resolveRowExpectedSettlementAmount)
+  const previousSettlement = summarizeKnownAmount(previousRows, hasKnownExpectedSettlementAmount, resolveRowExpectedSettlementAmount)
+  const currentCommission = summarizeKnownAmount(currentRows, hasKnownCommissionAmount, resolveRowPaymentCommissionAmount)
+  const previousCommission = summarizeKnownAmount(previousRows, hasKnownCommissionAmount, resolveRowPaymentCommissionAmount)
+
+  return [
+    {
+      label: '결제 금액',
+      currentValueLabel: formatOptionalCurrency(currentPayment),
+      previousLabel: formatMonthLabel(previousComparisonMonthToken.value),
+      previousValueLabel: formatOptionalCurrency(previousPayment),
+      changeLabel: formatRateChange(computeRateChange(currentPayment, previousPayment)),
+      changeClass: comparisonChangeClass(computeRateChange(currentPayment, previousPayment)),
+    },
+    {
+      label: '정산 예정',
+      currentValueLabel: formatOptionalCurrency(currentSettlement),
+      previousLabel: formatMonthLabel(previousComparisonMonthToken.value),
+      previousValueLabel: formatOptionalCurrency(previousSettlement),
+      changeLabel: formatRateChange(computeRateChange(currentSettlement, previousSettlement)),
+      changeClass: comparisonChangeClass(computeRateChange(currentSettlement, previousSettlement)),
+    },
+    {
+      label: '총 수수료',
+      currentValueLabel: formatOptionalCurrency(currentCommission),
+      previousLabel: formatMonthLabel(previousComparisonMonthToken.value),
+      previousValueLabel: formatOptionalCurrency(previousCommission),
+      changeLabel: formatRateChange(computeRateChange(currentCommission, previousCommission)),
+      changeClass: comparisonChangeClass(computeRateChange(currentCommission, previousCommission)),
+    },
+  ]
+})
 
 // 판매량 차트 제목/범위 라벨
 const dailySalesTitle = computed(() => {
-  if (selectedMonth.value === 'all') return '월별 실구매 판매량'
-  if (dashboardWeekFilter.value) return '일별 실구매 판매량'
-  return '일자별 실구매 판매량'
+  if (selectedMonth.value === 'all') return '월별 정산 예정 추이'
+  return '일자별 정산 예정 추이'
 })
 
 const dailySalesRangeLabel = computed(() => {
@@ -518,7 +523,6 @@ const dailySalesRangeLabel = computed(() => {
     if (dailySalesLabels.value.length === 1) return dailySalesLabels.value[0]
     return `${dailySalesLabels.value[0]} ~ ${dailySalesLabels.value[dailySalesLabels.value.length - 1]}`
   }
-  if (dashboardWeekFilter.value) return weekLabelFromCode(selectedMonth.value, dashboardWeekFilter.value)
   return `${selectedPeriodLabel.value} 기준`
 })
 
@@ -532,6 +536,7 @@ const visibleChurnData = computed(() => {
 function resetDashboardChurnState() {
   currentMetrics.value = {
     ...currentMetrics.value,
+    repeatCustomerRate: 0,
     churnCount: 0,
   }
   churnData.value = []
@@ -542,10 +547,7 @@ const effectiveChurnCount = computed(() => {
 })
 
 const churnCountLabel = computed(() => {
-  if (!dashboardWeekFilter.value || selectedMonth.value === 'all') {
-    return `${effectiveChurnCount.value}명`
-  }
-  return `${weekLabelFromCode(selectedMonth.value, dashboardWeekFilter.value)} · ${effectiveChurnCount.value}명`
+  return `${effectiveChurnCount.value}명`
 })
 
 // KPI 카드 클릭 시 현재 월/주차 상태를 유지한 채 고객현황으로 넘긴다.
@@ -553,11 +555,32 @@ function navigateToCustomers(query: Record<string, string> = {}) {
   const base: Record<string, string> = selectedMonth.value !== 'all'
     ? { month: selectedMonth.value }
     : {}
-  if (selectedMonth.value !== 'all' && dashboardWeekFilter.value) {
-    base.week = dashboardWeekFilter.value
-  }
   const withMonth = { ...base, ...query }
   router.push({ path: '/customers', query: withMonth })
+}
+
+function reportSectionLink(path: string) {
+  const query: Record<string, string> = selectedMonth.value !== 'all'
+    ? { month: selectedMonth.value }
+    : {}
+  return { path, query }
+}
+
+function resetTrendDrilldown() {
+  trendDrillMonth.value = null
+  trendDrillWeek.value = ''
+}
+
+function clearTrendWeek() {
+  trendDrillWeek.value = ''
+}
+
+function stepBackTrendDrilldown() {
+  if (trendDrillWeek.value) {
+    trendDrillWeek.value = ''
+    return
+  }
+  trendDrillMonth.value = null
 }
 
 // 판매량 차트의 특정 월/일 막대를 눌렀을 때 그 구간 고객 목록으로 이동한다.
@@ -571,19 +594,68 @@ function navigateToCustomersBySalesKey(key: string) {
 }
 
 // 한글 단계명을 고객현황 쿼리 파라미터 값으로 변환
-function stageQueryByName(stageName: string): string {
-  if (stageName === '신규') return 'Entry'
-  if (stageName === '성장') return 'Growth'
-  if (stageName === '단골') return 'Premium'
-  if (stageName === '핵심') return 'Core'
-  return ''
-}
-
 // 문자열 날짜 -> Date 변환
 // 실패 시에도 비교 함수가 깨지지 않도록 안전한 기본값을 리턴한다.
 function parseOrderDate(value: string): Date {
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? new Date('1970-01-01') : d
+}
+
+function parseNullableAmount(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return null
+  return Math.round(parsed)
+}
+
+function formatOptionalCurrency(value: number | null): string {
+  return value === null ? '—' : formatCurrency(value)
+}
+
+function hasKnownPaymentAmount(row: Pick<PurchaseRow, 'payment_amount'>): boolean {
+  return row.payment_amount !== null
+}
+
+function hasKnownExpectedSettlementAmount(row: Pick<PurchaseRow, 'expected_settlement_amount'>): boolean {
+  return row.expected_settlement_amount !== null
+}
+
+function hasKnownCommissionAmount(row: Pick<PurchaseRow, 'payment_commission' | 'sale_commission'>): boolean {
+  return row.payment_commission !== null || row.sale_commission !== null
+}
+
+function summarizeKnownAmount<T>(rows: T[], hasKnown: (row: T) => boolean, resolveValue: (row: T) => number): number | null {
+  const knownRows = rows.filter(hasKnown)
+  if (knownRows.length === 0) return null
+  return knownRows.reduce((sum, row) => sum + resolveValue(row), 0)
+}
+
+function computeRateChange(current: number | null, previous: number | null): number | null {
+  if (current === null || previous === null || previous === 0) return null
+  return Math.round(((current - previous) / previous) * 100)
+}
+
+function formatRateChange(change: number | null): string {
+  if (change === null) return '비교 없음'
+  if (change > 0) return `+${change}%`
+  return `${change}%`
+}
+
+function comparisonChangeClass(change: number | null): string {
+  if (change === null || change === 0) return 'is-neutral'
+  return change > 0 ? 'is-positive' : 'is-negative'
+}
+
+function resolveRowPaymentAmount(row: Pick<PurchaseRow, 'payment_amount'>): number {
+  return resolvePurchasePaymentAmount(row)
+}
+
+function resolveRowExpectedSettlementAmount(row: Pick<PurchaseRow, 'expected_settlement_amount'>): number {
+  return resolvePurchaseExpectedSettlementAmount(row)
+}
+
+function resolveRowPaymentCommissionAmount(row: Pick<PurchaseRow, 'payment_commission' | 'sale_commission'>): number {
+  return resolvePurchaseCommissionTotal(row)
 }
 
 // 상품명/옵션/검색어 비교 시 쓰는 공통 정규화
@@ -757,22 +829,6 @@ function formatDateToken(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
-function startOfWeek(date: Date): Date {
-  const next = new Date(date)
-  const day = next.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  next.setDate(next.getDate() + diff)
-  next.setHours(0, 0, 0, 0)
-  return next
-}
-
-function endOfWeek(date: Date): Date {
-  const next = startOfWeek(date)
-  next.setDate(next.getDate() + 6)
-  next.setHours(23, 59, 59, 999)
-  return next
-}
-
 function countOrdersInRange(rows: PurchaseRow[], from: Date, to: Date): number {
   const fromMs = from.getTime()
   const toMs = to.getTime()
@@ -859,86 +915,88 @@ function buildMonthDateTokens(monthToken: string): string[] {
 }
 
 // 메인 추이 차트 데이터 생성
-// - all: 월별 실구매 주문수
-// - month + week: 일별 실구매 주문수
-// - month only: 주차별 실구매 주문수
-function applyTrendSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekSnapshot: string) {
-  const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
+// - 기본: 월별 결제 금액
+// - 월 클릭 후: 주차별 결제 금액
+// - 주차 클릭 후: 일별 결제 금액
+function applyTrendSeries(allRows: PurchaseRow[]) {
+  const realRows = allRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
 
-  if (monthSnapshot === 'all') {
-    const monthTokens = buildTrendMonths(monthSnapshot, realRows)
-    const countMap = new Map<string, number>(monthTokens.map((token) => [token, 0]))
+  if (!trendDrillMonth.value) {
+    const monthTokens = buildTrendMonths('all', realRows)
+    const amountMap = new Map<string, number>(monthTokens.map((token) => [token, 0]))
     for (const row of realRows) {
       const monthToken = String(row.target_month || '')
-      if (countMap.has(monthToken)) {
-        countMap.set(monthToken, (countMap.get(monthToken) || 0) + 1)
+      if (amountMap.has(monthToken)) {
+        amountMap.set(monthToken, (amountMap.get(monthToken) || 0) + resolveRowPaymentAmount(row))
       }
     }
+    trendClickKeys.value = monthTokens
     trendLabels.value = monthTokens.map((token) => formatMonthLabel(token))
-    trendValues.value = monthTokens.map((token) => countMap.get(token) || 0)
+    trendValues.value = monthTokens.map((token) => amountMap.get(token) || 0)
     trendGrowthRates.value = computeTrendGrowthRates(trendValues.value)
     return
   }
 
-  if (weekSnapshot) {
-    const dateTokens = buildWeekDateTokens(monthSnapshot, weekSnapshot)
-    const countMap = new Map<string, number>(dateTokens.map((token) => [token, 0]))
-    for (const row of realRows) {
+  const monthRows = realRows.filter((row) => row.target_month === trendDrillMonth.value)
+
+  if (trendDrillWeek.value) {
+    const dateTokens = buildWeekDateTokens(trendDrillMonth.value, trendDrillWeek.value)
+    const amountMap = new Map<string, number>(dateTokens.map((token) => [token, 0]))
+    for (const row of monthRows) {
       const dateToken = String(row.order_date || '').slice(0, 10)
-      if (countMap.has(dateToken)) {
-        countMap.set(dateToken, (countMap.get(dateToken) || 0) + 1)
+      if (amountMap.has(dateToken)) {
+        amountMap.set(dateToken, (amountMap.get(dateToken) || 0) + resolveRowPaymentAmount(row))
       }
     }
+    trendClickKeys.value = dateTokens
     trendLabels.value = dateTokens.map((token) => formatDayLabel(token))
-    trendValues.value = dateTokens.map((token) => countMap.get(token) || 0)
+    trendValues.value = dateTokens.map((token) => amountMap.get(token) || 0)
     trendGrowthRates.value = computeTrendGrowthRates(trendValues.value)
     return
   }
 
-  const weekOptions = buildWeekOptions(monthSnapshot)
-  const countMap = new Map<string, number>(weekOptions.map((option) => [option.value, 0]))
-  for (const row of realRows) {
-    const weekCode = weekCodeFromDate(row.order_date, monthSnapshot)
-    if (countMap.has(weekCode)) {
-      countMap.set(weekCode, (countMap.get(weekCode) || 0) + 1)
+  const weekOptions = buildWeekOptions(trendDrillMonth.value)
+  const amountMap = new Map<string, number>(weekOptions.map((option) => [option.value, 0]))
+  for (const row of monthRows) {
+    const weekCode = weekCodeFromDate(row.order_date, trendDrillMonth.value)
+    if (amountMap.has(weekCode)) {
+      amountMap.set(weekCode, (amountMap.get(weekCode) || 0) + resolveRowPaymentAmount(row))
     }
   }
+  trendClickKeys.value = weekOptions.map((option) => option.value)
   trendLabels.value = weekOptions.map((option) => option.label.split(' ')[0])
-  trendValues.value = weekOptions.map((option) => countMap.get(option.value) || 0)
+  trendValues.value = weekOptions.map((option) => amountMap.get(option.value) || 0)
   trendGrowthRates.value = computeTrendGrowthRates(trendValues.value)
 }
 
-// 판매량 차트 데이터 생성
-// "주문 건수"가 아니라 quantity 계산 규칙을 다시 적용한 총 판매 개수 기준이다.
-function applyDailySalesSeries(scopeRows: PurchaseRow[], monthSnapshot: string, weekSnapshot: string) {
+// 정산 예정 차트 데이터 생성
+function applyDailySalesSeries(scopeRows: PurchaseRow[], monthSnapshot: string) {
   const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
 
   if (monthSnapshot === 'all') {
     const monthTokens = buildTrendMonths(monthSnapshot, realRows)
-    const countMap = new Map<string, number>(monthTokens.map((token) => [token, 0]))
+    const amountMap = new Map<string, number>(monthTokens.map((token) => [token, 0]))
     for (const row of realRows) {
       const monthToken = String(row.target_month || '')
-      if (!countMap.has(monthToken)) continue
-      countMap.set(monthToken, (countMap.get(monthToken) || 0) + computePurchaseQuantity(purchaseQuantityInput(row)).totalCount)
+      if (!amountMap.has(monthToken)) continue
+      amountMap.set(monthToken, (amountMap.get(monthToken) || 0) + resolveRowExpectedSettlementAmount(row))
     }
     dailySalesKeys.value = monthTokens
     dailySalesLabels.value = monthTokens.map((token) => formatMonthLabel(token))
-    dailySalesValues.value = monthTokens.map((token) => countMap.get(token) || 0)
+    dailySalesValues.value = monthTokens.map((token) => amountMap.get(token) || 0)
     return
   }
 
-  const dateTokens = weekSnapshot
-    ? buildWeekDateTokens(monthSnapshot, weekSnapshot)
-    : buildMonthDateTokens(monthSnapshot)
-  const countMap = new Map<string, number>(dateTokens.map((token) => [token, 0]))
+  const dateTokens = buildMonthDateTokens(monthSnapshot)
+  const amountMap = new Map<string, number>(dateTokens.map((token) => [token, 0]))
   for (const row of realRows) {
     const dateToken = String(row.order_date || '').slice(0, 10)
-    if (!countMap.has(dateToken)) continue
-    countMap.set(dateToken, (countMap.get(dateToken) || 0) + computePurchaseQuantity(purchaseQuantityInput(row)).totalCount)
+    if (!amountMap.has(dateToken)) continue
+    amountMap.set(dateToken, (amountMap.get(dateToken) || 0) + resolveRowExpectedSettlementAmount(row))
   }
   dailySalesKeys.value = dateTokens
   dailySalesLabels.value = dateTokens.map((token) => formatDayLabel(token))
-  dailySalesValues.value = dateTokens.map((token) => countMap.get(token) || 0)
+  dailySalesValues.value = dateTokens.map((token) => amountMap.get(token) || 0)
 }
 
 // products 테이블에서 분석에 필요한 최소 메타를 읽어 lookup으로 정리한다.
@@ -987,12 +1045,17 @@ async function fetchPurchases(): Promise<PurchaseRow[]> {
   const rows: PurchaseRow[] = []
   const PAGE_SIZE = 1000
   const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
+  const includeAmountColumns = await supportsPurchaseAmountColumns(supabase)
   const baseColumns = 'purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month, is_fake, needs_review, filter_ver'
+  const selectColumns = purchaseAmountSelectColumns(
+    purchaseSelectColumns(baseColumns, includeSourceColumns),
+    includeAmountColumns,
+  )
 
   for (let from = 0; ; from += PAGE_SIZE) {
     let query = supabase
       .from('purchases')
-      .select(purchaseSelectColumns(baseColumns, includeSourceColumns))
+      .select(selectColumns)
       .not('filter_ver', 'is', null)
       .order('order_date', { ascending: false })
       .order('purchase_id', { ascending: false })
@@ -1012,6 +1075,13 @@ async function fetchPurchases(): Promise<PurchaseRow[]> {
       source_product_name: String(row.source_product_name || ''),
       source_option_info: String(row.source_option_info || ''),
       quantity: Number(row.quantity) || 1,
+      payment_amount: includeAmountColumns ? parseNullableAmount(row.payment_amount) : null,
+      order_discount_amount: includeAmountColumns ? parseNullableAmount(row.order_discount_amount) : null,
+      delivery_fee_amount: includeAmountColumns ? parseNullableAmount(row.delivery_fee_amount) : null,
+      delivery_discount_amount: includeAmountColumns ? parseNullableAmount(row.delivery_discount_amount) : null,
+      expected_settlement_amount: includeAmountColumns ? parseNullableAmount(row.expected_settlement_amount) : null,
+      payment_commission: includeAmountColumns ? parseNullableAmount(row.payment_commission) : null,
+      sale_commission: includeAmountColumns ? parseNullableAmount(row.sale_commission) : null,
       order_date: String(row.order_date || ''),
       target_month: String(row.target_month || ''),
       is_fake: Boolean(row.is_fake),
@@ -1037,11 +1107,9 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[], allRows: PurchaseRow[])
   const filteredRows = allRows.filter((row) => !!row.filter_ver)
   const realRows = scopeRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
   const allRealRows = filteredRows.filter((row) => !row.is_fake && !row.needs_review && !!row.filter_ver)
-  const now = new Date()
-  const todayToken = formatDateToken(now)
-  const thisMonthToken = todayToken.slice(0, 7)
-  const weekStart = startOfWeek(now)
-  const weekEnd = endOfWeek(now)
+  const sumPaymentAmount = (rows: PurchaseRow[]) => rows.reduce((sum, row) => sum + resolveRowPaymentAmount(row), 0)
+  const sumExpectedSettlementAmount = (rows: PurchaseRow[]) => rows.reduce((sum, row) => sum + resolveRowExpectedSettlementAmount(row), 0)
+  const sumPaymentCommissionAmount = (rows: PurchaseRow[]) => rows.reduce((sum, row) => sum + resolveRowPaymentCommissionAmount(row), 0)
 
   const groupedAll = new Map<string, PurchaseRow[]>()
   for (const row of allRealRows) {
@@ -1089,40 +1157,15 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[], allRows: PurchaseRow[])
   const churnCustomers = customerAggs.filter((row) => row.churnRisk)
 
   currentMetrics.value = {
+    paymentAmount: sumPaymentAmount(realRows),
+    expectedSettlementAmount: sumExpectedSettlementAmount(realRows),
+    paymentCommissionAmount: sumPaymentCommissionAmount(realRows),
     realCustomers: customerAggs.length,
     realPurchase: realRows.length,
     repeatCustomers,
+    averageOrderValue: realRows.length > 0 ? Math.round(sumPaymentAmount(realRows) / realRows.length) : 0,
+    repeatCustomerRate: customerAggs.length > 0 ? Math.round((repeatCustomers / customerAggs.length) * 100) : 0,
     churnCount: churnCustomers.length,
-  }
-  const todayRows = filteredRows.filter((row) => purchaseDateKey(row) === todayToken)
-  const todayRealRows = todayRows.filter((row) => !row.is_fake && !row.needs_review)
-  const weekRows = filteredRows.filter((row) => {
-    const time = parseOrderDate(row.order_date).getTime()
-    return time >= weekStart.getTime() && time <= weekEnd.getTime()
-  })
-  const weekRealRows = weekRows.filter((row) => !row.is_fake && !row.needs_review)
-  const monthRows = filteredRows.filter((row) => row.target_month === thisMonthToken)
-  const monthRealRows = monthRows.filter((row) => !row.is_fake && !row.needs_review)
-
-  overviewMetrics.value = {
-    today: {
-      label: formatDayLabel(todayToken),
-      orders: todayRows.length,
-      realOrders: todayRealRows.length,
-      realCustomers: countDistinctCustomers(todayRealRows),
-    },
-    week: {
-      label: `${formatDayLabel(formatDateToken(weekStart))} ~ ${formatDayLabel(formatDateToken(weekEnd))}`,
-      orders: weekRows.length,
-      realOrders: weekRealRows.length,
-      realCustomers: countDistinctCustomers(weekRealRows),
-    },
-    month: {
-      label: formatMonthLabel(thisMonthToken),
-      orders: monthRows.length,
-      realOrders: monthRealRows.length,
-      realCustomers: countDistinctCustomers(monthRealRows),
-    },
   }
 
   const dogCount = customerAggs.filter((row) => row.petType === 'DOG').length
@@ -1159,6 +1202,7 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[], allRows: PurchaseRow[])
     name: string
     optionInfo: string
     count: number
+    amount: number
     petType: ProductMeta['pet_type']
     stage: number | null
   }>()
@@ -1166,6 +1210,7 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[], allRows: PurchaseRow[])
     const baseKey = String(row.product_id || '').trim() || normalizeForMatch(row.product_name || '')
     if (!baseKey) continue
     const quantityResult = computePurchaseQuantity(purchaseQuantityInput(row))
+    const totalCount = Math.max(quantityResult.totalCount, 1)
 
     const nameKey = normalizeForMatch(normalizeMissionProductName(row.product_name || ''))
     const meta = productMetaById.value[String(row.product_id || '').trim()] || productMetaByName.value[nameKey]
@@ -1182,25 +1227,32 @@ function applyDashboardMetrics(scopeRows: PurchaseRow[], allRows: PurchaseRow[])
           name: row.product_name || '-',
           optionInfo,
           count: 0,
+          amount: 0,
           petType: nextPetType,
           stage: nextStage,
         })
       }
       productMap.get(key)!.count += part.count
+      productMap.get(key)!.amount += (resolveRowPaymentAmount(row) * part.count) / totalCount
     }
   }
 
   const top = Array.from(productMap.values())
-    .sort((a, b) => b.count - a.count)
+    .sort((a, b) => {
+      const byAmount = b.amount - a.amount
+      if (byAmount !== 0) return byAmount
+      return b.count - a.count
+    })
     .slice(0, 5)
-  const topMax = Math.max(top[0]?.count || 1, 1)
+  const topMax = Math.max(top[0]?.amount || 1, 1)
   topProducts.value = top.map((item) => ({
     name: item.name,
     optionInfo: item.optionInfo,
     pet: petLabel(item.petType),
     stage: stageLabelByCode(item.stage),
     count: item.count,
-    percent: Math.round((item.count / topMax) * 100),
+    amount: item.amount,
+    percent: Math.round((item.amount / topMax) * 100),
   }))
 
   churnData.value = churnCustomers
@@ -1249,17 +1301,14 @@ async function fetchDashboardData() {
 // KPI/차트용 집계 함수에 다시 흘려보낸다.
 function applyDashboardScope() {
   const monthSnapshot = selectedMonth.value
-  const weekSnapshot = monthSnapshot !== 'all' ? dashboardWeekFilter.value : ''
   const monthRows = monthSnapshot === 'all'
     ? dashboardRows.value
     : dashboardRows.value.filter((row) => row.target_month === monthSnapshot)
-  const scopeRows = monthSnapshot !== 'all' && weekSnapshot
-    ? monthRows.filter((row) => weekCodeFromDate(row.order_date, monthSnapshot) === weekSnapshot)
-    : monthRows
+  const scopeRows = monthRows
 
   applyDashboardMetrics(scopeRows, dashboardRows.value)
-  applyTrendSeries(scopeRows, monthSnapshot, weekSnapshot)
-  applyDailySalesSeries(scopeRows, monthSnapshot, weekSnapshot)
+  applyTrendSeries(dashboardRows.value)
+  applyDailySalesSeries(scopeRows, monthSnapshot)
 }
 
 // 실구매 고객 펫 타입 도넛 차트
@@ -1308,7 +1357,7 @@ function renderTrendChart() {
       labels: trendLabels.value,
       datasets: [
         {
-          label: '실구매 건수',
+          label: '결제 금액',
           data: trendValues.value,
           borderColor: '#2563EB',
           backgroundColor: 'rgba(37, 99, 235, 0.08)',
@@ -1316,8 +1365,8 @@ function renderTrendChart() {
           pointBackgroundColor: '#2563EB',
           pointBorderColor: '#fff',
           pointBorderWidth: 2,
-          pointRadius: 4,
-          pointHoverRadius: 6,
+          pointRadius: trendDrillWeek.value ? 3 : 5,
+          pointHoverRadius: trendDrillWeek.value ? 5 : 7,
           tension: 0.3,
           fill: true,
         },
@@ -1329,6 +1378,22 @@ function renderTrendChart() {
       interaction: {
         mode: 'index',
         intersect: false,
+      },
+      onClick: (_, elements) => {
+        const first = elements[0]
+        if (!first) return
+        const key = trendClickKeys.value[first.index]
+        if (!key) return
+
+        if (!trendDrillMonth.value) {
+          trendDrillMonth.value = key
+          trendDrillWeek.value = ''
+          return
+        }
+
+        if (!trendDrillWeek.value) {
+          trendDrillWeek.value = key
+        }
       },
       plugins: {
         legend: {
@@ -1346,7 +1411,7 @@ function renderTrendChart() {
           padding: 10,
           cornerRadius: 6,
           callbacks: {
-            label: (ctx) => `실구매 ${Number(ctx.parsed.y || 0).toLocaleString()}건`,
+            label: (ctx) => `결제 ${formatCurrency(Number(ctx.parsed.y || 0))}`,
           },
         },
       },
@@ -1365,7 +1430,7 @@ function renderTrendChart() {
           ticks: {
             font: { size: 11 },
             color: '#9CA3AF',
-            callback: (value) => Number(value).toLocaleString(),
+            callback: (value) => formatCompactCurrency(Number(value)),
           },
           beginAtZero: true,
         },
@@ -1413,7 +1478,7 @@ function renderDailySalesChart() {
           padding: 10,
           cornerRadius: 6,
           callbacks: {
-            label: (ctx) => `${formatQuantityCount(Number(ctx.parsed.y || 0))}개`,
+            label: (ctx) => `정산 예정 ${formatCurrency(Number(ctx.parsed.y || 0))}`,
           },
         },
       },
@@ -1432,7 +1497,7 @@ function renderDailySalesChart() {
           ticks: {
             font: { size: 11 },
             color: '#9CA3AF',
-            callback: (value) => formatQuantityCount(Number(value)),
+            callback: (value) => formatCompactCurrency(Number(value)),
           },
           beginAtZero: true,
         },
@@ -1440,17 +1505,6 @@ function renderDailySalesChart() {
     },
   })
 }
-
-watch(
-  () => selectedMonth.value,
-  (month, prevMonth) => {
-    if (!prevMonth || month === prevMonth) return
-    if (dashboardWeekFilter.value) {
-      dashboardWeekFilter.value = ''
-    }
-  },
-  { flush: 'sync' },
-)
 
 watch(
   () => [selectedMonth.value, profileLoaded.value, profileRevision.value],
@@ -1462,7 +1516,7 @@ watch(
 )
 
 watch(
-  () => [selectedMonth.value, dashboardWeekFilter.value, dashboardRows.value],
+  () => [selectedMonth.value, dashboardRows.value, trendDrillMonth.value, trendDrillWeek.value],
   () => {
     applyDashboardScope()
   },
@@ -1480,28 +1534,23 @@ watch(
 )
 
 watch(
-  () => [selectedMonth.value, dashboardWeekOptions.value.map((option) => option.value).join(',')],
-  () => {
-    if (selectedMonth.value === 'all') {
-      dashboardWeekFilter.value = ''
-      return
-    }
-
-    if (dashboardWeekFilter.value && !dashboardWeekOptions.value.some((option) => option.value === dashboardWeekFilter.value)) {
-      dashboardWeekFilter.value = ''
-    }
+  () => [trendChartCanvas.value, trendLabels.value, trendValues.value, trendDrillMonth.value, trendDrillWeek.value],
+  async ([canvas]) => {
+    if (!canvas) return
+    await nextTick()
+    renderTrendChart()
   },
+  { deep: true, flush: 'post' },
 )
 
 watch(
-  () => [petData.value, trendLabels.value, trendValues.value, dailySalesLabels.value, dailySalesValues.value],
+  () => [petChartCanvas.value, petData.value, dailySalesChartCanvas.value, dailySalesLabels.value, dailySalesValues.value],
   async () => {
     await nextTick()
     renderPetChart()
-    renderTrendChart()
     renderDailySalesChart()
   },
-  { deep: true },
+  { deep: true, flush: 'post' },
 )
 
 onBeforeUnmount(() => {
@@ -1524,6 +1573,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: var(--space-lg);
   flex-wrap: wrap;
+  padding: 2px 0 4px;
 }
 
 .page-header-left {
@@ -1542,76 +1592,150 @@ onBeforeUnmount(() => {
 
 .page-title {
   margin: 0;
-  font-size: 1.9rem;
+  font-size: 1.8rem;
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
   color: var(--color-text);
 }
 
 .page-caption {
   font-size: 0.88rem;
-  font-weight: 600;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.card-header-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.dashboard-card-head-between {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.trend-card-copy,
+.trend-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trend-card-actions {
+  align-items: flex-end;
+}
+
+.trend-drill-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.trend-drill-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #F8FAFD;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.trend-drill-pill.active {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: #FFFFFF;
+  color: var(--color-primary);
+}
+
+.trend-card-helper {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  max-width: 460px;
+}
+
+.section-caption {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.84rem;
   color: var(--color-text-muted);
 }
 
-.overview-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 28px;
+.period-compare-card {
+  padding: 0;
+  border: 1px solid rgba(229, 235, 242, 0.96);
+  background: #FFFFFF;
+  box-shadow: none;
   overflow: hidden;
 }
 
-.overview-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-  padding: 24px 28px;
-  background: transparent;
+.period-compare-card .card-header {
+  margin-bottom: 0;
+  padding: 24px 24px 16px;
 }
 
-.overview-card + .overview-card {
+.period-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.period-compare-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px 24px;
+}
+
+.period-compare-item + .period-compare-item {
   border-left: 1px solid rgba(148, 163, 184, 0.12);
 }
 
-.overview-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-md);
+.period-compare-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
 }
 
-.overview-label {
-  font-size: 1rem;
-  font-weight: 700;
+.period-compare-value {
+  font-size: 1.95rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
   color: var(--color-text);
 }
 
-.overview-meta {
+.period-compare-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
   font-size: 0.82rem;
   color: var(--color-text-muted);
 }
 
-.overview-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.period-compare-change {
+  font-weight: 700;
 }
 
-.overview-list-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-md);
-  font-size: 0.92rem;
+.period-compare-change.is-positive {
+  color: #16A34A;
+}
+
+.period-compare-change.is-negative {
+  color: #DC2626;
+}
+
+.period-compare-change.is-neutral {
   color: var(--color-text-secondary);
-}
-
-.overview-list-row strong {
-  font-size: 1.05rem;
-  color: var(--color-text);
 }
 
 .summary-note {
@@ -1629,25 +1753,19 @@ onBeforeUnmount(() => {
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-lg);
-}
-
-.kpi-wrapper {
-  padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  box-shadow: none;
+  gap: 16px;
 }
 
 .charts-grid {
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
-  gap: var(--space-lg);
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.9fr);
+  gap: 16px;
 }
 
 .bottom-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-lg);
+  grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+  gap: 16px;
 }
 
 .single-grid {
@@ -1668,6 +1786,80 @@ onBeforeUnmount(() => {
 
 .trend-chart {
   padding-top: var(--space-md);
+}
+
+.signal-card {
+  display: flex;
+  flex-direction: column;
+  background: #FFFFFF;
+}
+
+.signal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.signal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 15px 0;
+  border-radius: 0;
+  background: transparent;
+  border-bottom: 1px solid rgba(229, 235, 242, 0.96);
+}
+
+.signal-row--primary {
+  background: transparent;
+}
+
+.signal-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.signal-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.signal-value {
+  font-size: 1.16rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+}
+
+.signal-change,
+.signal-support {
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.signal-change.is-positive {
+  color: var(--color-success);
+}
+
+.signal-change.is-negative {
+  color: var(--color-danger);
+}
+
+.signal-change.is-neutral,
+.signal-support {
+  color: var(--color-text-secondary);
+}
+
+.signal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 16px;
 }
 
 .trend-chart-area {
@@ -1698,7 +1890,7 @@ onBeforeUnmount(() => {
   line-height: 1;
   background: rgba(100, 116, 139, 0.12);
   color: var(--color-text);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  box-shadow: none;
 }
 
 .trend-inline-marker.is-success {
@@ -1788,6 +1980,7 @@ onBeforeUnmount(() => {
 .top-products {
   display: flex;
   flex-direction: column;
+  gap: 0;
 }
 
 .top-product-item {
@@ -1796,16 +1989,21 @@ onBeforeUnmount(() => {
   gap: var(--space-md);
   padding: 14px 0;
   border-bottom: 1px solid var(--color-border-light);
+  border-radius: 0;
+  background: transparent;
+  transition: none;
 }
 
-.top-product-item:last-child {
-  border-bottom: none;
+.top-product-item:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--color-border-light);
 }
 
 .top-product-rank {
   width: 28px;
   height: 28px;
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1817,18 +2015,18 @@ onBeforeUnmount(() => {
 }
 
 .rank-1 {
-  background: #EFF6FF;
+  background: #F2F4F8;
   color: #2563EB;
 }
 
 .rank-2 {
-  background: #F0FDF4;
-  color: #16A34A;
+  background: #F2F4F8;
+  color: #4E5968;
 }
 
 .rank-3 {
-  background: #FFF7ED;
-  color: #EA580C;
+  background: #F2F4F8;
+  color: #4E5968;
 }
 
 .top-product-info {
@@ -1841,20 +2039,15 @@ onBeforeUnmount(() => {
 
 .top-product-name {
   font-size: 0.9375rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.top-product-option {
-  font-size: 0.8125rem;
-  color: var(--color-text-muted);
-}
-
 .top-product-meta {
-  font-size: 0.8125rem;
+  font-size: 0.78rem;
   color: var(--color-text-muted);
 }
 
@@ -1869,14 +2062,21 @@ onBeforeUnmount(() => {
   font-size: 0.9375rem;
   font-weight: 600;
   color: var(--color-text);
-  width: 54px;
+  min-width: 82px;
+  text-align: right;
+}
+
+.top-product-sub {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  min-width: 40px;
   text-align: right;
 }
 
 .top-product-bar-wrap {
   width: 88px;
   height: 8px;
-  background: #F3F4F6;
+  background: #EEF3F8;
   border-radius: 3px;
   overflow: hidden;
 }
@@ -1893,6 +2093,7 @@ onBeforeUnmount(() => {
   justify-content: space-around;
   height: 196px;
   padding-top: var(--space-lg);
+  margin-bottom: var(--space-md);
 }
 
 .stage-item {
@@ -1930,40 +2131,33 @@ onBeforeUnmount(() => {
   color: var(--color-text-muted);
 }
 
-.stage-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-  margin-top: var(--space-md);
-}
-
-.stage-action-btn {
-  flex: 1;
-  min-width: 120px;
-  justify-content: center;
-}
-
 .stage-detail-link {
   width: 100%;
   justify-content: center;
-  margin-top: var(--space-sm);
+  margin-top: 0;
 }
 
 .churn-list {
   display: flex;
   flex-direction: column;
+  gap: 8px;
 }
 
 .churn-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--color-border-light);
+  padding: 16px 18px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 14px;
+  background: #FFFFFF;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
 }
 
-.churn-item:last-child {
-  border-bottom: none;
+.churn-item:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: rgba(239, 68, 68, 0.12);
 }
 
 .churn-info {
@@ -2000,11 +2194,11 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1280px) {
-  .overview-grid {
+  .period-compare-grid {
     grid-template-columns: 1fr;
   }
 
-  .overview-card + .overview-card {
+  .period-compare-item + .period-compare-item {
     border-left: none;
     border-top: 1px solid rgba(148, 163, 184, 0.12);
   }
@@ -2034,18 +2228,42 @@ onBeforeUnmount(() => {
     gap: var(--space-lg);
   }
 
+  .page-header {
+    padding: 0;
+  }
+
   .page-header-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .period-compare-foot {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .header-select {
     width: 100%;
   }
 
+  .trend-card-actions {
+    align-items: flex-start;
+  }
+
   .kpi-grid {
     grid-template-columns: 1fr;
     gap: var(--space-md);
+  }
+
+  .signal-row,
+  .churn-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .signal-actions {
+    width: 100%;
+    flex-wrap: wrap;
   }
 
   .pet-donut {

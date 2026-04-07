@@ -2,113 +2,160 @@
   <div class="product-trends-page">
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">상품 추이</h1>
-        <span class="page-caption">상품별 실구매 추이</span>
+        <h1 class="page-title">상품 성과</h1>
+        <span class="page-caption">{{ selectedPeriodLabel }} 기준 선택 상품의 결제 흐름과 상태</span>
       </div>
       <div class="page-header-actions">
-        <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
-        <StatusBadge v-if="selectedMonth !== 'all' && productWeekFilter" :label="weekLabelFromCode(selectedMonth, productWeekFilter)" variant="info" />
         <select v-if="selectedMonth !== 'all'" v-model="productWeekFilter" class="select select-compact header-select">
           <option value="">주차 전체</option>
           <option v-for="week in productWeekOptions" :key="week.value" :value="week.value">{{ week.label }}</option>
         </select>
       </div>
     </div>
-
-    <div v-if="loading" class="card product-trends-loading">상품 구매 추이를 불러오는 중입니다.</div>
+    <div v-if="loading" class="card product-trends-loading">상품 성과를 불러오는 중입니다.</div>
 
     <template v-else>
       <div class="product-trends-layout">
         <div class="card product-list-card">
           <div class="card-header product-card-header">
-            <h3 class="card-title">상품별 판매량</h3>
+            <div>
+              <h3 class="card-title">상품 목록</h3>
+              <span class="product-list-caption">결제 금액 순</span>
+            </div>
             <StatusBadge :label="`${filteredProductSummaries.length}개 상품`" variant="neutral" />
           </div>
-          <SearchInput v-model="productSearchQuery" placeholder="상품명 또는 옵션 검색..." width="100%" />
+          <SearchInput v-model="productSearchQuery" placeholder="상품명 검색..." width="100%" />
           <div v-if="filteredProductSummaries.length === 0" class="empty-inline">조건에 맞는 상품이 없습니다.</div>
           <div v-else class="product-list">
             <button
-              v-for="product in filteredProductSummaries"
+              v-for="(product, index) in filteredProductSummaries"
               :key="product.key"
               type="button"
               class="product-list-item"
               :class="{ active: product.key === selectedProductKey }"
               @click="selectedProductKey = product.key"
             >
+              <span class="product-list-rank">{{ index + 1 }}</span>
               <div class="product-list-main">
                 <strong>{{ product.name }}</strong>
-                <span>옵션 {{ product.optionInfo }}</span>
+                <span>최근 주문 {{ formatShortDate(product.lastOrder) }}</span>
               </div>
-              <span class="product-list-count">{{ formatQuantityCount(product.totalQuantity) }}개</span>
+              <div class="product-list-value">
+                <strong class="product-list-count">{{ formatCurrencyAmount(product.totalPaymentAmount) }}</strong>
+                <span>실구매 {{ formatQuantityCount(product.totalQuantity) }}개</span>
+              </div>
             </button>
           </div>
         </div>
 
         <div class="product-trends-main">
           <template v-if="selectedProductSummary">
-            <div class="product-summary-grid">
-              <div class="card product-summary-card">
-                <span class="product-summary-label">총 실구매 수량</span>
-                <strong class="product-summary-value">{{ formatQuantityCount(selectedProductSummary.totalQuantity) }}개</strong>
-                <span class="product-summary-meta">{{ trendRangeLabel }} · 옵션 {{ selectedProductSummary.optionInfo }}</span>
+            <div class="card product-summary-card">
+              <div class="product-summary-top">
+                <div class="product-summary-copy">
+                  <span class="product-summary-label">선택 상품</span>
+                  <h2 class="product-summary-title">{{ selectedProductSummary.name }}</h2>
+                  <span class="product-summary-subtitle">
+                    최근 주문 {{ formatShortDate(selectedProductSummary.lastOrder) }} · {{ selectedProductSummary.purchaseDateCount.toLocaleString() }}일에 걸쳐 판매
+                  </span>
+                </div>
+                <div class="product-summary-highlight">
+                  <span>매출 비중</span>
+                  <strong>{{ formatCurrencyAmount(selectedProductSummary.totalPaymentAmount) }}</strong>
+                  <small>전체 상품 중 매출 비중 {{ selectedProductShareRate }}%</small>
+                </div>
               </div>
-              <div class="card product-summary-card">
-                <span class="product-summary-label">최근 구간 수량</span>
-                <strong class="product-summary-value">{{ formatQuantityCount(latestProductValue) }}개</strong>
-                <span class="product-summary-meta">{{ latestProductLabel }}</span>
-              </div>
-              <div class="card product-summary-card">
-                <span class="product-summary-label">최근 구간 변화율</span>
-                <strong class="product-summary-value">{{ formatTrendGrowthRate(latestProductGrowthRate) }}</strong>
-                <span class="product-summary-meta">{{ latestProductTransitionLabel }}</span>
+
+              <div class="product-summary-stats">
+                <div class="product-summary-stat">
+                  <span>결제 금액</span>
+                  <strong>{{ formatCurrencyAmount(selectedProductSummary.totalPaymentAmount) }}</strong>
+                </div>
+                <div class="product-summary-stat">
+                  <span>정산 예정</span>
+                  <strong>{{ formatCurrencyAmount(selectedProductSummary.totalExpectedSettlementAmount) }}</strong>
+                </div>
+                <div class="product-summary-stat">
+                  <span>주문 건수</span>
+                  <strong>{{ selectedProductSummary.orderCount.toLocaleString() }}건</strong>
+                  <small>{{ selectedProductSummary.purchaseDateCount.toLocaleString() }}일에 걸쳐 판매</small>
+                </div>
+                <div class="product-summary-stat">
+                  <span>실구매 수량</span>
+                  <strong>{{ formatQuantityCount(selectedProductSummary.totalQuantity) }}개</strong>
+                </div>
+                <div class="product-summary-stat">
+                  <span>최근 변화율</span>
+                  <strong>{{ formatTrendGrowthRate(latestProductGrowthRate) }}</strong>
+                  <small>{{ latestProductTransitionLabel }}</small>
+                </div>
               </div>
             </div>
 
-            <div class="card">
-              <div class="card-header product-card-header">
-                <h3 class="card-title">{{ selectedProductSummary.name }}</h3>
-                <div class="product-card-header-meta">
-                  <StatusBadge :label="`옵션 ${selectedProductSummary.optionInfo}`" variant="neutral" />
-                </div>
-              </div>
-              <div class="trend-chart">
-                <div class="trend-chart-area">
-                  <canvas ref="productTrendChartCanvas"></canvas>
-                </div>
-              </div>
-            </div>
-
-            <div class="product-insight-grid">
+            <div class="product-detail-grid">
               <div class="card">
                 <div class="card-header product-card-header">
-                  <h3 class="card-title">옵션별 판매량</h3>
-                  <StatusBadge :label="`${topOptionRows.length}개 옵션`" variant="neutral" />
+                  <div>
+                    <h3 class="card-title">결제 금액 추이</h3>
+                    <span class="product-chart-caption">{{ trendTitle }}</span>
+                  </div>
+                  <div class="product-card-header-meta">
+                    <StatusBadge :label="formatCurrencyAmount(latestProductValue)" variant="info" />
+                  </div>
                 </div>
-                <div v-if="topOptionRows.length === 0" class="empty-inline">옵션 집계 데이터가 없습니다.</div>
-                <div v-else class="product-insight-list">
-                  <div v-for="item in topOptionRows" :key="`${item.productName}-${item.optionInfo}`" class="product-insight-item">
-                    <div class="product-insight-copy">
-                      <strong>{{ item.optionInfo }}</strong>
-                      <span>{{ item.productName }}</span>
-                    </div>
-                    <span class="product-insight-value">{{ formatQuantityCount(item.count) }}개</span>
+                <div class="trend-chart">
+                  <div class="trend-chart-area">
+                    <canvas ref="productTrendChartCanvas"></canvas>
                   </div>
                 </div>
               </div>
 
               <div class="card">
                 <div class="card-header product-card-header">
-                  <h3 class="card-title">주문상태 분포</h3>
-                  <StatusBadge :label="`${statusDistributionRows.length}개 상태`" variant="neutral" />
+                  <div>
+                    <h3 class="card-title">흐름 변화</h3>
+                    <span class="product-chart-caption">직전 구간과 비교해 흐름이 어떻게 바뀌는지 정리했습니다.</span>
+                  </div>
+                  <StatusBadge :label="`${selectedProductTransitionRows.length}개 구간`" variant="neutral" />
                 </div>
-                <div v-if="statusDistributionRows.length === 0" class="empty-inline">주문상태 데이터가 없습니다.</div>
+                <div v-if="selectedProductTransitionRows.length === 0" class="empty-inline">비교할 구간이 없습니다.</div>
                 <div v-else class="product-insight-list">
-                  <div v-for="item in statusDistributionRows" :key="item.key" class="product-insight-item">
+                  <div v-for="item in selectedProductTransitionRows" :key="item.key" class="product-insight-item">
                     <div class="product-insight-copy">
                       <strong>{{ item.label }}</strong>
-                      <span>{{ item.percent }}%</span>
+                      <span>{{ item.valueLabel }}</span>
                     </div>
-                    <StatusBadge :label="`${item.count}건`" :variant="item.variant" />
+                    <div class="product-status-stat">
+                      <StatusBadge :label="item.rateLabel" :variant="item.variant" />
+                      <div class="product-insight-bar-wrap">
+                        <div class="product-insight-bar" :style="{ width: `${transitionInsightWidth(item.rate)}%` }"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header product-card-header">
+                <div>
+                  <h3 class="card-title">주문 상태 흐름</h3>
+                  <span class="product-chart-caption">선택 상품 주문이 어느 상태에 가장 많이 모이는지 정리했습니다.</span>
+                </div>
+                <StatusBadge :label="`${statusDistributionRows.length}개 상태`" variant="neutral" />
+              </div>
+              <div v-if="statusDistributionRows.length === 0" class="empty-inline">주문상태 데이터가 없습니다.</div>
+              <div v-else class="product-insight-list">
+                <div v-for="item in statusDistributionRows" :key="item.key" class="product-insight-item">
+                  <div class="product-insight-copy">
+                    <strong>{{ item.label }}</strong>
+                    <span>{{ item.count }}건 · {{ item.percent }}%</span>
+                  </div>
+                  <div class="product-status-stat">
+                    <StatusBadge :label="`${item.percent}%`" :variant="item.variant" />
+                    <div class="product-insight-bar-wrap">
+                      <div class="product-insight-bar" :style="{ width: `${item.percent}%` }"></div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -134,8 +181,9 @@ import {
   Legend,
   Filler,
 } from 'chart.js'
+import { formatCompactCurrency, formatCurrency } from '~/composables/useMoneyFormat'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
-import { purchaseQuantityInput, purchaseSelectColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
+import { purchaseAmountSelectColumns, purchaseQuantityInput, purchaseSelectColumns, resolvePurchaseExpectedSettlementAmount, resolvePurchasePaymentAmount, supportsPurchaseAmountColumns, supportsPurchaseSourceColumns } from '~/composables/usePurchaseSourceFields'
 import { buildWeekOptions, weekCodeFromDate, weekDateTokensFromCode, weekLabelFromCode } from '~/composables/useWeekFilter'
 import { computeTrendGrowthRates, formatTrendGrowthRate, trendGrowthVariant, type TrendGrowthRate } from '~/composables/useTrendGrowth'
 import { formatOrderStatusLabel, orderStatusBadgeVariant } from '~/composables/useOrderStatusLabel'
@@ -153,6 +201,13 @@ interface PurchaseRow {
   source_product_name?: string
   source_option_info?: string
   quantity: number
+  payment_amount: number | null
+  order_discount_amount: number | null
+  delivery_fee_amount: number | null
+  delivery_discount_amount: number | null
+  expected_settlement_amount: number | null
+  payment_commission: number | null
+  sale_commission: number | null
   order_date: string
   target_month: string
   order_status: string
@@ -165,30 +220,24 @@ interface PurchaseRow {
 interface ProductTrendSummary {
   key: string
   name: string
-  optionInfo: string
   totalQuantity: number
+  totalPaymentAmount: number
+  totalExpectedSettlementAmount: number
+  orderCount: number
   purchaseDateCount: number
   lastOrder: string
   seriesValues: number[]
   growthRates: Array<number | null>
   latestGrowthRate: TrendGrowthRate
-  growthLabel: string
-  growthVariant: 'success' | 'danger' | 'neutral'
 }
 
 interface ProductTransitionRow {
   key: string
   label: string
   rateLabel: string
+  rate: number
   valueLabel: string
   variant: 'success' | 'danger' | 'neutral'
-  left: string
-}
-
-interface OptionSalesRow {
-  productName: string
-  optionInfo: string
-  count: number
 }
 
 interface StatusDistributionRow {
@@ -221,6 +270,24 @@ const productTrendGrowthRates = ref<Array<number | null>>([])
 const productSummaries = ref<ProductTrendSummary[]>([])
 const scopedPurchaseRows = ref<PurchaseRow[]>([])
 
+function normalizeAmount(value: unknown): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.round(parsed)
+}
+
+function formatCurrencyAmount(value: number): string {
+  return formatCurrency(value)
+}
+
+function resolveRowPaymentAmount(row: Pick<PurchaseRow, 'payment_amount'>): number {
+  return resolvePurchasePaymentAmount(row)
+}
+
+function resolveRowExpectedSettlementAmount(row: Pick<PurchaseRow, 'expected_settlement_amount'>): number {
+  return resolvePurchaseExpectedSettlementAmount(row)
+}
+
 // 현재 월에서 선택 가능한 주차 목록
 const productWeekOptions = computed(() => {
   if (selectedMonth.value === 'all') return []
@@ -229,9 +296,9 @@ const productWeekOptions = computed(() => {
 
 // 대표 추이 차트 제목/범위 라벨
 const trendTitle = computed(() => {
-  if (selectedMonth.value === 'all') return '월별 구매 추이'
-  if (productWeekFilter.value) return '일별 구매 추이'
-  return '주차별 구매 추이'
+  if (selectedMonth.value === 'all') return '월별 결제 금액 추이'
+  if (productWeekFilter.value) return '일별 결제 금액 추이'
+  return '주차별 결제 금액 추이'
 })
 
 const trendRangeLabel = computed(() => {
@@ -247,7 +314,7 @@ const trendRangeLabel = computed(() => {
 const filteredProductSummaries = computed(() => {
   const query = productSearchQuery.value.trim()
   if (!query) return productSummaries.value
-  return productSummaries.value.filter((item) => matchesSearchQuery(query, item.name, item.optionInfo))
+  return productSummaries.value.filter((item) => matchesSearchQuery(query, item.name))
 })
 
 // 좌측 리스트에서 선택된 상품 하나를 찾는다.
@@ -262,12 +329,15 @@ const latestProductValue = computed(() => {
   return productTrendValues.value[productTrendValues.value.length - 1] || 0
 })
 
-const latestProductLabel = computed(() => {
-  return productTrendLabels.value[productTrendLabels.value.length - 1] || trendRangeLabel.value
-})
-
 const latestProductGrowthRate = computed<TrendGrowthRate>(() => {
   return selectedProductSummary.value?.latestGrowthRate ?? productTrendGrowthRates.value[productTrendGrowthRates.value.length - 1] ?? null
+})
+
+const selectedProductShareRate = computed(() => {
+  if (!selectedProductSummary.value) return 0
+  const totalAmount = productSummaries.value.reduce((sum, item) => sum + item.totalPaymentAmount, 0)
+  if (totalAmount <= 0) return 0
+  return Math.round((selectedProductSummary.value.totalPaymentAmount / totalAmount) * 100)
 })
 
 const latestProductTransitionLabel = computed(() => {
@@ -275,31 +345,21 @@ const latestProductTransitionLabel = computed(() => {
   return latestTransition?.label || '비교 구간 없음'
 })
 
-// 현재 범위에서 옵션별 판매량 TOP 집계
-const topOptionRows = computed<OptionSalesRow[]>(() => {
-  const optionMap = new Map<string, OptionSalesRow>()
-  for (const row of scopedPurchaseRows.value) {
-    const quantityResult = computePurchaseQuantity(purchaseQuantityInput(row))
-    for (const part of quantityResult.dashboardBreakdown) {
-      const optionInfo = normalizeOptionInfo(part.optionLabel)
-      const productName = normalizeMissionProductName(String(row.product_name || '').trim()) || String(row.product_name || '').trim() || '-'
-      const key = `${productName}::${optionInfo}`
-      if (!optionMap.has(key)) {
-        optionMap.set(key, { productName, optionInfo, count: 0 })
-      }
-      optionMap.get(key)!.count += part.count
-    }
-  }
+function formatShortDate(dateToken: string): string {
+  const value = String(dateToken || '').slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return '-'
+  return value.slice(5).replace('-', '.')
+}
 
-  return Array.from(optionMap.values())
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 8)
+const selectedProductRows = computed(() => {
+  if (!selectedProductSummary.value) return []
+  return scopedPurchaseRows.value.filter((row) => productGroupKey(row) === selectedProductSummary.value?.key)
 })
 
 // 현재 범위에서 주문상태가 어떻게 분포하는지 집계
 const statusDistributionRows = computed<StatusDistributionRow[]>(() => {
   const statusMap = new Map<string, StatusDistributionRow>()
-  for (const row of scopedPurchaseRows.value) {
+  for (const row of selectedProductRows.value) {
     const label = formatOrderStatusLabel(row.order_status, row.claim_status)
     const key = `${row.order_status}::${row.claim_status || ''}`
     if (!statusMap.has(key)) {
@@ -314,7 +374,7 @@ const statusDistributionRows = computed<StatusDistributionRow[]>(() => {
     statusMap.get(key)!.count += 1
   }
 
-  const total = Math.max(scopedPurchaseRows.value.length, 1)
+  const total = Math.max(selectedProductRows.value.length, 1)
   return Array.from(statusMap.values())
     .map((row) => ({
       ...row,
@@ -337,15 +397,19 @@ const selectedProductTransitionRows = computed<ProductTransitionRow[]>(() => {
       key: `${previousLabel}-${currentLabel}-${index}`,
       label: `${previousLabel} -> ${currentLabel}`,
       rateLabel: formatTrendGrowthRate(growthRate),
-      valueLabel: `${formatQuantityCount(previousValue)}개 -> ${formatQuantityCount(currentValue)}개`,
+      rate: growthRate === null ? 0 : Math.abs(growthRate),
+      valueLabel: `${formatCurrencyAmount(previousValue)} -> ${formatCurrencyAmount(currentValue)}`,
       variant: trendGrowthVariant(growthRate),
-      left: `${((index - 0.5) / Math.max(productTrendLabels.value.length - 1, 1)) * 100}%`,
     })
   }
   return rows
 })
 
-const selectedProductInlineMarkers = computed(() => selectedProductTransitionRows.value)
+function transitionInsightWidth(rate: number): number {
+  const maxRate = Math.max(...selectedProductTransitionRows.value.map((row) => Math.abs(row.rate)), 0)
+  if (maxRate <= 0) return 16
+  return Math.max(16, Math.round((Math.abs(rate) / maxRate) * 100))
+}
 
 // 날짜/검색/상품명 정규화 보조 함수
 function parseOrderDate(value: string): Date {
@@ -363,10 +427,6 @@ function matchesSearchQuery(query: string, ...targets: Array<string | number | n
   const normalized = normalizeForMatch(query)
   if (!normalized) return true
   return targets.some((target) => normalizeForMatch(String(target || '')).includes(normalized))
-}
-
-function normalizeOptionInfo(value: string): string {
-  return String(value || '').trim() || '-'
 }
 
 function normalizeMissionProductName(rawName: string): string {
@@ -392,20 +452,19 @@ function normalizeMissionProductName(rawName: string): string {
   return name
 }
 
-// 판매분석 화면에서는 product_id + option_info 조합을 하나의 판매 단위로 본다.
+// 판매분석 화면에서는 상품 단위 묶음을 기준으로 본다.
 function purchaseDateKey(row: Pick<PurchaseRow, 'order_date'>): string {
   return String(row.order_date || '').slice(0, 10)
 }
 
 function productGroupKey(row: Pick<PurchaseRow, 'product_id' | 'product_name' | 'option_info'>): string {
-  const optionKey = normalizeForMatch(normalizeOptionInfo(String(row.option_info || '')))
   const productId = String(row.product_id || '').trim()
-  if (productId) return `id:${productId}:option:${optionKey || '-'}`
+  if (productId) return `id:${productId}`
 
   const canonicalName = normalizeMissionProductName(String(row.product_name || ''))
   const normalized = normalizeForMatch(canonicalName || String(row.product_name || ''))
-  if (normalized) return `name:${normalized}:option:${optionKey || '-'}`
-  return `raw:${String(row.product_name || '').trim()}:option:${optionKey || '-'}`
+  if (normalized) return `name:${normalized}`
+  return `raw:${String(row.product_name || '').trim()}`
 }
 
 // 차트 축 라벨 생성용 날짜 보조 함수들
@@ -490,13 +549,18 @@ function buildWeekDateTokens(monthToken: string, weekCode: string): string[] {
 async function fetchPurchases(): Promise<PurchaseRow[]> {
   const rows: PurchaseRow[] = []
   const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
+  const includeAmountColumns = await supportsPurchaseAmountColumns(supabase)
   const baseColumns = 'purchase_id, customer_key, buyer_name, buyer_id, product_id, product_name, option_info, quantity, order_date, target_month, order_status, claim_status, is_fake, needs_review, filter_ver'
+  const selectColumns = purchaseAmountSelectColumns(
+    purchaseSelectColumns(baseColumns, includeSourceColumns),
+    includeAmountColumns,
+  )
   const PAGE_SIZE = 1000
 
   for (let from = 0; ; from += PAGE_SIZE) {
     const query = supabase
       .from('purchases')
-      .select(purchaseSelectColumns(baseColumns, includeSourceColumns))
+      .select(selectColumns)
       .not('filter_ver', 'is', null)
       .eq('is_fake', false)
       .eq('needs_review', false)
@@ -519,6 +583,13 @@ async function fetchPurchases(): Promise<PurchaseRow[]> {
       source_product_name: String(row.source_product_name || ''),
       source_option_info: String(row.source_option_info || ''),
       quantity: Number(row.quantity) || 1,
+      payment_amount: includeAmountColumns ? normalizeAmount(row.payment_amount) : null,
+      order_discount_amount: includeAmountColumns ? normalizeAmount(row.order_discount_amount) : null,
+      delivery_fee_amount: includeAmountColumns ? normalizeAmount(row.delivery_fee_amount) : null,
+      delivery_discount_amount: includeAmountColumns ? normalizeAmount(row.delivery_discount_amount) : null,
+      expected_settlement_amount: includeAmountColumns ? normalizeAmount(row.expected_settlement_amount) : null,
+      payment_commission: includeAmountColumns ? normalizeAmount(row.payment_commission) : null,
+      sale_commission: includeAmountColumns ? normalizeAmount(row.sale_commission) : null,
       order_date: String(row.order_date || ''),
       target_month: String(row.target_month || ''),
       order_status: String(row.order_status || ''),
@@ -581,8 +652,10 @@ function applyProductScope() {
   const axis = buildAxis(monthSnapshot, weekSnapshot)
   const summaryMap = new Map<string, {
     name: string
-    optionInfo: string
     totalQuantity: number
+    totalPaymentAmount: number
+    totalExpectedSettlementAmount: number
+    orderCount: number
     purchaseDates: Set<string>
     lastOrder: string
     seriesMap: Map<string, number>
@@ -592,12 +665,13 @@ function applyProductScope() {
     const key = productGroupKey(row)
     const quantity = computePurchaseQuantity(purchaseQuantityInput(row)).totalCount
     const displayName = normalizeMissionProductName(String(row.product_name || '').trim()) || String(row.product_name || '').trim() || '-'
-    const optionInfo = normalizeOptionInfo(String(row.option_info || ''))
     if (!summaryMap.has(key)) {
       summaryMap.set(key, {
         name: displayName,
-        optionInfo,
         totalQuantity: 0,
+        totalPaymentAmount: 0,
+        totalExpectedSettlementAmount: 0,
+        orderCount: 0,
         purchaseDates: new Set<string>(),
         lastOrder: purchaseDateKey(row),
         seriesMap: new Map<string, number>(axis.keys.map((axisKey) => [axisKey, 0])),
@@ -606,13 +680,16 @@ function applyProductScope() {
 
     const summary = summaryMap.get(key)!
     summary.totalQuantity += quantity
+    summary.totalPaymentAmount += resolveRowPaymentAmount(row)
+    summary.totalExpectedSettlementAmount += resolveRowExpectedSettlementAmount(row)
+    summary.orderCount += 1
     summary.purchaseDates.add(purchaseDateKey(row))
     if (parseOrderDate(row.order_date).getTime() > parseOrderDate(summary.lastOrder).getTime()) {
       summary.lastOrder = purchaseDateKey(row)
     }
     const axisKey = axis.resolveKey(row)
     if (summary.seriesMap.has(axisKey)) {
-      summary.seriesMap.set(axisKey, (summary.seriesMap.get(axisKey) || 0) + quantity)
+      summary.seriesMap.set(axisKey, (summary.seriesMap.get(axisKey) || 0) + resolveRowPaymentAmount(row))
     }
   }
 
@@ -624,23 +701,23 @@ function applyProductScope() {
       return {
         key,
         name: summary.name,
-        optionInfo: summary.optionInfo,
         totalQuantity: summary.totalQuantity,
+        totalPaymentAmount: summary.totalPaymentAmount,
+        totalExpectedSettlementAmount: summary.totalExpectedSettlementAmount,
+        orderCount: summary.orderCount,
         purchaseDateCount: summary.purchaseDates.size,
         lastOrder: summary.lastOrder,
         seriesValues,
         growthRates,
         latestGrowthRate,
-        growthLabel: latestGrowthRate === null ? '최근 변화 -' : `최근 변화 ${formatTrendGrowthRate(latestGrowthRate)}`,
-        growthVariant: trendGrowthVariant(latestGrowthRate),
       } satisfies ProductTrendSummary
     })
     .sort((a, b) => {
+      const byAmount = b.totalPaymentAmount - a.totalPaymentAmount
+      if (byAmount !== 0) return byAmount
       const byQuantity = b.totalQuantity - a.totalQuantity
       if (byQuantity !== 0) return byQuantity
-      const byName = a.name.localeCompare(b.name, 'ko')
-      if (byName !== 0) return byName
-      return a.optionInfo.localeCompare(b.optionInfo, 'ko')
+      return a.name.localeCompare(b.name, 'ko')
     })
 
   productSummaries.value = nextSummaries
@@ -669,7 +746,7 @@ function renderProductTrendChart() {
       labels: productTrendLabels.value,
       datasets: [
         {
-          label: '실구매 수량',
+          label: '결제 금액',
           data: productTrendValues.value,
           borderColor: '#2563EB',
           backgroundColor: 'rgba(37, 99, 235, 0.08)',
@@ -707,7 +784,7 @@ function renderProductTrendChart() {
           padding: 10,
           cornerRadius: 6,
           callbacks: {
-            label: (ctx) => `실구매 ${formatQuantityCount(Number(ctx.parsed.y || 0))}개`,
+            label: (ctx) => `결제 ${formatCurrency(Number(ctx.parsed.y || 0))}`,
           },
         },
       },
@@ -726,7 +803,7 @@ function renderProductTrendChart() {
           ticks: {
             font: { size: 11 },
             color: '#9CA3AF',
-            callback: (value) => formatQuantityCount(Number(value)),
+            callback: (value) => formatCompactCurrency(Number(value)),
           },
           beginAtZero: true,
         },
@@ -800,12 +877,13 @@ watch(
 
 // 차트 데이터가 바뀌면 실제 Chart.js를 다시 렌더링한다.
 watch(
-  () => [productTrendLabels.value, productTrendValues.value],
-  async () => {
+  () => [loading.value, productTrendChartCanvas.value, selectedProductSummary.value?.key, productTrendLabels.value, productTrendValues.value],
+  async ([isLoading, canvas]) => {
+    if (isLoading || !canvas || !selectedProductSummary.value) return
     await nextTick()
     renderProductTrendChart()
   },
-  { deep: true },
+  { deep: true, flush: 'post' },
 )
 
 onBeforeUnmount(() => {
@@ -826,6 +904,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: var(--space-lg);
   flex-wrap: wrap;
+  padding: 2px 0 4px;
 }
 
 .page-header-left {
@@ -843,22 +922,22 @@ onBeforeUnmount(() => {
 
 .page-title {
   margin: 0;
-  font-size: 1.9rem;
+  font-size: 1.8rem;
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
   color: var(--color-text);
 }
 
 .page-caption {
   font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
+  font-weight: 500;
+  color: var(--color-text-secondary);
 }
 
 .product-trends-layout {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: var(--space-lg);
+  grid-template-columns: 312px minmax(0, 1fr);
+  gap: 18px;
   align-items: start;
 }
 
@@ -868,8 +947,11 @@ onBeforeUnmount(() => {
 }
 
 .product-list-card {
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.10);
+  background: #FFFFFF;
   box-shadow: none;
+  position: sticky;
+  top: 28px;
 }
 
 .product-trends-main {
@@ -878,10 +960,10 @@ onBeforeUnmount(() => {
   gap: var(--space-lg);
 }
 
-.product-insight-grid {
+.product-detail-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-lg);
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
+  gap: 18px;
 }
 
 .product-insight-list {
@@ -895,7 +977,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
-  padding: 10px 0;
+  padding: 12px 0;
   border-bottom: 1px solid var(--color-border-soft, #EEF2F7);
 }
 
@@ -928,6 +1010,29 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.product-insight-stat,
+.product-status-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 140px;
+}
+
+.product-insight-bar-wrap {
+  width: 140px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  overflow: hidden;
+}
+
+.product-insight-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: #2563EB;
+}
+
 .product-card-header {
   display: flex;
   align-items: flex-start;
@@ -947,12 +1052,19 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+.product-list-caption {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
 .product-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: 8px;
   margin-top: var(--space-md);
-  max-height: 720px;
+  max-height: 680px;
   overflow: auto;
 }
 
@@ -960,25 +1072,40 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-sm);
+  gap: 12px;
   width: 100%;
   border: 1px solid var(--color-border);
   border-radius: 14px;
   background: #fff;
-  padding: 14px 16px;
+  padding: 15px 16px;
   text-align: left;
   transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
 
 .product-list-item:hover {
-  border-color: rgba(37, 99, 235, 0.28);
-  background: #F8FBFF;
-  transform: translateY(-1px);
+  border-color: rgba(37, 99, 235, 0.18);
+  background: #FAFCFF;
+  transform: none;
 }
 
 .product-list-item.active {
-  border-color: rgba(37, 99, 235, 0.45);
-  background: #EEF4FF;
+  border-color: rgba(37, 99, 235, 0.24);
+  background: #F6F9FF;
+  box-shadow: none;
+}
+
+.product-list-rank {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: #F2F4F8;
+  color: #4E5968;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 800;
+  flex-shrink: 0;
 }
 
 .product-list-main {
@@ -986,6 +1113,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  flex: 1;
 }
 
 .product-list-main strong {
@@ -998,49 +1126,135 @@ onBeforeUnmount(() => {
 }
 
 .product-list-count {
-  font-size: 0.88rem;
+  font-size: 0.94rem;
   font-weight: 700;
   color: var(--color-text);
   white-space: nowrap;
 }
 
-.product-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 26px;
-  overflow: hidden;
+.product-list-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.product-list-value span {
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
 }
 
 .product-summary-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 22px 24px;
+  gap: 18px;
+  padding: 26px 28px;
+  border: 1px solid rgba(148, 163, 184, 0.10);
+  background: #FFFFFF;
   box-shadow: none;
-  border: none;
-  background: transparent;
 }
 
-.product-summary-card + .product-summary-card {
-  border-left: 1px solid rgba(148, 163, 184, 0.12);
+.product-summary-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.product-summary-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.product-summary-highlight {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: #FFFFFF;
+  border: 1px solid var(--color-border-light);
+  box-shadow: none;
 }
 
 .product-summary-label {
   font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.product-summary-highlight span {
+  font-size: 0.8rem;
+  font-weight: 700;
   color: var(--color-text-secondary);
 }
 
-.product-summary-value {
-  font-size: 1.45rem;
+.product-summary-highlight strong {
+  font-size: 1.55rem;
+  line-height: 1.1;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
+  color: var(--color-text);
 }
 
-.product-summary-meta {
+.product-summary-highlight small {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.product-summary-title {
+  margin: 0;
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+}
+
+.product-summary-subtitle {
+  font-size: 0.84rem;
+  color: var(--color-text-secondary);
+}
+
+.product-summary-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+  gap: 14px;
+}
+
+.product-summary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 17px;
+  border-radius: 14px;
+  background: #FAFBFD;
+  border: 1px solid rgba(148, 163, 184, 0.10);
+}
+
+.product-summary-stat span {
   font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.product-summary-stat strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.product-summary-stat small {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.product-chart-caption {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.82rem;
   color: var(--color-text-muted);
 }
 
@@ -1049,7 +1263,7 @@ onBeforeUnmount(() => {
 }
 
 .trend-chart-area {
-  height: 320px;
+  height: 336px;
 }
 
 .product-trends-loading,
@@ -1063,23 +1277,26 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
-  .product-insight-grid {
+  .product-detail-grid {
     grid-template-columns: 1fr;
   }
 
   .product-list {
     max-height: 320px;
   }
+
+  .product-list-card {
+    position: static;
+  }
 }
 
 @media (max-width: 900px) {
-  .product-summary-grid {
+  .product-summary-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .product-summary-card + .product-summary-card {
-    border-left: none;
-    border-top: 1px solid rgba(148, 163, 184, 0.12);
+  .product-trends-layout {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1089,13 +1306,24 @@ onBeforeUnmount(() => {
     align-items: stretch;
   }
 
-  .product-summary-grid {
-    grid-template-columns: 1fr;
-  }
-
+  .product-summary-top,
   .product-list-item {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .product-list-value,
+  .product-insight-stat,
+  .product-status-stat {
+    align-items: flex-start;
+  }
+
+  .product-insight-bar-wrap {
+    width: 100%;
+  }
+
+  .product-summary-stats {
+    grid-template-columns: 1fr;
   }
 
   .header-select {

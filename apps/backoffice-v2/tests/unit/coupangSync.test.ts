@@ -149,6 +149,7 @@ describe('coupang sync helpers', () => {
         orderedAt: '2026-02-15T10:01:02+09:00',
         paidAt: '2026-02-15T10:05:00+09:00',
         status: 'FINAL_DELIVERY',
+        shippingPrice: 3000,
         orderer: { name: '홍길동', safeNumber: '0500-0000-0001' },
         receiver: { name: '김집사', safeNumber: '0500-0000-0002', addr1: '서울시 강남구', addr2: '101호' },
         orderItems: [
@@ -157,6 +158,8 @@ describe('coupang sync helpers', () => {
             sellerProductName: '애착트릿 3종',
             sellerProductItemName: '단일상품',
             shippingCount: 2,
+            orderPrice: 19800,
+            discountPrice: 2000,
           },
         ],
       },
@@ -198,6 +201,9 @@ describe('coupang sync helpers', () => {
       product_name: '애착트릿',
       option_info: '3종세트',
       source_fulfillment_type: 'marketplace',
+      payment_amount: 19800,
+      order_discount_amount: 2000,
+      delivery_fee_amount: 3000,
       quantity: 2,
       order_status: 'FINAL_DELIVERY',
     })
@@ -215,6 +221,7 @@ describe('coupang sync helpers', () => {
             vendorItemId: '94132809744',
             productName: '굿포펫 엔자이츄 1개 꿀고구마맛 100g',
             salesQuantity: 1,
+            unitSalesPrice: 12900,
           },
         ],
       },
@@ -235,6 +242,7 @@ describe('coupang sync helpers', () => {
       product_id: 'goodforpet-002',
       product_name: '엔자이츄',
       source_fulfillment_type: 'rocket_growth',
+      payment_amount: 12900,
       order_status: 'PAID',
     })
     expect(resolved.purchase?.buyer_id).toContain('coupang:rocket_growth:default:order')

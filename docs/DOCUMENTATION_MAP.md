@@ -28,10 +28,16 @@
 
 - 기준: [BACKOFFICE_V2_NAVER_COMMERCE_API_DESIGN.md](/Users/huicheol/Desktop/스마트스토어/smartstore_purchase/docs/naver-commerce-api/BACKOFFICE_V2_NAVER_COMMERCE_API_DESIGN.md)
 - 세부 상품 매핑 기준: [COMMERCE_PRODUCT_MAPPING_STRATEGY.md](/Users/huicheol/Desktop/스마트스토어/smartstore_purchase/docs/naver-commerce-api/COMMERCE_PRODUCT_MAPPING_STRATEGY.md)
+- 굿포펫 분석/광고 확장 계획: [BACKOFFICE_V2_GOODFORPET_ENHANCEMENT_PLAN.md](/Users/huicheol/Desktop/스마트스토어/smartstore_purchase/docs/naver-commerce-api/BACKOFFICE_V2_GOODFORPET_ENHANCEMENT_PLAN.md)
+- 네이버 검색광고 구현 기준: [BACKOFFICE_V2_NAVER_SEARCHAD_IMPLEMENTATION.md](/Users/huicheol/Desktop/스마트스토어/smartstore_purchase/docs/naver-commerce-api/BACKOFFICE_V2_NAVER_SEARCHAD_IMPLEMENTATION.md)
 - 역할:
   - `apps/backoffice-v2`의 목표 아키텍처
   - 네이버 API 1차 구조
   - 추후 `쿠팡`, `카카오` 확장 원칙
+  - 굿포펫 분석 영역 고도화 원칙
+  - 데이터 신뢰도 레이어
+  - 향후 네이버 검색광고 API 확장 방향
+  - 실제 SearchAd read-only 구현 기준
   - `commerce_*` 테이블과 상품 매핑 설계
 
 ### 2-3. DB 현재 컬럼 기준

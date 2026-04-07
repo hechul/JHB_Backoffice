@@ -7,8 +7,8 @@
 
     <div class="page-header">
       <div>
-        <h1 class="page-title">블로그 미디어 수집 (최적화 모드)</h1>
-        <p class="page-subtitle">네이버 블로그 URL을 입력하면 원본 고화질 이미지·동영상을 1건씩 순차 수집 후 자동 다운로드합니다. <br>(서버 용량 최적화를 위해 다운로드가 완료된 파일은 즉시 삭제됩니다.)</p>
+        <h1 class="page-title">블로그 미디어 수집</h1>
+        <p class="page-subtitle">네이버 블로그 URL을 넣으면 이미지와 영상을 순차 저장합니다.</p>
       </div>
       <NuxtLink to="/automation" class="btn btn-secondary btn-sm">자동화 홈</NuxtLink>
     </div>
@@ -16,11 +16,14 @@
     <!-- URL 입력 카드 -->
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title">
-          <Link :size="18" :stroke-width="1.8" style="color: var(--color-primary)" />
-          블로그 URL 입력
-        </h3>
-        <StatusBadge v-if="urlCount > 0" :label="`${urlCount}개`" variant="info" dot />
+        <div>
+          <h3 class="card-title">
+            <Link :size="18" :stroke-width="1.8" style="color: var(--color-primary)" />
+            블로그 URL
+          </h3>
+          <p class="card-copy">한 줄에 하나씩 넣으면 순서대로 수집합니다.</p>
+        </div>
+        <span v-if="urlCount > 0" class="card-meta">{{ urlCount }}개</span>
       </div>
 
       <textarea
@@ -55,8 +58,11 @@
     <!-- 진행 상태 카드 -->
     <div v-if="isRunning || isDone" class="card">
       <div class="card-header">
-        <h3 class="card-title">진행 상태</h3>
-        <StatusBadge :label="statusLabel" :variant="statusVariant" dot />
+        <div>
+          <h3 class="card-title">진행 상태</h3>
+          <p class="card-copy">수집 순서와 실패 URL을 바로 확인합니다.</p>
+        </div>
+        <span class="card-meta" :class="statusMetaTone">{{ statusLabel }}</span>
       </div>
 
       <div class="progress-grid">
@@ -107,7 +113,7 @@
                   <a :href="f.url" target="_blank" rel="noopener" class="text-link">{{ f.url }}</a>
                 </td>
                 <td>
-                  <StatusBadge :label="failureReasonLabel(f.reason)" variant="danger" />
+                  <span class="failure-badge">{{ failureReasonLabel(f.reason) }}</span>
                 </td>
               </tr>
             </tbody>
@@ -123,8 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { AlertTriangle, AlertCircle, Download, Link, Loader2, RefreshCw } from 'lucide-vue-next'
-import StatusBadge from '~/components/StatusBadge.vue'
+import { AlertTriangle, Download, Link, Loader2, RefreshCw } from 'lucide-vue-next'
 import { useBlogMediaCollector } from '~/composables/useBlogMediaCollector'
 
 definePageMeta({ layout: 'home' })
@@ -165,6 +170,13 @@ const startButtonLabel = computed(() => {
   if (isRunning.value) return '수집 및 다운로드 진행 중...'
   if (isDone.value) return '새로 수집 시작'
   return '순차 수집 및 자동 다운로드 시작'
+})
+
+const statusMetaTone = computed(() => {
+  if (statusVariant.value === 'danger') return 'danger'
+  if (statusVariant.value === 'warning') return 'warning'
+  if (statusVariant.value === 'success') return 'success'
+  return ''
 })
 
 
@@ -208,11 +220,11 @@ function failureReasonLabel(reason: string): string {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--color-warning-light);
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fff8e8;
   color: #92400E;
-  border: 1px solid #FDE68A;
+  border: 1px solid #f6d58d;
   font-size: 0.8125rem;
 }
 
@@ -224,8 +236,8 @@ function failureReasonLabel(reason: string): string {
 }
 
 .page-title {
-  font-size: 1.125rem;
-  font-weight: 700;
+  font-size: 1.25rem;
+  font-weight: 760;
   color: var(--color-text);
   margin-bottom: 4px;
 }
@@ -233,6 +245,61 @@ function failureReasonLabel(reason: string): string {
 .page-subtitle {
   font-size: 0.8125rem;
   color: var(--color-text-secondary);
+}
+
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.card-copy {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.card-meta {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(223, 231, 240, 0.96);
+  background: #f8fafc;
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-meta.success {
+  background: #edf9f2;
+  border-color: #bde3c7;
+  color: #166534;
+}
+
+.card-meta.warning {
+  background: #fff8e8;
+  border-color: #f6d58d;
+  color: #92400E;
+}
+
+.card-meta.danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
 }
 
 .url-textarea {
@@ -285,10 +352,10 @@ function failureReasonLabel(reason: string): string {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border: 1px solid rgba(223, 231, 240, 0.96);
+  border-radius: 16px;
   padding: var(--space-md);
-  background: #FCFCFD;
+  background: #fbfcfe;
 }
 
 .progress-label {
@@ -301,11 +368,11 @@ function failureReasonLabel(reason: string): string {
   align-items: center;
   gap: var(--space-sm);
   margin-top: var(--space-md);
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: #EFF6FF;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f5f8fd;
   color: #1D4ED8;
-  border: 1px solid #BFDBFE;
+  border: 1px solid rgba(191, 219, 254, 0.86);
   font-size: 0.8125rem;
 }
 
@@ -332,6 +399,19 @@ function failureReasonLabel(reason: string): string {
   margin-bottom: var(--space-sm);
 }
 
+.failure-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 .url-cell {
   max-width: 400px;
   overflow: hidden;
@@ -354,5 +434,17 @@ function failureReasonLabel(reason: string): string {
 }
 .spin {
   animation: spin 1s linear infinite;
+}
+
+@media (max-width: 768px) {
+  .page-header,
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .progress-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

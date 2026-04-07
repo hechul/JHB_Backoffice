@@ -145,6 +145,13 @@ export interface PurchaseProjectionRow {
   source_option_code: string | null // 네이버 옵션 코드
   source_last_changed_at: string | null  // 마지막 상태 변경 시각
   source_sync_run_id: string        // 이 row를 만든 sync run ID
+  payment_amount: number | null     // 결제 금액
+  order_discount_amount: number | null // 주문 할인 금액
+  delivery_fee_amount: number | null // 배송비
+  delivery_discount_amount: number | null // 배송비 할인 금액
+  expected_settlement_amount: number | null // 정산 예정 금액
+  payment_commission: number | null // 결제 수수료
+  sale_commission: number | null    // 판매 수수료
   quantity: number                  // 주문 수량
   order_date: string                // 주문일 (YYYY-MM-DD)
   order_status: string              // 주문 상태 코드
@@ -207,6 +214,45 @@ function toNullableString(value: unknown): string | null {
 function toPositiveInteger(value: unknown, fallback = 1): number {
   const normalized = Number.parseInt(String(value ?? fallback), 10)
   return Number.isFinite(normalized) && normalized > 0 ? normalized : fallback
+}
+
+// 숫자/문자열/금액 객체를 nullable number로 변환한다.
+// 네이버 응답은 버전/필드에 따라 number, string, { amount } 형태가 섞일 수 있다.
+function toNullableNumber(value: unknown): number | null {
+  if (value == null) return null
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.replace(/,/g, '').trim()
+    if (!normalized) return null
+    const parsed = Number(normalized)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>
+
+    if ('amount' in record) return toNullableNumber(record.amount)
+    if ('value' in record) return toNullableNumber(record.value)
+    if ('units' in record) {
+      const units = toNullableNumber(record.units) ?? 0
+      const nanos = toNullableNumber(record.nanos) ?? 0
+      return units + (nanos / 1_000_000_000)
+    }
+  }
+
+  return null
+}
+
+function firstDefinedNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = toNullableNumber(value)
+    if (parsed !== null) return parsed
+  }
+  return null
 }
 
 // =====================================================================
@@ -464,6 +510,28 @@ function resolveProjectedOptionInfo(input: {
     || ''
 }
 
+function resolveNaverLineAmounts(orderInfo: NaverOrderInfo) {
+  const productOrder = orderInfo.productOrder || {}
+
+  return {
+    paymentAmount: firstDefinedNumber(
+      productOrder.totalPaymentAmount,
+      productOrder.generalPaymentAmount,
+      productOrder.initialPaymentAmount,
+    ),
+    orderDiscountAmount: firstDefinedNumber(
+      productOrder.orderDiscountAmount,
+      productOrder.sellerBurdenDiscountAmount,
+      productOrder.productImmediateDiscountAmount,
+    ),
+    deliveryFeeAmount: firstDefinedNumber(productOrder.deliveryFeeAmount),
+    deliveryDiscountAmount: firstDefinedNumber(productOrder.deliveryDiscountAmount),
+    expectedSettlementAmount: firstDefinedNumber(productOrder.expectedSettlementAmount),
+    paymentCommission: firstDefinedNumber(productOrder.paymentCommission),
+    saleCommission: firstDefinedNumber(productOrder.saleCommission),
+  }
+}
+
 // =====================================================================
 // raw line row 생성 (export)
 // =====================================================================
@@ -615,6 +683,7 @@ export function resolveNaverSyncRecord(input: {
 
   // 6단계: 내부 상품 ID 확정 — DB 매핑 우선, 없으면 카탈로그 fallback
   const internalProductId = mappingDecision?.internalProductId || resolvedProduct.mappedProductId || null
+  const monetaryValues = resolveNaverLineAmounts(input.orderInfo)
 
   // purchases.option_info 결정 (canonical_variant → 정규화 옵션 → 원본 순)
   const projectedOptionInfo = resolveProjectedOptionInfo({
@@ -667,6 +736,13 @@ export function resolveNaverSyncRecord(input: {
       source_option_code: rawLine.source_option_code,
       source_last_changed_at: rawLine.last_event_at,      // 마지막 상태 변경 시각
       source_sync_run_id: input.runId,
+      payment_amount: monetaryValues.paymentAmount,
+      order_discount_amount: monetaryValues.orderDiscountAmount,
+      delivery_fee_amount: monetaryValues.deliveryFeeAmount,
+      delivery_discount_amount: monetaryValues.deliveryDiscountAmount,
+      expected_settlement_amount: monetaryValues.expectedSettlementAmount,
+      payment_commission: monetaryValues.paymentCommission,
+      sale_commission: monetaryValues.saleCommission,
       quantity: rawLine.quantity,
       order_date: orderDate,
       order_status: rawLine.product_order_status || 'UNKNOWN',

@@ -2,49 +2,76 @@
   <div class="channel-analysis-page">
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">채널 분석</h1>
-        <span class="page-caption">채널별 실구매 비교</span>
+        <h1 class="page-title">채널 성과</h1>
+        <span class="page-caption">{{ selectedPeriodLabel }} 기준 네이버 · 쿠팡 비교</span>
       </div>
       <div class="page-header-actions">
-        <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
-        <StatusBadge v-if="selectedMonth !== 'all' && channelWeekFilter" :label="weekLabelFromCode(selectedMonth, channelWeekFilter)" variant="info" />
-        <StatusBadge v-if="loading" label="불러오는 중" variant="info" />
         <select v-if="selectedMonth !== 'all'" v-model="channelWeekFilter" class="select select-compact header-select">
           <option value="">주차 전체</option>
           <option v-for="week in channelWeekOptions" :key="week.value" :value="week.value">{{ week.label }}</option>
         </select>
       </div>
     </div>
-
     <div class="kpi-grid">
       <KpiCard
-        label="실구매 주문"
-        :value="overviewMetrics.realOrders"
+        label="총 결제 금액"
+        :value="overviewMetrics.paymentAmount"
         :icon="BarChart3"
+        format="currency"
         icon-bg="#EAF2FF"
         icon-color="#1D63E9"
       />
       <KpiCard
-        label="실구매 고객"
-        :value="overviewMetrics.realCustomers"
+        label="총 정산 예정"
+        :value="overviewMetrics.expectedSettlementAmount"
         :icon="Users"
+        format="currency"
         icon-bg="#ECFDF5"
         icon-color="#10B981"
       />
       <KpiCard
-        label="총 판매수량"
-        :value="overviewMetrics.totalQuantity"
+        label="총 수수료"
+        :value="overviewMetrics.paymentCommissionAmount"
         :icon="Package"
+        format="currency"
         icon-bg="#FFF7E8"
         icon-color="#F59E0B"
       />
       <KpiCard
-        label="활성 채널"
-        :value="channelMetrics.length"
+        label="평균 주문 금액"
+        :value="averageOrderValue"
         :icon="PieChart"
+        format="currency"
         icon-bg="#EEF2FF"
         icon-color="#5B6FD6"
       />
+    </div>
+
+    <div v-if="!loading && channelLeadSummary.leader" class="card compare-hero-card">
+      <div class="compare-hero-copy">
+        <span class="compare-hero-label">채널 비교 요약</span>
+        <h2 class="compare-hero-title">{{ channelLeadSummary.leader.label }} 우세</h2>
+        <p class="compare-hero-caption">
+          {{ channelLeadSummary.runnerUp ? `${channelLeadSummary.runnerUp.label} 대비 ${formatCurrencyAmount(channelLeadSummary.gapAmount)} 차이` : `${selectedPeriodLabel} 기준 집계` }}
+        </p>
+      </div>
+      <div class="compare-hero-stats">
+        <div class="compare-hero-stat compare-hero-stat--primary">
+          <span>선두 채널</span>
+          <strong>{{ channelLeadSummary.leader.label }}</strong>
+          <small>{{ formatCurrencyAmount(channelLeadSummary.leader.paymentAmount) }} · 비중 {{ channelLeadSummary.leader.shareOfRevenue }}%</small>
+        </div>
+        <div v-if="channelLeadSummary.runnerUp" class="compare-hero-stat">
+          <span>다음 채널</span>
+          <strong>{{ channelLeadSummary.runnerUp.label }}</strong>
+          <small>{{ formatCurrencyAmount(channelLeadSummary.runnerUp.paymentAmount) }} · 비중 {{ channelLeadSummary.runnerUp.shareOfRevenue }}%</small>
+        </div>
+        <div class="compare-hero-stat">
+          <span>채널 평균 주문 금액</span>
+          <strong>{{ formatCurrencyAmount(averageOrderValue) }}</strong>
+          <small>{{ overviewMetrics.realOrders.toLocaleString() }}건 기준</small>
+        </div>
+      </div>
     </div>
 
     <div v-if="loading" class="card loading-card">채널 데이터를 불러오는 중입니다.</div>
@@ -52,7 +79,7 @@
     <template v-else>
       <div v-if="channelMetrics.length === 0" class="card empty-card">
         <strong>분석 가능한 채널 데이터가 없습니다.</strong>
-        <span>주문 동기화 또는 업로드 이후 다시 확인해 주세요.</span>
+        <span>주문 동기화 이후 다시 확인해 주세요.</span>
       </div>
 
       <div v-else class="channel-grid">
@@ -69,41 +96,45 @@
               <strong class="channel-card-title">{{ channel.label }}</strong>
               <span class="channel-card-sub">{{ channel.lastOrderLabel }}</span>
             </div>
-            <StatusBadge :label="`${channel.shareOfOrders}%`" :variant="channel.badgeVariant" />
+            <StatusBadge :label="`${channel.shareOfRevenue}%`" :variant="channel.badgeVariant" />
           </div>
 
           <div class="channel-primary">
-            <span class="channel-primary-label">실구매 주문</span>
-            <strong class="channel-primary-value">{{ channel.realOrders.toLocaleString() }}</strong>
+            <span class="channel-primary-label">결제 금액</span>
+            <strong class="channel-primary-value">{{ formatCurrencyAmount(channel.paymentAmount) }}</strong>
           </div>
 
           <div class="channel-stat-list">
             <div class="channel-stat-row">
-              <span>실구매 고객</span>
+              <span>정산 예정</span>
+              <strong>{{ formatCurrencyAmount(channel.expectedSettlementAmount) }}</strong>
+            </div>
+            <div class="channel-stat-row">
+              <span>구매 주문</span>
+              <strong>{{ channel.realOrders.toLocaleString() }}건</strong>
+            </div>
+            <div class="channel-stat-row">
+              <span>구매 고객</span>
               <strong>{{ channel.realCustomers.toLocaleString() }}명</strong>
             </div>
             <div class="channel-stat-row">
-              <span>총 판매수량</span>
-              <strong>{{ formatQuantityCount(channel.totalQuantity) }}개</strong>
-            </div>
-            <div class="channel-stat-row">
-              <span>재구매 고객</span>
-              <strong>{{ channel.repeatCustomers.toLocaleString() }}명</strong>
+              <span>건당 매출</span>
+              <strong>{{ formatCurrencyAmount(channel.averageOrderValue) }}</strong>
             </div>
           </div>
 
           <div class="channel-share">
             <div class="channel-share-head">
-              <span>채널 점유율</span>
-              <span>{{ channel.shareOfOrders }}%</span>
+              <span>매출 비중</span>
+              <span>{{ channel.shareOfRevenue }}%</span>
             </div>
             <div class="channel-share-track">
-              <div class="channel-share-fill" :style="{ width: `${channel.shareOfOrders}%` }"></div>
+              <div class="channel-share-fill" :style="{ width: `${channel.shareOfRevenue}%` }"></div>
             </div>
           </div>
 
           <div class="channel-card-footer">
-            <span>{{ channel.topProductLabel }}</span>
+            <span>대표 상품 {{ channel.topProductLabel }}</span>
             <MoveRight :size="14" :stroke-width="2" />
           </div>
         </button>
@@ -112,25 +143,34 @@
       <div class="analysis-grid">
         <div class="card">
           <div class="card-header">
-            <h3 class="card-title">최근 흐름</h3>
+            <div>
+              <h3 class="card-title">기간별 결제 비교</h3>
+              <span class="section-caption">같은 구간에서 네이버와 쿠팡의 금액 흐름을 바로 비교합니다.</span>
+            </div>
             <StatusBadge :label="trendRangeLabel" variant="neutral" />
           </div>
 
-          <div class="trend-stack">
-            <div v-for="channel in channelMetrics" :key="`trend-${channel.key}`" class="trend-channel-row">
-              <div class="trend-channel-head">
-                <strong>{{ channel.label }}</strong>
-                <span>{{ channel.realOrders.toLocaleString() }}건</span>
+          <div v-if="trendLabels.length === 0" class="empty-inline">흐름 데이터가 없습니다.</div>
+          <div v-else class="trend-timeline">
+            <div v-for="(label, index) in trendLabels" :key="`trend-period-${label}-${index}`" class="trend-timeline-row">
+              <div class="trend-timeline-label">
+                <strong>{{ displayTrendLabel(label) }}</strong>
+                <span>{{ trendRangeLabel }}</span>
               </div>
-              <div class="trend-bars">
+              <div class="trend-timeline-values">
                 <div
-                  v-for="(value, index) in channel.trendValues"
-                  :key="`${channel.key}-${trendLabels[index] || index}`"
-                  class="trend-bar"
-                  :title="`${trendLabels[index] || ''} · ${value.toLocaleString()}건`"
+                  v-for="channel in channelMetrics"
+                  :key="`${channel.key}-${label}-${index}`"
+                  class="trend-timeline-item"
+                  :class="`trend-timeline-item--${channel.tone}`"
                 >
-                  <div class="trend-bar-fill" :style="{ height: `${trendBarHeight(value)}%` }"></div>
-                  <span class="trend-bar-label">{{ trendLabels[index] }}</span>
+                  <div class="trend-timeline-copy">
+                    <span>{{ channel.label }}</span>
+                    <strong>{{ formatCompactCurrency(channel.trendValues[index] || 0) }}</strong>
+                  </div>
+                  <div class="trend-timeline-track">
+                    <div class="trend-timeline-fill" :style="{ width: `${trendValueWidth(channel.trendValues[index] || 0, index)}%` }"></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -139,7 +179,7 @@
 
         <div class="card">
           <div class="card-header">
-            <h3 class="card-title">쿠팡 풀필먼트</h3>
+            <h3 class="card-title">쿠팡 주문 구조</h3>
             <StatusBadge :label="`${coupangFulfillmentRows.length}개 구분`" variant="neutral" />
           </div>
 
@@ -148,7 +188,7 @@
             <div v-for="row in coupangFulfillmentRows" :key="row.key" class="fulfillment-row">
               <div class="fulfillment-copy">
                 <strong>{{ row.label }}</strong>
-                <span>{{ row.orders.toLocaleString() }}건 · {{ row.quantity.toLocaleString() }}개</span>
+                <span>{{ formatCurrencyAmount(row.amount) }} · {{ row.orders.toLocaleString() }}건</span>
               </div>
               <div class="fulfillment-progress">
                 <div class="fulfillment-progress-fill" :style="{ width: `${row.share}%` }"></div>
@@ -160,23 +200,40 @@
 
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">채널별 인기 상품</h3>
+          <div>
+            <h3 class="card-title">채널별 대표 상품</h3>
+            <span class="section-caption">채널별로 금액 기여가 큰 상품만 먼저 읽히도록 정리했습니다.</span>
+          </div>
           <StatusBadge :label="`${channelProductSections.length}개 채널`" variant="neutral" />
         </div>
 
-        <div class="product-section-grid">
-          <div v-for="section in channelProductSections" :key="section.key" class="product-section">
+        <div class="channel-product-grid">
+          <div v-for="section in channelProductSections" :key="section.key" class="channel-product-panel">
             <div class="product-section-head">
               <strong>{{ section.label }}</strong>
               <span>{{ section.items.length }}개</span>
             </div>
             <div v-if="section.items.length === 0" class="empty-inline">데이터가 없습니다.</div>
-            <div v-else class="product-list">
-              <div v-for="(item, index) in section.items" :key="`${section.key}-${item.name}-${index}`" class="product-row">
-                <div class="product-rank">{{ index + 1 }}</div>
-                <div class="product-copy">
-                  <strong>{{ item.name }}</strong>
-                  <span>{{ item.quantity.toLocaleString() }}개</span>
+            <div v-else class="channel-product-body">
+              <div class="channel-product-featured">
+                <div class="product-rank">1</div>
+                <div class="channel-product-featured-copy">
+                  <strong>{{ section.items[0]?.name }}</strong>
+                  <span>{{ formatCurrencyAmount(section.items[0]?.amount || 0) }}</span>
+                  <small>{{ formatQuantityCount(section.items[0]?.quantity || 0) }}개</small>
+                </div>
+              </div>
+              <div class="product-list">
+                <div
+                  v-for="(item, index) in section.items.slice(1)"
+                  :key="`${section.key}-${item.name}-${index + 1}`"
+                  class="product-row"
+                >
+                  <div class="product-rank">{{ index + 2 }}</div>
+                  <div class="product-copy">
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ formatCurrencyAmount(item.amount) }} · {{ formatQuantityCount(item.quantity) }}개</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -195,12 +252,18 @@ import {
   PieChart,
   Users,
 } from 'lucide-vue-next'
+import { formatCompactCurrency, formatCurrency } from '~/composables/useMoneyFormat'
 import { computePurchaseQuantity, formatQuantityCount } from '~/composables/usePurchaseQuantity'
 import {
   normalizePurchaseSourceScope,
+  purchaseAmountSelectColumns,
   purchaseQuantityInput,
   purchaseSelectColumns,
   purchaseSourceScopeSelectColumns,
+  resolvePurchaseCommissionTotal,
+  resolvePurchaseExpectedSettlementAmount,
+  resolvePurchasePaymentAmount,
+  supportsPurchaseAmountColumns,
   supportsPurchaseSourceColumns,
   supportsPurchaseSourceScopeColumns,
 } from '~/composables/usePurchaseSourceFields'
@@ -220,6 +283,13 @@ interface PurchaseRow {
   source_channel?: string | null
   source_fulfillment_type?: string | null
   quantity: number
+  payment_amount: number | null
+  order_discount_amount: number | null
+  delivery_fee_amount: number | null
+  delivery_discount_amount: number | null
+  expected_settlement_amount: number | null
+  payment_commission: number | null
+  sale_commission: number | null
   order_date: string
   target_month: string
   is_fake: boolean
@@ -232,11 +302,15 @@ interface ChannelMetric {
   label: string
   tone: 'naver' | 'coupang' | 'excel' | 'neutral'
   badgeVariant: 'primary' | 'success' | 'warning' | 'info' | 'neutral'
+  paymentAmount: number
+  expectedSettlementAmount: number
+  paymentCommissionAmount: number
   realOrders: number
   realCustomers: number
   totalQuantity: number
   repeatCustomers: number
-  shareOfOrders: number
+  averageOrderValue: number
+  shareOfRevenue: number
   topProductLabel: string
   lastOrderLabel: string
   trendValues: number[]
@@ -245,6 +319,7 @@ interface ChannelMetric {
 interface FulfillmentMetricRow {
   key: string
   label: string
+  amount: number
   orders: number
   quantity: number
   share: number
@@ -252,6 +327,7 @@ interface FulfillmentMetricRow {
 
 interface ChannelProductItem {
   name: string
+  amount: number
   quantity: number
 }
 
@@ -276,6 +352,28 @@ const channelWeekOptions = computed(() => {
   if (selectedMonth.value === 'all') return []
   return buildWeekOptions(selectedMonth.value)
 })
+
+function normalizeAmount(value: unknown): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.round(parsed)
+}
+
+function formatCurrencyAmount(value: number): string {
+  return formatCurrency(value)
+}
+
+function resolveRowPaymentAmount(row: Pick<PurchaseRow, 'payment_amount'>): number {
+  return resolvePurchasePaymentAmount(row)
+}
+
+function resolveRowExpectedSettlementAmount(row: Pick<PurchaseRow, 'expected_settlement_amount'>): number {
+  return resolvePurchaseExpectedSettlementAmount(row)
+}
+
+function resolveRowPaymentCommissionAmount(row: Pick<PurchaseRow, 'payment_commission' | 'sale_commission'>): number {
+  return resolvePurchaseCommissionTotal(row)
+}
 
 const scopedRows = computed(() => {
   const monthSnapshot = selectedMonth.value
@@ -313,31 +411,52 @@ const trendRangeLabel = computed(() => {
 
 const overviewMetrics = computed(() => {
   const customers = new Set<string>()
-  const quantities = realRows.value.reduce((sum, row) => {
+  const totals = realRows.value.reduce((acc, row) => {
     customers.add(row.customer_key)
-    return sum + resolveRowQuantity(row)
-  }, 0)
+    acc.totalQuantity += resolveRowQuantity(row)
+    acc.paymentAmount += resolveRowPaymentAmount(row)
+    acc.expectedSettlementAmount += resolveRowExpectedSettlementAmount(row)
+    acc.paymentCommissionAmount += resolveRowPaymentCommissionAmount(row)
+    return acc
+  }, {
+    totalQuantity: 0,
+    paymentAmount: 0,
+    expectedSettlementAmount: 0,
+    paymentCommissionAmount: 0,
+  })
 
   return {
+    paymentAmount: totals.paymentAmount,
+    expectedSettlementAmount: totals.expectedSettlementAmount,
+    paymentCommissionAmount: totals.paymentCommissionAmount,
     realOrders: realRows.value.length,
     realCustomers: customers.size,
-    totalQuantity: Math.round(quantities * 100) / 100,
+    totalQuantity: Math.round(totals.totalQuantity * 100) / 100,
   }
+})
+
+const averageOrderValue = computed(() => {
+  return overviewMetrics.value.realOrders > 0
+    ? Math.round(overviewMetrics.value.paymentAmount / overviewMetrics.value.realOrders)
+    : 0
 })
 
 const channelMetrics = computed<ChannelMetric[]>(() => {
   const totals = overviewMetrics.value
-  const orderBase = Math.max(totals.realOrders, 1)
+  const revenueBase = Math.max(totals.paymentAmount, 1)
   const bucketKeys = trendLabels.value
   const metrics = new Map<string, {
     label: string
     tone: ChannelMetric['tone']
     badgeVariant: ChannelMetric['badgeVariant']
+    paymentAmount: number
+    expectedSettlementAmount: number
+    paymentCommissionAmount: number
     orders: number
     quantity: number
     customers: Set<string>
     customerOrderCounts: Map<string, number>
-    products: Map<string, number>
+    products: Map<string, { amount: number; quantity: number }>
     lastOrder: string
     buckets: Map<string, number>
   }>()
@@ -351,13 +470,19 @@ const channelMetrics = computed<ChannelMetric[]>(() => {
 
     metric.orders += 1
     metric.quantity += quantity
+    metric.paymentAmount += resolveRowPaymentAmount(row)
+    metric.expectedSettlementAmount += resolveRowExpectedSettlementAmount(row)
+    metric.paymentCommissionAmount += resolveRowPaymentCommissionAmount(row)
     metric.customers.add(row.customer_key)
     metric.customerOrderCounts.set(row.customer_key, (metric.customerOrderCounts.get(row.customer_key) || 0) + 1)
-    metric.products.set(row.product_name, (metric.products.get(row.product_name) || 0) + quantity)
+    const productMetric = metric.products.get(row.product_name) || { amount: 0, quantity: 0 }
+    productMetric.amount += resolveRowPaymentAmount(row)
+    productMetric.quantity += quantity
+    metric.products.set(row.product_name, productMetric)
     metric.lastOrder = metric.lastOrder > row.order_date ? metric.lastOrder : row.order_date
 
     if (bucketKey) {
-      metric.buckets.set(bucketKey, (metric.buckets.get(bucketKey) || 0) + 1)
+      metric.buckets.set(bucketKey, (metric.buckets.get(bucketKey) || 0) + resolveRowPaymentAmount(row))
     }
   }
 
@@ -369,18 +494,22 @@ const channelMetrics = computed<ChannelMetric[]>(() => {
     .map((key) => {
       const metric = metrics.get(key)!
       const repeatCustomers = [...metric.customerOrderCounts.values()].filter((count) => count >= 2).length
-      const topProduct = [...metric.products.entries()].sort((a, b) => b[1] - a[1])[0]
+      const topProduct = [...metric.products.entries()].sort((a, b) => b[1].amount - a[1].amount)[0]
 
       return {
         key,
         label: metric.label,
         tone: metric.tone,
         badgeVariant: metric.badgeVariant,
+        paymentAmount: metric.paymentAmount,
+        expectedSettlementAmount: metric.expectedSettlementAmount,
+        paymentCommissionAmount: metric.paymentCommissionAmount,
         realOrders: metric.orders,
         realCustomers: metric.customers.size,
         totalQuantity: Math.round(metric.quantity * 100) / 100,
         repeatCustomers,
-        shareOfOrders: Math.round((metric.orders / orderBase) * 100),
+        averageOrderValue: metric.orders > 0 ? Math.round(metric.paymentAmount / metric.orders) : 0,
+        shareOfRevenue: Math.round((metric.paymentAmount / revenueBase) * 100),
         topProductLabel: topProduct ? topProduct[0] : '대표 상품 없음',
         lastOrderLabel: metric.lastOrder ? `최근 주문 ${metric.lastOrder.slice(0, 10)}` : '주문 이력 없음',
         trendValues: bucketKeys.map((keyLabel) => metric.buckets.get(keyLabel) || 0),
@@ -388,16 +517,29 @@ const channelMetrics = computed<ChannelMetric[]>(() => {
     })
 })
 
+const channelLeadSummary = computed(() => {
+  const ordered = [...channelMetrics.value].sort((a, b) => b.paymentAmount - a.paymentAmount)
+  const leader = ordered[0] || null
+  const runnerUp = ordered[1] || null
+
+  return {
+    leader,
+    runnerUp,
+    gapAmount: leader && runnerUp ? Math.max(leader.paymentAmount - runnerUp.paymentAmount, 0) : leader?.paymentAmount || 0,
+  }
+})
+
 const coupangFulfillmentRows = computed<FulfillmentMetricRow[]>(() => {
   const targetRows = realRows.value.filter((row) => normalizeChannelKey(normalizePurchaseSourceScope(row).sourceChannel) === 'coupang')
-  const totals = Math.max(targetRows.length, 1)
-  const grouped = new Map<string, { label: string; orders: number; quantity: number }>()
+  const totalAmount = Math.max(targetRows.reduce((sum, row) => sum + resolveRowPaymentAmount(row), 0), 1)
+  const grouped = new Map<string, { label: string; amount: number; orders: number; quantity: number }>()
 
   for (const row of targetRows) {
     const scope = normalizePurchaseSourceScope(row)
     const key = scope.sourceFulfillmentType || 'default'
     const label = fulfillmentLabel(key)
-    const current = grouped.get(key) || { label, orders: 0, quantity: 0 }
+    const current = grouped.get(key) || { label, amount: 0, orders: 0, quantity: 0 }
+    current.amount += resolveRowPaymentAmount(row)
     current.orders += 1
     current.quantity += resolveRowQuantity(row)
     grouped.set(key, current)
@@ -407,29 +549,37 @@ const coupangFulfillmentRows = computed<FulfillmentMetricRow[]>(() => {
     .map(([key, value]) => ({
       key,
       label: value.label,
+      amount: value.amount,
       orders: value.orders,
       quantity: Math.round(value.quantity * 100) / 100,
-      share: Math.round((value.orders / totals) * 100),
+      share: Math.round((value.amount / totalAmount) * 100),
     }))
-    .sort((a, b) => b.orders - a.orders)
+    .sort((a, b) => b.amount - a.amount)
 })
 
 const channelProductSections = computed<ChannelProductSection[]>(() => {
   return channelMetrics.value.map((channel) => {
-    const grouped = new Map<string, number>()
+    const grouped = new Map<string, { amount: number; quantity: number }>()
     for (const row of realRows.value) {
       const scope = normalizePurchaseSourceScope(row)
       if (normalizeChannelKey(scope.sourceChannel) !== channel.key) continue
-      grouped.set(row.product_name, (grouped.get(row.product_name) || 0) + resolveRowQuantity(row))
+      const current = grouped.get(row.product_name) || { amount: 0, quantity: 0 }
+      current.amount += resolveRowPaymentAmount(row)
+      current.quantity += resolveRowQuantity(row)
+      grouped.set(row.product_name, current)
     }
 
     return {
       key: channel.key,
       label: channel.label,
       items: [...grouped.entries()]
-        .sort((a, b) => b[1] - a[1])
+        .sort((a, b) => b[1].amount - a[1].amount)
         .slice(0, 3)
-        .map(([name, quantity]) => ({ name, quantity: Math.round(quantity * 100) / 100 })),
+        .map(([name, value]) => ({
+          name,
+          amount: value.amount,
+          quantity: Math.round(value.quantity * 100) / 100,
+        })),
     }
   })
 })
@@ -444,11 +594,14 @@ function ensureChannelMetric(
     label: string
     tone: ChannelMetric['tone']
     badgeVariant: ChannelMetric['badgeVariant']
+    paymentAmount: number
+    expectedSettlementAmount: number
+    paymentCommissionAmount: number
     orders: number
     quantity: number
     customers: Set<string>
     customerOrderCounts: Map<string, number>
-    products: Map<string, number>
+    products: Map<string, { amount: number; quantity: number }>
     lastOrder: string
     buckets: Map<string, number>
   }>,
@@ -461,11 +614,14 @@ function ensureChannelMetric(
     label: channelLabel(channel),
     tone: channelTone(channel),
     badgeVariant: channelBadgeVariant(channel),
+    paymentAmount: 0,
+    expectedSettlementAmount: 0,
+    paymentCommissionAmount: 0,
     orders: 0,
     quantity: 0,
     customers: new Set<string>(),
     customerOrderCounts: new Map<string, number>(),
-    products: new Map<string, number>(),
+    products: new Map<string, { amount: number; quantity: number }>(),
     lastOrder: '',
     buckets: new Map<string, number>(),
   }
@@ -530,9 +686,15 @@ function resolveRowQuantity(row: PurchaseRow) {
   ).totalCount
 }
 
-function trendBarHeight(value: number) {
-  const maxValue = Math.max(...channelMetrics.value.flatMap((channel) => channel.trendValues), 1)
-  return Math.max(8, Math.round((value / maxValue) * 100))
+function trendValueWidth(value: number, index: number) {
+  const base = Math.max(...channelMetrics.value.map((channel) => channel.trendValues[index] || 0), 1)
+  return Math.max(12, Math.round((value / base) * 100))
+}
+
+function displayTrendLabel(label: string) {
+  if (selectedMonth.value === 'all') return label.replace('-', '.')
+  if (channelWeekFilter.value) return label
+  return weekLabelFromCode(selectedMonth.value, label).split(' ')[0] || label
 }
 
 function navigateToChannelCustomers(channel: string) {
@@ -545,45 +707,67 @@ function navigateToChannelCustomers(channel: string) {
 async function fetchChannelRows() {
   const includeSourceColumns = await supportsPurchaseSourceColumns(supabase)
   const includeSourceScopeColumns = await supportsPurchaseSourceScopeColumns(supabase)
+  const includeAmountColumns = await supportsPurchaseAmountColumns(supabase)
   const baseColumns = 'purchase_id, customer_key, buyer_name, buyer_id, product_name, option_info, quantity, order_date, target_month, is_fake, needs_review, filter_ver'
-  const selectColumns = purchaseSourceScopeSelectColumns(
-    purchaseSelectColumns(baseColumns, includeSourceColumns),
-    includeSourceScopeColumns,
+  const selectColumns = purchaseAmountSelectColumns(
+    purchaseSourceScopeSelectColumns(
+      purchaseSelectColumns(baseColumns, includeSourceColumns),
+      includeSourceScopeColumns,
+    ),
+    includeAmountColumns,
   )
+  const rows: PurchaseRow[] = []
+  const PAGE_SIZE = 1000
 
-  let query = supabase
-    .from('purchases')
-    .select(selectColumns)
-    .not('filter_ver', 'is', null)
-    .order('order_date', { ascending: true })
+  for (let from = 0; ; from += PAGE_SIZE) {
+    let query = supabase
+      .from('purchases')
+      .select(selectColumns)
+      .not('filter_ver', 'is', null)
+      .order('order_date', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
 
-  if (selectedMonth.value !== 'all') {
-    query = query.eq('target_month', selectedMonth.value)
+    if (selectedMonth.value !== 'all') {
+      query = query.eq('target_month', selectedMonth.value)
+    }
+
+    const { data, error } = await query
+    if (error) throw error
+
+    const chunk = (data || []).map((row: any) => ({
+      purchase_id: String(row.purchase_id || ''),
+      customer_key: String(row.customer_key || ''),
+      buyer_name: String(row.buyer_name || ''),
+      buyer_id: String(row.buyer_id || ''),
+      product_name: String(row.product_name || ''),
+      option_info: String(row.option_info || ''),
+      source_product_name: row.source_product_name ? String(row.source_product_name) : undefined,
+      source_option_info: row.source_option_info ? String(row.source_option_info) : undefined,
+      source_product_id: row.source_product_id ? String(row.source_product_id) : undefined,
+      source_option_code: row.source_option_code ? String(row.source_option_code) : undefined,
+      source_channel: row.source_channel ? String(row.source_channel) : null,
+      source_fulfillment_type: row.source_fulfillment_type ? String(row.source_fulfillment_type) : null,
+      quantity: Number(row.quantity || 0),
+      payment_amount: includeAmountColumns ? normalizeAmount(row.payment_amount) : null,
+      order_discount_amount: includeAmountColumns ? normalizeAmount(row.order_discount_amount) : null,
+      delivery_fee_amount: includeAmountColumns ? normalizeAmount(row.delivery_fee_amount) : null,
+      delivery_discount_amount: includeAmountColumns ? normalizeAmount(row.delivery_discount_amount) : null,
+      expected_settlement_amount: includeAmountColumns ? normalizeAmount(row.expected_settlement_amount) : null,
+      payment_commission: includeAmountColumns ? normalizeAmount(row.payment_commission) : null,
+      sale_commission: includeAmountColumns ? normalizeAmount(row.sale_commission) : null,
+      order_date: String(row.order_date || ''),
+      target_month: String(row.target_month || ''),
+      is_fake: Boolean(row.is_fake),
+      needs_review: Boolean(row.needs_review),
+      filter_ver: row.filter_ver ? String(row.filter_ver) : null,
+    })) as PurchaseRow[]
+
+    rows.push(...chunk)
+
+    if (chunk.length < PAGE_SIZE) break
   }
 
-  const { data, error } = await query
-  if (error) throw error
-
-  return (data || []).map((row: any) => ({
-    purchase_id: String(row.purchase_id || ''),
-    customer_key: String(row.customer_key || ''),
-    buyer_name: String(row.buyer_name || ''),
-    buyer_id: String(row.buyer_id || ''),
-    product_name: String(row.product_name || ''),
-    option_info: String(row.option_info || ''),
-    source_product_name: row.source_product_name ? String(row.source_product_name) : undefined,
-    source_option_info: row.source_option_info ? String(row.source_option_info) : undefined,
-    source_product_id: row.source_product_id ? String(row.source_product_id) : undefined,
-    source_option_code: row.source_option_code ? String(row.source_option_code) : undefined,
-    source_channel: row.source_channel ? String(row.source_channel) : null,
-    source_fulfillment_type: row.source_fulfillment_type ? String(row.source_fulfillment_type) : null,
-    quantity: Number(row.quantity || 0),
-    order_date: String(row.order_date || ''),
-    target_month: String(row.target_month || ''),
-    is_fake: Boolean(row.is_fake),
-    needs_review: Boolean(row.needs_review),
-    filter_ver: row.filter_ver ? String(row.filter_ver) : null,
-  })) as PurchaseRow[]
+  return rows
 }
 
 async function loadChannelAnalysis() {
@@ -634,6 +818,7 @@ watch(
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-lg);
+  padding: 2px 0 4px;
 }
 
 .page-header-left {
@@ -651,22 +836,108 @@ watch(
 
 .page-title {
   margin: 0;
-  font-size: 2rem;
+  font-size: 1.8rem;
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
   color: var(--color-text);
 }
 
 .page-caption {
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: 0.88rem;
+  font-weight: 500;
   color: var(--color-text-secondary);
+}
+
+.section-caption {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
 }
 
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
+}
+
+.compare-hero-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.9fr);
+  gap: 18px;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(229, 235, 242, 0.96);
+  background: #FFFFFF;
+  box-shadow: none;
+}
+
+.compare-hero-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+}
+
+.compare-hero-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.compare-hero-title {
+  margin: 0;
+  font-size: 1.42rem;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--color-text);
+}
+
+.compare-hero-caption {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--color-text-secondary);
+}
+
+.compare-hero-stats {
+  display: grid;
+  gap: 12px;
+  padding: 24px 24px 24px 0;
+  align-content: center;
+}
+
+.compare-hero-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 16px 15px;
+  border-radius: 14px;
+  background: #FAFBFD;
+  border: 1px solid rgba(227, 233, 241, 0.9);
+}
+
+.compare-hero-stat--primary {
+  background: #F6F9FF;
+}
+
+.compare-hero-stat span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.compare-hero-stat strong {
+  font-size: 1.08rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.compare-hero-stat small {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
 }
 
 .loading-card,
@@ -679,19 +950,21 @@ watch(
 
 .channel-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
 }
 
 .channel-card {
-  padding: 22px;
+  padding: 24px;
   text-align: left;
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  background: #FFFFFF;
+  box-shadow: none;
 }
 
 .channel-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+  box-shadow: none;
 }
 
 .channel-card--naver {
@@ -725,8 +998,8 @@ watch(
 
 .channel-card-title {
   display: block;
-  font-size: 1.02rem;
-  font-weight: 700;
+  font-size: 1.06rem;
+  font-weight: 800;
   color: var(--color-text);
 }
 
@@ -745,7 +1018,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .channel-primary-label {
@@ -754,7 +1027,7 @@ watch(
 }
 
 .channel-primary-value {
-  font-size: 2.15rem;
+  font-size: 2.35rem;
   line-height: 1;
   font-weight: 800;
   letter-spacing: -0.05em;
@@ -764,7 +1037,7 @@ watch(
 .channel-stat-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   padding-top: 2px;
 }
 
@@ -776,7 +1049,7 @@ watch(
 }
 
 .channel-share {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .channel-share-track,
@@ -792,61 +1065,104 @@ watch(
 .fulfillment-progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #3182F6 0%, #5B8EFF 100%);
+  background: #3182F6;
 }
 
 .channel-card-footer {
-  margin-top: 18px;
+  margin-top: 20px;
   font-weight: 600;
   color: var(--color-text);
 }
 
 .analysis-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-  gap: 16px;
-}
-
-.trend-stack {
-  display: flex;
-  flex-direction: column;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.95fr);
   gap: 18px;
 }
 
-.trend-channel-row {
+.trend-timeline {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
-.trend-bars {
+.trend-timeline-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
-  gap: 10px;
-  align-items: end;
+  grid-template-columns: 116px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
 }
 
-.trend-bar {
+.trend-timeline-label {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  min-height: 108px;
-  justify-content: flex-end;
+  gap: 3px;
+  padding-top: 4px;
 }
 
-.trend-bar-fill {
-  width: 100%;
-  max-width: 34px;
-  min-height: 8px;
-  border-radius: 12px 12px 6px 6px;
-  background: linear-gradient(180deg, #66A4FF 0%, #1D63E9 100%);
-  box-shadow: 0 8px 18px rgba(49, 130, 246, 0.16);
+.trend-timeline-label strong {
+  font-size: 0.9rem;
+  color: var(--color-text);
 }
 
-.trend-bar-label {
-  font-size: 0.72rem;
+.trend-timeline-label span {
+  font-size: 0.78rem;
   color: var(--color-text-muted);
+}
+
+.trend-timeline-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.trend-timeline-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #FFFFFF;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.trend-timeline-item--naver {
+  background: #FFFFFF;
+}
+
+.trend-timeline-item--coupang {
+  background: #FFFFFF;
+}
+
+.trend-timeline-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.trend-timeline-copy span {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.trend-timeline-copy strong {
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.trend-timeline-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #E8EEF6;
+  overflow: hidden;
+}
+
+.trend-timeline-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #1D63E9;
 }
 
 .fulfillment-list,
@@ -874,17 +1190,56 @@ watch(
   color: var(--color-text-secondary);
 }
 
-.product-section-grid {
+.channel-product-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
 }
 
-.product-section {
-  padding: 18px;
-  border-radius: 18px;
-  background: #FAFBFD;
+.channel-product-panel {
+  padding: 20px;
+  border-radius: 16px;
+  background: #FFFFFF;
   border: 1px solid var(--color-border-light);
+}
+
+.channel-product-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.channel-product-featured {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.channel-product-featured-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.channel-product-featured-copy strong {
+  font-size: 0.98rem;
+  color: var(--color-text);
+}
+
+.channel-product-featured-copy span {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.channel-product-featured-copy small {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
 }
 
 .product-rank {
@@ -913,26 +1268,41 @@ watch(
 }
 
 @media (max-width: 1200px) {
-  .kpi-grid,
-  .channel-grid,
-  .product-section-grid {
+  .kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .compare-hero-card,
   .analysis-grid {
     grid-template-columns: 1fr;
+  }
+
+  .compare-hero-stats {
+    padding: 0 24px 24px;
   }
 }
 
 @media (max-width: 768px) {
   .page-header {
     flex-direction: column;
+    padding: 0;
   }
 
-  .page-header-actions,
-  .kpi-grid,
-  .channel-grid,
-  .product-section-grid {
+  .trend-timeline-row {
+    grid-template-columns: 1fr;
+  }
+
+  .compare-hero-copy,
+  .compare-hero-stats {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+
+  .page-header-actions {
+    width: 100%;
+  }
+
+  .kpi-grid {
     grid-template-columns: 1fr;
   }
 }

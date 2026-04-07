@@ -87,6 +87,7 @@ async function detectSourceFulfillmentTypeSupport(targetConfig) {
     commerceOrderLinesRaw,
     commerceProductMappings,
     purchases,
+    purchaseAmounts,
   ] = await Promise.all([
     supportsRestColumn(targetConfig, 'commerce_sync_runs', 'source_fulfillment_type'),
     supportsRestColumn(targetConfig, 'commerce_sync_cursors', 'source_fulfillment_type'),
@@ -94,6 +95,7 @@ async function detectSourceFulfillmentTypeSupport(targetConfig) {
     supportsRestColumn(targetConfig, 'commerce_order_lines_raw', 'source_fulfillment_type'),
     supportsRestColumn(targetConfig, 'commerce_product_mappings', 'source_fulfillment_type'),
     supportsRestColumn(targetConfig, 'purchases', 'source_fulfillment_type'),
+    supportsRestColumn(targetConfig, 'purchases', 'payment_amount'),
   ])
 
   return {
@@ -103,12 +105,28 @@ async function detectSourceFulfillmentTypeSupport(targetConfig) {
     commerceOrderLinesRaw,
     commerceProductMappings,
     purchases,
+    purchaseAmounts,
   }
 }
 
 function maybeWithSourceFulfillmentType(row, enabled) {
   if (enabled) return row
   const { source_fulfillment_type: _ignored, ...rest } = row
+  return rest
+}
+
+function maybeWithPurchaseAmountColumns(row, enabled) {
+  if (enabled) return row
+  const {
+    payment_amount: _paymentAmount,
+    order_discount_amount: _orderDiscountAmount,
+    delivery_fee_amount: _deliveryFeeAmount,
+    delivery_discount_amount: _deliveryDiscountAmount,
+    expected_settlement_amount: _expectedSettlementAmount,
+    payment_commission: _paymentCommission,
+    sale_commission: _saleCommission,
+    ...rest
+  } = row
   return rest
 }
 
@@ -730,6 +748,10 @@ async function main() {
   const productLookup = buildProductLookupFromRows(products) // 이름/옵션 기준 fallback 매핑용 lookup
   const productMappingLookup = buildCommerceProductMappingLookupFromRows(productMappings) // 상품번호/옵션 기준 우선 매핑용 lookup
 
+  if (!sourceScopeSupport.purchaseAmounts) {
+    console.warn('[naver-sync] purchases.payment_amount column is missing. Apply 107_extend_purchases_amount_columns.sql to persist revenue fields.')
+  }
+
   // dry-run도 실제와 같은 변환 로직을 타지만 DB 저장만 생략합니다.
   // downstream 로직은 동일하게 유지하기 위해 synthetic run id를 하나 만들어 사용합니다.
   const runId = args.dryRun
@@ -854,7 +876,10 @@ async function main() {
           const persistedRawLineRows = rawLineRows.map((row) =>
             maybeWithSourceFulfillmentType(row, sourceScopeSupport.commerceOrderLinesRaw))
           const persistedPurchaseRows = purchaseRows.map((row) =>
-            maybeWithSourceFulfillmentType(row, sourceScopeSupport.purchases))
+            maybeWithPurchaseAmountColumns(
+              maybeWithSourceFulfillmentType(row, sourceScopeSupport.purchases),
+              sourceScopeSupport.purchaseAmounts,
+            ))
 
           // 저장 순서는 raw -> projection 입니다.
           // raw를 먼저 남겨야 나중에 매핑 규칙이 바뀌어도 재처리 근거를 보존할 수 있습니다.

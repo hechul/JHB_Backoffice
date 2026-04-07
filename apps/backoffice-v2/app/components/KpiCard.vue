@@ -25,6 +25,7 @@
 import type { Component } from 'vue'
 import { resolveComponent } from 'vue'
 import { TrendingUp, TrendingDown } from 'lucide-vue-next'
+import { formatCurrency } from '~/composables/useMoneyFormat'
 
 const props = defineProps<{
   label: string
@@ -33,11 +34,13 @@ const props = defineProps<{
   iconBg?: string
   iconColor?: string
   change?: number
+  format?: 'number' | 'currency'
   suffix?: string
-  to?: string
+  to?: string | Record<string, any>
 }>()
 
 const formattedValue = computed(() => {
+  if (props.format === 'currency') return formatCurrency(props.value)
   if (props.suffix) return props.value.toLocaleString() + props.suffix
   return props.value.toLocaleString()
 })
@@ -55,7 +58,11 @@ const changePrefix = computed(() => {
 
 <style scoped>
 .kpi-card {
-  padding: 22px 24px;
+  min-height: 146px;
+  padding: 20px;
+  border-radius: 18px;
+  border-color: rgba(229, 235, 242, 0.96);
+  background: #FFFFFF;
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -67,26 +74,28 @@ const changePrefix = computed(() => {
 }
 
 .kpi-card.card-clickable:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+  border-color: rgba(49, 130, 246, 0.14);
+  box-shadow: none;
 }
 
 .kpi-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-md);
+  margin-bottom: 16px;
 }
 
 .kpi-label {
-  font-size: 0.88rem;
+  font-size: 0.8rem;
   color: var(--color-text-secondary);
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .kpi-icon-wrap {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -94,20 +103,22 @@ const changePrefix = computed(() => {
 }
 
 .kpi-value {
-  font-size: 2rem;
+  font-size: clamp(1.82rem, 2vw, 2.12rem);
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
   color: var(--color-text);
-  line-height: 1.2;
+  line-height: 1.04;
 }
 
 .kpi-change {
-  margin-top: var(--space-sm);
-  font-size: 0.9rem;
-  font-weight: 500;
+  margin-top: 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(229, 235, 242, 0.96);
 }
 
 .kpi-change.positive {
@@ -120,7 +131,7 @@ const changePrefix = computed(() => {
 
 .kpi-change-label {
   color: var(--color-text-muted);
-  font-weight: 400;
+  font-weight: 600;
   margin-left: 4px;
 }
 </style>

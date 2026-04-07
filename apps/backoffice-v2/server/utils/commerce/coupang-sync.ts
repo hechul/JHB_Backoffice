@@ -96,6 +96,13 @@ export interface CoupangPurchaseProjectionRow {
   source_option_code: string | null
   source_last_changed_at: string | null
   source_sync_run_id: string
+  payment_amount: number | null
+  order_discount_amount: number | null
+  delivery_fee_amount: number | null
+  delivery_discount_amount: number | null
+  expected_settlement_amount: number | null
+  payment_commission: number | null
+  sale_commission: number | null
   quantity: number
   order_date: string
   order_status: string
@@ -128,6 +135,15 @@ export interface CoupangMarketplaceOrderItem {
   sellerProductName?: string | null
   sellerProductItemName?: string | null
   shippingCount?: number | string | null
+  salesPrice?: number | string | null
+  orderPrice?: number | string | null
+  discountPrice?: number | string | null
+  instantCouponDiscount?: number | string | null
+  downloadableCouponDiscount?: number | string | null
+  coupangDiscount?: number | string | null
+  settlementAmount?: number | string | null
+  paymentCommission?: number | string | null
+  saleCommission?: number | string | null
   invoiceNumber?: string | null
   confirmDate?: string | null
 }
@@ -138,6 +154,7 @@ export interface CoupangMarketplaceOrder {
   orderedAt?: string | null
   paidAt?: string | null
   status?: string | null
+  shippingPrice?: number | string | null
   invoiceNumber?: string | null
   confirmDate?: string | null
   orderer?: {
@@ -224,6 +241,42 @@ function toPositiveInteger(value?: string | number | null, fallback = 1): number
   return Number.isFinite(normalized) && normalized > 0 ? normalized : fallback
 }
 
+function toNullableNumber(value?: unknown): number | null {
+  if (value == null) return null
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.replace(/,/g, '').trim()
+    if (!normalized) return null
+    const parsed = Number(normalized)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    if ('amount' in record) return toNullableNumber(record.amount)
+    if ('value' in record) return toNullableNumber(record.value)
+    if ('units' in record) {
+      const units = toNullableNumber(record.units) ?? 0
+      const nanos = toNullableNumber(record.nanos) ?? 0
+      return units + (nanos / 1_000_000_000)
+    }
+  }
+
+  return null
+}
+
+function firstDefinedNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = toNullableNumber(value)
+    if (parsed !== null) return parsed
+  }
+  return null
+}
+
 function toIsoDateTimeString(value?: string | number | null): string | null {
   if (value == null) return null
   const normalized = normalizeText(value)
@@ -277,6 +330,42 @@ function resolveProjectedOptionInfo(input: {
     || String(input.resolvedProduct?.normalizedOption || '').trim()
     || String(input.rawLine.product_option || '').trim()
   )
+}
+
+function resolveCoupangLineAmounts(rawLine: CoupangOrderLineRawRow) {
+  const order = (rawLine.raw_json?.order || {}) as Record<string, any>
+  const item = (rawLine.raw_json?.item || {}) as Record<string, any>
+  const orderItems = Array.isArray(order.orderItems) ? order.orderItems : []
+  const quantity = rawLine.quantity || 1
+  const unitSalesPrice = firstDefinedNumber(item.unitSalesPrice)
+  const derivedSalesAmount = unitSalesPrice !== null ? unitSalesPrice * quantity : null
+
+  const paymentAmount = firstDefinedNumber(
+    item.orderPrice,
+    item.salesPrice,
+    derivedSalesAmount,
+  )
+
+  const orderDiscountAmount = firstDefinedNumber(
+    item.discountPrice,
+    item.instantCouponDiscount,
+    item.downloadableCouponDiscount,
+    item.coupangDiscount,
+  )
+
+  const deliveryFeeAmount = orderItems.length === 1
+    ? firstDefinedNumber(order.shippingPrice, order.deliveryFee)
+    : null
+
+  return {
+    paymentAmount,
+    orderDiscountAmount,
+    deliveryFeeAmount,
+    deliveryDiscountAmount: null,
+    expectedSettlementAmount: firstDefinedNumber(item.settlementAmount, order.settlementAmount),
+    paymentCommission: firstDefinedNumber(item.paymentCommission, order.paymentCommission, item.serviceFee, order.serviceFee),
+    saleCommission: firstDefinedNumber(item.saleCommission, order.saleCommission),
+  }
 }
 
 function buildCoupangCustomerIdentity(rawLine: CoupangOrderLineRawRow): {
@@ -559,6 +648,7 @@ export function resolveCoupangSyncRecord(input: {
     resolvedProduct,
     rawLine,
   })
+  const monetaryValues = resolveCoupangLineAmounts(rawLine)
 
   return {
     rawLine,
@@ -583,6 +673,13 @@ export function resolveCoupangSyncRecord(input: {
       source_option_code: rawLine.source_option_code,
       source_last_changed_at: rawLine.last_event_at,
       source_sync_run_id: input.runId,
+      payment_amount: monetaryValues.paymentAmount,
+      order_discount_amount: monetaryValues.orderDiscountAmount,
+      delivery_fee_amount: monetaryValues.deliveryFeeAmount,
+      delivery_discount_amount: monetaryValues.deliveryDiscountAmount,
+      expected_settlement_amount: monetaryValues.expectedSettlementAmount,
+      payment_commission: monetaryValues.paymentCommission,
+      sale_commission: monetaryValues.saleCommission,
       quantity: rawLine.quantity,
       order_date: orderDate,
       order_status: rawLine.product_order_status

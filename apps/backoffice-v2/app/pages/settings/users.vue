@@ -14,19 +14,15 @@
       <div class="page-header">
         <div class="page-header-left">
           <h1 class="page-title">계정 관리</h1>
-          <span class="page-count badge badge-neutral">{{ users.length }}명</span>
-          <span v-if="approvalPendingCount > 0" class="page-count badge badge-warning">승인 대기 {{ approvalPendingCount }}명</span>
+          <p class="page-subtitle">
+            전체 {{ users.length }}명
+            <span v-if="approvalPendingCount > 0"> · 승인 대기 {{ approvalPendingCount }}명</span>
+          </p>
         </div>
-        <button class="btn btn-primary" @click="showInviteGuide">
+        <button class="btn btn-secondary" @click="showInviteGuide">
           <UserPlus :size="16" :stroke-width="2" />
-          초대하기 (준비중)
+          초대 기능 안내
         </button>
-      </div>
-
-      <div class="card page-note">
-        <div class="text-sm text-secondary">
-          role/상태 변경은 실시간으로 DB(`profiles`)에 반영됩니다. 자기 계정 및 마지막 활성 관리자 보호 정책이 적용됩니다.
-        </div>
       </div>
 
       <div v-if="loading" class="card empty-state">
@@ -42,24 +38,22 @@
           <div class="user-card-top">
             <div class="user-avatar-lg">{{ u.name.charAt(0) || '사' }}</div>
             <div class="user-meta">
-              <span class="user-card-name">{{ u.name }}</span>
+              <div class="user-meta-top">
+                <span class="user-card-name">{{ u.name }}</span>
+                <span class="badge" :class="statusBadgeClass(u.status)">
+                  {{ statusLabel(u.status) }}
+                </span>
+              </div>
               <span class="user-card-email">{{ u.email }}</span>
+              <span class="user-card-role">
+                {{ roleLabel(u.role) }}
+                <span v-if="u.id === user.id"> · 내 계정</span>
+                <span v-if="u.createdAt !== '-'"> · {{ u.createdAt }} 가입</span>
+              </span>
             </div>
           </div>
 
-          <div class="user-card-badges">
-            <span class="badge" :class="roleBadgeClass(u.role)">
-              <Shield :size="10" :stroke-width="2" />
-              {{ roleLabel(u.role) }}
-            </span>
-            <span class="badge" :class="statusBadgeClass(u.status)">
-              {{ statusLabel(u.status) }}
-            </span>
-            <span v-if="u.id === user.id" class="badge badge-neutral">내 계정</span>
-          </div>
-
           <div class="user-card-footer">
-            <span class="user-joined text-muted">가입일: {{ u.createdAt }}</span>
             <div class="user-actions">
               <template v-if="u.status === 'pending'">
                 <button
@@ -401,70 +395,78 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-md);
 }
 
 .page-header-left {
   display: flex;
-  align-items: center;
-  gap: var(--space-md);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 
 .page-title {
   font-size: 1.25rem;
-  font-weight: 700;
+  font-weight: 760;
   color: var(--color-text);
 }
 
-.page-count {
-  font-size: 0.75rem;
-}
-
-.page-note {
-  padding: var(--space-md) var(--space-lg);
+.page-subtitle {
+  font-size: 0.84rem;
+  color: var(--color-text-muted);
 }
 
 .user-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: var(--space-lg);
 }
 
 .user-card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-lg);
+  gap: 16px;
 }
 
 .user-card-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-md);
 }
 
 .user-avatar-lg {
-  width: 44px;
-  height: 44px;
-  background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
-  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  background: #f3f6fa;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
+  border: 1px solid rgba(223, 231, 240, 0.96);
 }
 
 .user-meta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
+  flex: 1;
+}
+
+.user-meta-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
 }
 
 .user-card-name {
-  font-size: 0.9375rem;
-  font-weight: 600;
+  font-size: 0.95rem;
+  font-weight: 700;
   color: var(--color-text);
 }
 
@@ -476,35 +478,25 @@ watch(
   white-space: nowrap;
 }
 
-.user-card-badges {
-  display: flex;
-  gap: var(--space-sm);
-  flex-wrap: wrap;
-}
-
-.user-card-badges .badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.user-card-role {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
 }
 
 .user-card-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding-top: var(--space-md);
   border-top: 1px solid var(--color-border-light);
   gap: var(--space-sm);
-}
-
-.user-joined {
-  font-size: 0.75rem;
 }
 
 .user-actions {
   display: flex;
   gap: var(--space-xs);
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .role-select {
@@ -524,8 +516,7 @@ watch(
   }
 
   .user-card-footer {
-    flex-direction: column;
-    align-items: flex-start;
+    justify-content: flex-start;
   }
 
   .user-actions {

@@ -250,6 +250,52 @@ export function enumerateIsoDateRange(from, to) {
   return dates
 }
 
+function parseIsoDate(value) {
+  const match = normalizeString(value).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return null
+  const [, year, month, day] = match
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+}
+
+function formatIsoDate(date) {
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function splitIsoDateRangeByMonth(from, to) {
+  const start = parseIsoDate(from)
+  const end = parseIsoDate(to)
+  if (!start || !end || start.getTime() > end.getTime()) return []
+
+  const windows = []
+  const cursor = new Date(start.getTime())
+
+  while (cursor.getTime() <= end.getTime()) {
+    const windowStart = new Date(cursor.getTime())
+    const monthEnd = new Date(Date.UTC(
+      windowStart.getUTCFullYear(),
+      windowStart.getUTCMonth() + 1,
+      0,
+    ))
+    const windowEnd = monthEnd.getTime() < end.getTime()
+      ? monthEnd
+      : new Date(end.getTime())
+
+    windows.push({
+      from: formatIsoDate(windowStart),
+      to: formatIsoDate(windowEnd),
+    })
+
+    const nextCursor = new Date(windowEnd.getTime())
+    nextCursor.setUTCDate(nextCursor.getUTCDate() + 1)
+    cursor.setTime(nextCursor.getTime())
+  }
+
+  return windows
+}
+
 export function dedupeCoupangRawLineRows(rows) {
   const dedupedMap = new Map()
 
@@ -444,6 +490,7 @@ async function detectSourceScopeSupport(targetConfig) {
     commerceOrderLinesRaw,
     commerceProductMappings,
     purchases,
+    purchaseAmounts,
   ] = await Promise.all([
     supportsRestColumn(targetConfig, 'commerce_sync_runs', 'source_fulfillment_type'),
     supportsRestColumn(targetConfig, 'commerce_sync_cursors', 'source_fulfillment_type'),
@@ -451,6 +498,7 @@ async function detectSourceScopeSupport(targetConfig) {
     supportsRestColumn(targetConfig, 'commerce_order_lines_raw', 'source_fulfillment_type'),
     supportsRestColumn(targetConfig, 'commerce_product_mappings', 'source_fulfillment_type'),
     supportsRestColumn(targetConfig, 'purchases', 'source_fulfillment_type'),
+    supportsRestColumn(targetConfig, 'purchases', 'payment_amount'),
   ])
 
   return {
@@ -460,6 +508,7 @@ async function detectSourceScopeSupport(targetConfig) {
     commerceOrderLinesRaw,
     commerceProductMappings,
     purchases,
+    purchaseAmounts,
   }
 }
 
@@ -481,6 +530,21 @@ function assertLiveSchemaSupport(sourceScopeSupport) {
 function maybeWithSourceFulfillmentType(row, enabled) {
   if (enabled) return row
   const { source_fulfillment_type: _ignored, ...rest } = row
+  return rest
+}
+
+function maybeWithPurchaseAmountColumns(row, enabled) {
+  if (enabled) return row
+  const {
+    payment_amount: _paymentAmount,
+    order_discount_amount: _orderDiscountAmount,
+    delivery_fee_amount: _deliveryFeeAmount,
+    delivery_discount_amount: _deliveryDiscountAmount,
+    expected_settlement_amount: _expectedSettlementAmount,
+    payment_commission: _paymentCommission,
+    sale_commission: _saleCommission,
+    ...rest
+  } = row
   return rest
 }
 
@@ -662,31 +726,34 @@ async function fetchMarketplaceOrders(coupangConfig, requestState, args) {
 
 async function fetchRocketGrowthOrders(coupangConfig, requestState, args) {
   const orders = []
-  let nextToken = null
 
-  while (true) {
-    const currentToken = nextToken
-    const params = {
-      vendorId: coupangConfig.vendorId,
-      paidDateFrom: toRocketGrowthYmd(args.from),
-      paidDateTo: toRocketGrowthYmd(args.to),
-      maxPerPage: String(args.maxPerPage),
-    }
-    if (nextToken) {
-      params.nextToken = nextToken
-    }
+  for (const window of splitIsoDateRangeByMonth(args.from, args.to)) {
+    let nextToken = null
 
-    const payload = await coupangRequestJson(coupangConfig, requestState, {
-      method: 'GET',
-      path: `/v2/providers/rg_open_api/apis/api/v1/vendors/${coupangConfig.vendorId}/rg/orders`,
-      params,
-    })
+    while (true) {
+      const currentToken = nextToken
+      const params = {
+        vendorId: coupangConfig.vendorId,
+        paidDateFrom: toRocketGrowthYmd(window.from),
+        paidDateTo: toRocketGrowthYmd(window.to),
+        maxPerPage: String(args.maxPerPage),
+      }
+      if (nextToken) {
+        params.nextToken = nextToken
+      }
 
-    const rows = Array.isArray(payload?.data) ? payload.data : []
-    orders.push(...rows)
-    nextToken = normalizeString(payload?.nextToken)
-    if (!nextToken || nextToken === currentToken || rows.length === 0) {
-      break
+      const payload = await coupangRequestJson(coupangConfig, requestState, {
+        method: 'GET',
+        path: `/v2/providers/rg_open_api/apis/api/v1/vendors/${coupangConfig.vendorId}/rg/orders`,
+        params,
+      })
+
+      const rows = Array.isArray(payload?.data) ? payload.data : []
+      orders.push(...rows)
+      nextToken = normalizeString(payload?.nextToken)
+      if (!nextToken || nextToken === currentToken || rows.length === 0) {
+        break
+      }
     }
   }
 
@@ -1075,6 +1142,10 @@ async function main() {
     : []
   const productMappingLookup = buildCoupangCommerceProductMappingLookupFromRows(productMappings)
 
+  if (targetConfig && !sourceScopeSupport.purchaseAmounts) {
+    console.warn('[coupang-sync] purchases.payment_amount column is missing. Apply 107_extend_purchases_amount_columns.sql to persist revenue fields.')
+  }
+
   const summary = {
     dryRun: args.dryRun,
     sourceChannel: 'coupang',
@@ -1183,7 +1254,10 @@ async function main() {
         const persistedEventRows = eventRows.map((row) =>
           maybeWithSourceFulfillmentType(row, sourceScopeSupport.commerceOrderEventsRaw))
         const persistedPurchaseRows = purchaseRows.map((row) =>
-          maybeWithSourceFulfillmentType(row, sourceScopeSupport.purchases))
+          maybeWithPurchaseAmountColumns(
+            maybeWithSourceFulfillmentType(row, sourceScopeSupport.purchases),
+            sourceScopeSupport.purchaseAmounts,
+          ))
 
         await upsertRows(
           targetConfig,

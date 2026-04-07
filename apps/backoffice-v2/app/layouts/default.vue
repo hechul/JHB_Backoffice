@@ -100,17 +100,6 @@
             <ChevronRight v-if="currentGroup" :size="12" :stroke-width="2" class="breadcrumb-separator" />
             <span class="breadcrumb-current">{{ currentPageTitle }}</span>
           </div>
-          <div v-if="showHeaderNavButtons" class="header-nav-actions">
-            <!-- 홈이 아닌 페이지에서는 뒤로/홈 이동 버튼을 보여줍니다. -->
-            <button type="button" class="header-nav-btn" aria-label="뒤로가기" @click="handleGoBack">
-              <ChevronLeft :size="15" :stroke-width="1.8" />
-              <span>뒤로</span>
-            </button>
-            <NuxtLink to="/" class="header-nav-btn" aria-label="홈으로 이동">
-              <Home :size="15" :stroke-width="1.8" />
-              <span>홈</span>
-            </NuxtLink>
-          </div>
         </div>
         <div class="header-actions">
           <!-- Period Selector -->
@@ -169,9 +158,6 @@
           >
             <RefreshCw :size="16" :stroke-width="1.8" />
           </button>
-          <NotificationBell />
-          <!-- 우측 상단 오늘 날짜 -->
-          <span class="header-date">{{ today }}</span>
         </div>
       </header>
 
@@ -188,12 +174,12 @@
 
 <script setup lang="ts">
 import {
-  Upload,
   Filter,
   Users,
   FileText,
   Home,
   BarChart3,
+  Search,
   TrendingUp,
   LineChart,
   PieChart,
@@ -228,11 +214,12 @@ const periodEnabledPaths = ['/dashboard', '/growth-stages', '/product-trends', '
 
 const analysisMenuItems = computed(() => {
   return [
-    { path: '/dashboard', label: '실구매 요약', icon: BarChart3 },
-    { path: '/customers', label: '고객 분석', icon: Users },
-    { path: '/growth-stages', label: '재구매·리텐션', icon: TrendingUp },
-    { path: '/product-trends', label: '상품 추이', icon: LineChart },
-    { path: '/channel-analysis', label: '채널 분석', icon: PieChart },
+    { path: '/dashboard', label: '경영 요약', icon: BarChart3 },
+    { path: '/channel-analysis', label: '채널 성과', icon: PieChart },
+    { path: '/search-ads', label: '네이버 검색광고', icon: Search },
+    { path: '/product-trends', label: '상품 성과', icon: LineChart },
+    { path: '/customers', label: '고객 구성', icon: Users },
+    { path: '/growth-stages', label: '재구매 흐름', icon: TrendingUp },
   ]
 })
 
@@ -246,7 +233,6 @@ const operationsMenuItems = computed(() => {
 
   return [
     { path: '/naver-sync', label: '주문 동기화', icon: RefreshCw },
-    { path: '/upload', label: '데이터 업로드', icon: Upload },
     { path: '/filter', label: '필터링', icon: Filter },
     { path: '/logs', label: '실행 이력', icon: FileText },
   ]
@@ -261,12 +247,12 @@ const managementMenuItems = computed(() => {
 
 const navigationSections = computed(() => {
   const sections = [
-    { key: 'analysis', label: '실구매 분석', items: analysisMenuItems.value },
+    { key: 'analysis', label: '분석', items: analysisMenuItems.value },
     { key: 'operations', label: '데이터 운영', items: operationsMenuItems.value },
   ]
 
   if (managementMenuItems.value.length) {
-    sections.push({ key: 'management', label: '마스터 관리', items: managementMenuItems.value })
+    sections.push({ key: 'management', label: '기준 정보', items: managementMenuItems.value })
   }
 
   return sections
@@ -331,20 +317,12 @@ const roleLabel = computed(() => {
 })
 // 현재 페이지가 월 선택을 지원하는 페이지인지 여부
 const showPeriodSelector = computed(() => periodEnabledPaths.some((path) => route.path.startsWith(path)))
-// 홈이 아닌 곳에서만 뒤로/홈 버튼 표시
-const showHeaderNavButtons = computed(() => route.path !== '/')
 // 조회 가능한 월 데이터가 하나라도 있는지 여부
 const hasMonthData = computed(() => availableMonths.value.length > 0)
 const periodDisplayLabel = computed(() => {
   // 로딩 중이면서 데이터가 비어 있으면 별도 메시지를 보여줍니다.
   if (monthsLoading.value && !hasMonthData.value) return '기간 불러오는 중...'
   return selectedPeriodLabel.value
-})
-
-const today = computed(() => {
-  // 우측 상단 날짜 라벨
-  const d = new Date()
-  return `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getDate()).padStart(2, '0')}`
 })
 
 // 월 드롭다운 열림 여부
@@ -358,36 +336,6 @@ function handlePageRefresh() {
   // 강제 새로고침으로 페이지 상태 초기화
   if (!process.client) return
   window.location.reload()
-}
-
-async function goHomeWithFallback() {
-  // 뒤로가기 실패 시 홈으로 안전하게 보내기 위한 공통 함수
-  showPeriodMenu.value = false
-  mobileMenuOpen.value = false
-  try {
-    await navigateTo('/')
-  } catch {
-    // noop
-  }
-  if (import.meta.client && window.location.pathname !== '/') {
-    window.location.assign('/')
-  }
-}
-
-async function handleGoBack() {
-  // 브라우저 히스토리가 있으면 뒤로가고,
-  // 없거나 이동 실패하면 홈으로 보냅니다.
-  if (import.meta.client && window.history.length > 1) {
-    const beforePath = window.location.pathname
-    window.history.back()
-    window.setTimeout(() => {
-      if (window.location.pathname === beforePath) {
-        window.location.assign('/')
-      }
-    }, 320)
-    return
-  }
-  await goHomeWithFallback()
 }
 
 function selectPeriodMonth(value: string) {
@@ -489,17 +437,15 @@ watch(
 .layout {
   display: flex;
   min-height: 100vh;
-  background:
-    radial-gradient(960px 520px at 84% -16%, rgba(49, 130, 246, 0.08), transparent 72%),
-    linear-gradient(180deg, #FCFDFE 0%, #F4F7FB 46%, #EFF3F8 100%);
+  background: #F6F8FB;
 }
 
 /* Sidebar */
 .sidebar {
   width: var(--sidebar-width);
-  background: rgba(255, 255, 255, 0.92);
-  border-right: 1px solid rgba(223, 230, 239, 0.9);
-  box-shadow: 10px 0 30px rgba(15, 23, 42, 0.05);
+  background: #FFFFFF;
+  border-right: 1px solid rgba(227, 233, 241, 0.92);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -508,8 +454,8 @@ watch(
   bottom: 0;
   z-index: 100;
   transition: width var(--transition-normal), box-shadow var(--transition-normal);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .sidebar.collapsed {
@@ -520,20 +466,21 @@ watch(
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  padding: 20px 18px 16px;
-  border-bottom: 1px solid rgba(236, 241, 246, 0.9);
-  min-height: 72px;
+  padding: 22px 18px 18px;
+  border-bottom: 1px solid rgba(238, 243, 248, 0.95);
+  min-height: 78px;
   overflow: hidden;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .sidebar-logo:hover {
-  background: rgba(248, 250, 253, 0.9);
+  background: #FAFBFD;
+  border-bottom-color: rgba(223, 231, 241, 0.96);
 }
 
 .logo-mark {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   object-fit: contain;
   flex-shrink: 0;
 }
@@ -545,14 +492,15 @@ watch(
 }
 
 .logo-text {
-  font-weight: 700;
-  font-size: 1rem;
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: -0.03em;
   color: var(--color-text);
   white-space: nowrap;
 }
 
 .logo-subtext {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-text-muted);
   white-space: nowrap;
@@ -571,33 +519,35 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 7px 10px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: 10px;
+  background: #FFFFFF;
   color: var(--color-text-secondary);
   font-size: 0.84rem;
-  font-weight: 500;
-  transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  font-weight: 700;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .header-nav-btn:hover {
-  background: var(--color-bg);
+  background: var(--color-surface-soft);
   color: var(--color-text);
-  border-color: #D1D5DB;
-  transform: translateY(-1px);
+  border-color: var(--color-border-strong);
+  box-shadow: none;
+  transform: none;
 }
 
 .sidebar-nav {
   flex: 1;
-  padding: 14px 12px 18px;
+  padding: 20px 12px 18px;
   overflow-y: auto;
 }
 
 .nav-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 18px;
+  gap: 8px;
+  margin-bottom: 24px;
 }
 
 .nav-group-header {
@@ -605,16 +555,17 @@ watch(
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 0 10px 2px;
+  padding: 0 12px 2px;
   border: 0;
   background: transparent;
   cursor: pointer;
 }
 
 .nav-group-label {
-  font-size: 0.76rem;
+  font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: -0.01em;
+  text-transform: none;
   color: var(--color-text-muted);
   padding: 0;
 }
@@ -636,19 +587,20 @@ watch(
 .nav-group-items {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  padding: 11px 12px;
+  min-height: 48px;
+  padding: 12px 14px;
   border-radius: 14px;
-  font-size: 0.93rem;
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 700;
   color: var(--color-sidebar-text);
-  transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+  transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -662,16 +614,18 @@ watch(
 }
 
 .nav-item:hover {
-  background: #F7F9FC;
+  background: #F7FAFD;
   color: var(--color-sidebar-text-active);
-  border-color: rgba(229, 234, 240, 0.95);
+  border-color: rgba(223, 231, 240, 0.98);
+  box-shadow: none;
+  transform: none;
 }
 
 .nav-item.active {
-  background: linear-gradient(180deg, rgba(238, 245, 255, 0.98) 0%, rgba(231, 240, 255, 0.96) 100%);
+  background: #F1F6FF;
   color: var(--color-sidebar-text-active);
-  border-color: rgba(49, 130, 246, 0.18);
-  box-shadow: 0 8px 18px rgba(49, 130, 246, 0.08);
+  border-color: rgba(47, 128, 237, 0.28);
+  box-shadow: none;
 }
 
 .nav-item.nav-home {
@@ -682,7 +636,7 @@ watch(
 }
 .nav-item.nav-home:hover {
   color: var(--color-primary);
-  background: #F7F9FC;
+  background: #F8FBFF;
   border-color: rgba(229, 234, 240, 0.95);
 }
 
@@ -711,19 +665,19 @@ watch(
   align-items: center;
   justify-content: center;
   margin: 0 12px;
-  padding: var(--space-sm);
+  padding: 10px;
   border-radius: 12px;
   color: var(--color-text-muted);
   transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 .sidebar-collapse-btn:hover {
-  background: #F7F9FC;
+  background: #F6F9FD;
   color: var(--color-text);
 }
 
 .sidebar-footer {
-  padding: 14px 12px 18px;
-  border-top: 1px solid rgba(236, 241, 246, 0.9);
+  padding: 16px 12px 18px;
+  border-top: 1px solid rgba(238, 243, 248, 0.95);
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
@@ -742,7 +696,7 @@ watch(
 .user-avatar {
   width: 32px;
   height: 32px;
-  background: #F4F7FB;
+  background: #F1F4F8;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -759,8 +713,8 @@ watch(
 }
 
 .user-name {
-  font-size: 0.92rem;
-  font-weight: 500;
+  font-size: 0.9rem;
+  font-weight: 700;
   color: var(--color-text);
 }
 
@@ -775,13 +729,13 @@ watch(
   gap: var(--space-sm);
   width: 100%;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: 14px;
   color: var(--color-text-muted);
   transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 
 .sidebar-logout-btn:hover {
-  background: #F7F9FC;
+  background: #F6F9FD;
   color: var(--color-text);
 }
 
@@ -798,6 +752,8 @@ watch(
   min-height: 100vh;
   transition: margin-left var(--transition-normal);
   width: calc(100% - var(--sidebar-width));
+  min-width: 0;
+  background: transparent;
 }
 
 .sidebar-collapsed .main-wrapper {
@@ -807,23 +763,24 @@ watch(
 
 .header {
   height: var(--header-height);
-  background: rgba(255, 255, 255, 0.84);
-  border-bottom: 1px solid rgba(223, 230, 239, 0.82);
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid rgba(227, 233, 241, 0.84);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-2xl);
+  padding: 0 32px;
   position: sticky;
   top: 0;
   z-index: 50;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  box-shadow: none;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
+  gap: 14px;
 }
 
 .mobile-menu-btn {
@@ -842,11 +799,12 @@ watch(
 .header-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-lg);
+  gap: 12px;
 }
 
 .header-date {
-  font-size: 0.8125rem;
+  font-size: 0.78rem;
+  font-weight: 600;
   color: var(--color-text-muted);
 }
 
@@ -893,23 +851,23 @@ watch(
 }
 
 .period-nav {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--liquid-border);
-  border-radius: var(--radius-sm);
-  background: var(--liquid-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fff;
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .period-nav:hover {
-  background: var(--color-bg);
+  background: var(--color-surface-soft);
   color: var(--color-text);
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .period-nav:disabled {
@@ -923,12 +881,12 @@ watch(
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: 5px 12px;
-  border: 1px solid var(--liquid-border);
+  padding: 7px 13px;
+  border: 1px solid var(--color-border);
   border-radius: 999px;
-  background: var(--liquid-bg);
-  font-size: 0.8125rem;
-  font-weight: 500;
+  background: #fff;
+  font-size: 0.79rem;
+  font-weight: 700;
   color: var(--color-text);
   cursor: pointer;
   transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
@@ -936,10 +894,10 @@ watch(
 }
 
 .period-current:hover {
-  background: var(--liquid-bg-strong);
+  background: var(--color-surface-soft);
   border-color: var(--color-primary);
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.1);
-  transform: translateY(-1px);
+  box-shadow: none;
+  transform: none;
 }
 
 .period-current:disabled {
@@ -955,10 +913,10 @@ watch(
   top: calc(100% + 6px);
   right: 0;
   width: 240px;
-  background: var(--liquid-bg-strong);
-  border: 1px solid var(--liquid-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-md);
   z-index: 200;
   padding: var(--space-sm);
   animation: dropdownIn 0.18s var(--ease-emphasized);
@@ -1013,7 +971,7 @@ watch(
   width: 100%;
   padding: 8px var(--space-md);
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: 14px;
   background: none;
   font-size: 0.8125rem;
   color: var(--color-text);
@@ -1023,8 +981,8 @@ watch(
 }
 
 .period-option:hover {
-  background: rgba(255, 255, 255, 0.72);
-  transform: translateX(2px);
+  background: var(--color-surface-soft);
+  transform: none;
 }
 
 .period-option.active {
@@ -1067,25 +1025,27 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  border: 1px solid var(--liquid-border);
-  background: var(--liquid-bg);
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: #FFFFFF;
   color: var(--color-text-secondary);
-  transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  box-shadow: none;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .header-refresh-btn:hover {
-  background: var(--liquid-bg-strong);
+  background: var(--color-surface-soft);
   color: var(--color-text);
-  transform: rotate(-10deg);
+  transform: none;
+  box-shadow: none;
 }
 
 .content {
   flex: 1;
-  padding: var(--space-2xl);
-  max-width: 1480px;
+  padding: 28px;
+  max-width: 1440px;
   width: 100%;
   margin: 0 auto;
 }

@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="page-header-left">
         <h1 class="page-title">주문 동기화</h1>
-        <span class="page-caption">채널을 선택하고 바로 주문을 반영합니다.</span>
+        <span class="page-caption">보고용 주문 원장을 갱신합니다.</span>
       </div>
 
       <div class="sync-channel-switch" role="tablist" aria-label="주문 동기화 채널 선택">

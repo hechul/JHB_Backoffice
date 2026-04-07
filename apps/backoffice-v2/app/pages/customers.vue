@@ -2,14 +2,13 @@
   <div class="customers-page">
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">고객 분석</h1>
-        <span class="page-caption">실구매 고객 중심</span>
+        <h1 class="page-title">고객 구성</h1>
+        <span class="page-caption">신규 · 재구매 · 핵심 고객</span>
       </div>
       <div class="page-header-actions">
         <StatusBadge :label="selectedPeriodLabel" variant="neutral" />
       </div>
     </div>
-
     <div class="customer-summary-grid">
       <div class="customer-summary-card">
         <span class="customer-summary-label">신규 고객</span>
@@ -1635,15 +1634,15 @@ onMounted(async () => {
 
 .page-title {
   margin: 0;
-  font-size: 1.9rem;
+  font-size: 2.2rem;
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
   color: var(--color-text);
 }
 
 .page-caption {
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.84rem;
+  font-weight: 700;
   color: var(--color-text-muted);
 }
 
@@ -1651,17 +1650,18 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.94));
+  border: 1px solid rgba(148, 163, 184, 0.10);
+  border-radius: 28px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.04);
   overflow: hidden;
 }
 
 .customer-summary-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 22px 24px;
+  gap: 10px;
+  padding: 24px 26px;
   background: transparent;
 }
 
@@ -1670,14 +1670,14 @@ onMounted(async () => {
 }
 
 .customer-summary-label {
-  font-size: 0.83rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 700;
   color: var(--color-text-secondary);
 }
 
 .customer-summary-value {
-  font-size: 1.45rem;
-  font-weight: 700;
+  font-size: 1.8rem;
+  font-weight: 800;
   color: var(--color-text);
 }
 
@@ -1690,10 +1690,11 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  padding: var(--space-lg) var(--space-xl);
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 20px 22px;
+  border: 1px solid rgba(148, 163, 184, 0.10);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.04);
 }
 
 .filter-row {
@@ -1735,7 +1736,7 @@ onMounted(async () => {
 }
 
 .customer-table-identity strong {
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   color: var(--color-text);
 }
 
@@ -1834,9 +1835,9 @@ onMounted(async () => {
     gap: var(--space-md);
   }
 
-  .customer-mobile-card {
+.customer-mobile-card {
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
+    border-radius: 20px;
     background: var(--color-surface);
     padding: var(--space-md);
     display: flex;

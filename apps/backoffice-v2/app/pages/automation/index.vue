@@ -1,8 +1,9 @@
 <template>
   <div class="automation-home">
     <div class="page-header">
+      <span class="page-kicker">반복 작업</span>
       <h1 class="page-title">업무 자동화</h1>
-      <span class="page-subtitle">반복 작업을 파일 업로드 한 번으로 처리합니다.</span>
+      <span class="page-subtitle">반복 작업을 바로 실행할 수 있게 정리했습니다.</span>
     </div>
 
     <div class="card-grid">
@@ -11,9 +12,11 @@
           <FileSpreadsheet :size="20" :stroke-width="1.8" />
         </div>
         <div class="action-body">
+          <span class="action-meta">배송지 파일</span>
           <h3>아르고 발주 변환</h3>
-          <p>체험단 배송지 파일을 아르고 발주 양식으로 자동 변환합니다.</p>
+          <p>여러 파일을 한 번에 아르고 양식으로 정리합니다.</p>
         </div>
+        <ChevronRight :size="18" :stroke-width="2" class="action-arrow" />
       </NuxtLink>
 
       <NuxtLink to="/automation/blog-media" class="card action-card">
@@ -21,16 +24,18 @@
           <ImageDown :size="20" :stroke-width="1.8" />
         </div>
         <div class="action-body">
+          <span class="action-meta">URL 수집</span>
           <h3>블로그 미디어 수집</h3>
-          <p>네이버 블로그 이미지/동영상 일괄 저장</p>
+          <p>네이버 블로그 이미지와 영상을 순차 저장합니다.</p>
         </div>
+        <ChevronRight :size="18" :stroke-width="2" class="action-arrow" />
       </NuxtLink>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { FileSpreadsheet, ImageDown } from 'lucide-vue-next'
+import { ChevronRight, FileSpreadsheet, ImageDown } from 'lucide-vue-next'
 
 definePageMeta({ layout: 'home' })
 </script>
@@ -45,12 +50,19 @@ definePageMeta({ layout: 'home' })
 .page-header {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: 6px;
+}
+
+.page-kicker {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  letter-spacing: 0.02em;
 }
 
 .page-title {
-  font-size: 1.125rem;
-  font-weight: 700;
+  font-size: 1.25rem;
+  font-weight: 760;
   color: var(--color-text);
 }
 
@@ -69,38 +81,48 @@ definePageMeta({ layout: 'home' })
   display: flex;
   align-items: center;
   gap: var(--space-lg);
-  min-height: 112px;
-  transition: all 0.16s ease;
+  min-height: 124px;
+  border-color: var(--color-border);
+  transition: border-color 0.16s ease, background-color 0.16s ease;
 }
 
 .action-card:hover {
-  border-color: #D1D5DB;
-  box-shadow: var(--shadow-sm);
-  transform: translateY(-1px);
+  border-color: var(--color-border-strong);
+  background: #fbfdff;
 }
 
 .action-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #EFF6FF;
-  color: #1D4ED8;
+  background: #f3f7fd;
+  color: #2563eb;
   flex-shrink: 0;
+  border: 1px solid rgba(223, 231, 240, 0.96);
 }
 
-.action-icon.disabled {
-  background: #F3F4F6;
-  color: #9CA3AF;
+.action-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.action-meta {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
 }
 
 .action-body h3 {
-  font-size: 0.9375rem;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 700;
   color: var(--color-text);
-  margin-bottom: 2px;
+  letter-spacing: -0.02em;
 }
 
 .action-body p {
@@ -108,9 +130,9 @@ definePageMeta({ layout: 'home' })
   color: var(--color-text-secondary);
 }
 
-.action-card.disabled {
-  opacity: 0.6;
-  pointer-events: none;
+.action-arrow {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
 }
 
 @media (max-width: 768px) {

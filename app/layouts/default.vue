@@ -203,6 +203,7 @@ import {
   BarChart3,
   TrendingUp,
   LineChart,
+  Search,
   Package,
   CalendarDays,
   ChevronLeft,
@@ -229,6 +230,7 @@ const analysisMenuItems = computed(() => {
     { path: '/dashboard', label: '대시보드', icon: BarChart3, disabled: false },
     { path: '/growth-stages', label: '고객 성장 단계', icon: TrendingUp, disabled: false },
     { path: '/product-trends', label: '상품 구매 추이', icon: LineChart, disabled: false },
+    { path: '/search-ads', label: '네이버 검색광고', icon: Search, disabled: false },
   ]
 })
 
@@ -253,6 +255,7 @@ const allMenuItems = computed(() => {
     { path: '/dashboard', label: '대시보드', group: '매출분석' },
     { path: '/growth-stages', label: '고객 성장 단계', group: '매출분석' },
     { path: '/product-trends', label: '상품 구매 추이', group: '매출분석' },
+    { path: '/search-ads', label: '네이버 검색광고', group: '매출분석' },
     { path: '/customers', label: '고객 분석', group: '고객 관리' },
     { path: '/logs', label: '실행 이력', group: '고객 관리' },
   ]
@@ -261,6 +264,7 @@ const allMenuItems = computed(() => {
     { path: '/dashboard', label: '대시보드', group: '매출분석' },
     { path: '/growth-stages', label: '고객 성장 단계', group: '매출분석' },
     { path: '/product-trends', label: '상품 구매 추이', group: '매출분석' },
+    { path: '/search-ads', label: '네이버 검색광고', group: '매출분석' },
     { path: '/customers', label: '고객 분석', group: '고객 관리' },
     { path: '/upload', label: '데이터 업로드', group: '고객 관리' },
     { path: '/filter', label: '필터링', group: '고객 관리' },
