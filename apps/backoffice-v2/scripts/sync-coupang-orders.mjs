@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -27,6 +27,7 @@ const DEFAULT_FULFILLMENT_TYPE = 'all'
 const DEFAULT_REQUEST_INTERVAL_MS = 1200
 const DEFAULT_MAX_RETRIES = 5
 const DEFAULT_RETRY_BASE_DELAY_MS = 10000
+const DEFAULT_REVENUE_EVENT_PREFIX = 'revenue'
 const MARKETPLACE_ORDER_STATUSES = ['ACCEPT', 'INSTRUCT', 'DEPARTURE', 'DELIVERING', 'FINAL_DELIVERY', 'NONE_TRACKING']
 const MARKETPLACE_RETURN_REQUEST_STATUSES = ['RU', 'UC', 'CC', 'PR']
 const COUPANG_DATE_BASIS_LABELS = {
@@ -52,6 +53,7 @@ Options:
   --request-interval-ms=NUMBER  Minimum delay between Coupang API requests (default: 1200)
   --max-retries=NUMBER          Retry count for transient/429 errors (default: 5)
   --retry-base-delay-ms=NUMBER  Base retry delay in milliseconds (default: 10000)
+  --revenue-only                Skip order fetch and run only marketplace revenue enrichment
   --dry-run                     Fetch and transform without DB writes
   --help                        Show this help
 `.trim())
@@ -74,6 +76,7 @@ function parseArgs(argv) {
     requestIntervalMs: DEFAULT_REQUEST_INTERVAL_MS,
     maxRetries: DEFAULT_MAX_RETRIES,
     retryBaseDelayMs: DEFAULT_RETRY_BASE_DELAY_MS,
+    revenueOnly: false,
     dryRun: false,
     help: false,
   }
@@ -81,6 +84,10 @@ function parseArgs(argv) {
   for (const rawArg of argv) {
     if (rawArg === '--dry-run') {
       args.dryRun = true
+      continue
+    }
+    if (rawArg === '--revenue-only') {
+      args.revenueOnly = true
       continue
     }
     if (rawArg === '--help' || rawArg === '-h') {
@@ -264,6 +271,65 @@ function formatIsoDate(date) {
   return `${year}-${month}-${day}`
 }
 
+function currentLocalIsoDate() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function currentLocalYesterdayIsoDate() {
+  const today = parseIsoDate(currentLocalIsoDate())
+  if (!today) return currentLocalIsoDate()
+  today.setUTCDate(today.getUTCDate() - 1)
+  return formatIsoDate(today)
+}
+
+function maxIsoDate(left, right) {
+  const normalizedLeft = normalizeString(left)
+  const normalizedRight = normalizeString(right)
+  if (!normalizedLeft) return normalizedRight
+  if (!normalizedRight) return normalizedLeft
+  return normalizedLeft >= normalizedRight ? normalizedLeft : normalizedRight
+}
+
+function minIsoDate(left, right) {
+  const normalizedLeft = normalizeString(left)
+  const normalizedRight = normalizeString(right)
+  if (!normalizedLeft) return normalizedRight
+  if (!normalizedRight) return normalizedLeft
+  return normalizedLeft <= normalizedRight ? normalizedLeft : normalizedRight
+}
+
+function hashRevenuePayload(input) {
+  return createHash('sha256')
+    .update(JSON.stringify(input))
+    .digest('hex')
+    .slice(0, 16)
+}
+
+export function resolveRevenueRecognitionWindow(input) {
+  const yesterday = currentLocalYesterdayIsoDate()
+  const recognitionFrom = normalizeString(input?.recognitionFrom)
+  const requestedTo = normalizeString(input?.recognitionTo) || yesterday
+  const recognitionTo = minIsoDate(requestedTo, yesterday)
+
+  if (!recognitionFrom || !recognitionTo || recognitionFrom > recognitionTo) {
+    return {
+      recognitionFrom: recognitionFrom || null,
+      recognitionTo: recognitionTo || null,
+      isEmpty: true,
+    }
+  }
+
+  return {
+    recognitionFrom,
+    recognitionTo,
+    isEmpty: false,
+  }
+}
+
 export function splitIsoDateRangeByMonth(from, to) {
   const start = parseIsoDate(from)
   const end = parseIsoDate(to)
@@ -400,7 +466,7 @@ async function coupangRequestJson(coupangConfig, requestState, input) {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(input.params || {})) {
     const normalized = normalizeString(value)
-    if (!normalized) continue
+    if (!normalized && key !== 'token') continue
     params.set(key, normalized)
   }
 
@@ -790,6 +856,448 @@ function createScopeSummary(fulfillmentType) {
   }
 }
 
+function toMoneyNumber(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+function roundMoney(value) {
+  return Math.round(toMoneyNumber(value) * 100) / 100
+}
+
+function toRevenueEventAt(input) {
+  const normalized = normalizeString(input)
+  return normalized ? `${normalized}T00:00:00+09:00` : null
+}
+
+function normalizeRevenueSaleType(value) {
+  return normalizeString(value).toUpperCase() || 'UNKNOWN'
+}
+
+function revenueSign(saleType) {
+  return normalizeRevenueSaleType(saleType) === 'REFUND' ? -1 : 1
+}
+
+function buildRevenueOrderItemKey(orderId, vendorItemId) {
+  const normalizedOrderId = normalizeString(orderId)
+  const normalizedVendorItemId = normalizeString(vendorItemId)
+  return normalizedOrderId && normalizedVendorItemId
+    ? `${normalizedOrderId}::${normalizedVendorItemId}`
+    : ''
+}
+
+function buildRevenueEventSourceLineId(input) {
+  const digest = hashRevenuePayload({
+    record: input.record,
+    item: input.item,
+  })
+
+  return [
+    DEFAULT_REVENUE_EVENT_PREFIX,
+    normalizeString(input.orderId) || 'unknown-order',
+    normalizeString(input.vendorItemId) || 'unknown-item',
+    normalizeRevenueSaleType(input.saleType),
+    digest,
+  ].join(':')
+}
+
+function allocateAmountAcrossWeights(totalAmount, weights) {
+  const normalizedWeights = Array.isArray(weights) && weights.length > 0
+    ? weights.map((weight) => {
+        const numeric = Number(weight)
+        return Number.isFinite(numeric) && numeric > 0 ? numeric : 1
+      })
+    : [1]
+
+  const totalWeight = normalizedWeights.reduce((sum, weight) => sum + weight, 0) || normalizedWeights.length
+  const sign = totalAmount < 0 ? -1 : 1
+  let remainingUnits = Math.round(Math.abs(toMoneyNumber(totalAmount)) * 100)
+  let remainingWeight = totalWeight
+
+  return normalizedWeights.map((weight, index) => {
+    if (index === normalizedWeights.length - 1) {
+      const finalValue = remainingUnits / 100
+      remainingUnits = 0
+      remainingWeight = 0
+      return sign * finalValue
+    }
+
+    const allocatedUnits = remainingWeight > 0
+      ? Math.floor((remainingUnits * weight) / remainingWeight)
+      : 0
+
+    remainingUnits -= allocatedUnits
+    remainingWeight -= weight
+    return sign * (allocatedUnits / 100)
+  })
+}
+
+async function fetchCoupangRevenueHistory(coupangConfig, requestState, args) {
+  const records = []
+
+  for (const window of splitIsoDateRangeByMonth(args.from, args.to)) {
+    let nextToken = null
+
+    while (true) {
+      const currentToken = nextToken
+      const params = {
+        vendorId: coupangConfig.vendorId,
+        recognitionDateFrom: window.from,
+        recognitionDateTo: window.to,
+        maxPerPage: String(args.maxPerPage),
+        token: nextToken || '',
+      }
+
+      const payload = await coupangRequestJson(coupangConfig, requestState, {
+        method: 'GET',
+        path: '/v2/providers/openapi/apis/api/v1/revenue-history',
+        params,
+      })
+
+      const rows = Array.isArray(payload?.data) ? payload.data : []
+      records.push(...rows)
+
+      nextToken = normalizeString(payload?.nextToken)
+      if (!payload?.hasNext || !nextToken || nextToken === currentToken || rows.length === 0) {
+        break
+      }
+    }
+  }
+
+  return records
+}
+
+async function fetchCoupangMarketplacePurchasesByOrderIds(targetConfig, accountKey, orderIds) {
+  const normalizedIds = [...new Set((Array.isArray(orderIds) ? orderIds : []).map((value) => normalizeString(value)).filter(Boolean))]
+  const rows = []
+
+  for (const batch of chunk(normalizedIds, 100)) {
+    if (batch.length === 0) continue
+    const encodedIds = batch.map((value) => `"${value}"`).join(',')
+    const query = [
+      'purchases?select=purchase_id,source_order_id,source_product_id,source_fulfillment_type,quantity',
+      'source_channel=eq.coupang',
+      `source_fulfillment_type=eq.${COUPANG_MARKETPLACE_FULFILLMENT_TYPE}`,
+      `source_account_key=eq.${encodeURIComponent(accountKey)}`,
+      `source_order_id=in.(${encodedIds})`,
+      'limit=5000',
+    ].join('&')
+    const batchRows = await restRequest(targetConfig, query, { method: 'GET' })
+    if (Array.isArray(batchRows)) {
+      rows.push(...batchRows)
+    }
+  }
+
+  return rows
+}
+
+async function patchPurchaseAmountRows(targetConfig, rows) {
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const purchaseId = normalizeString(row?.purchase_id)
+    if (!purchaseId) continue
+
+    await restRequest(targetConfig, `purchases?purchase_id=eq.${encodeURIComponent(purchaseId)}`, {
+      method: 'PATCH',
+      headers: {
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({
+        expected_settlement_amount: row.expected_settlement_amount,
+        payment_commission: row.payment_commission,
+        sale_commission: row.sale_commission,
+      }),
+    })
+  }
+}
+
+async function fetchCoupangRevenueEventRowsByOrderIds(targetConfig, accountKey, orderIds) {
+  const normalizedIds = [...new Set((Array.isArray(orderIds) ? orderIds : []).map((value) => normalizeString(value)).filter(Boolean))]
+  const rows = []
+
+  for (const batch of chunk(normalizedIds, 100)) {
+    if (batch.length === 0) continue
+    const encodedIds = batch.map((value) => `"${value}"`).join(',')
+    const query = [
+      'commerce_order_events_raw?select=source_order_id,source_line_id,source_fulfillment_type,event_type,event_at,extra_flags,raw_json',
+      'source_channel=eq.coupang',
+      `source_account_key=eq.${encodeURIComponent(accountKey)}`,
+      `source_order_id=in.(${encodedIds})`,
+      'limit=5000',
+    ].join('&')
+    const batchRows = await restRequest(targetConfig, query, { method: 'GET' })
+    if (Array.isArray(batchRows)) {
+      rows.push(...batchRows)
+    }
+  }
+
+  return rows
+}
+
+async function deleteRevenueEventRowsByOrderIdsInWindow(targetConfig, accountKey, orderIds, from, to) {
+  const normalizedIds = [...new Set((Array.isArray(orderIds) ? orderIds : []).map((value) => normalizeString(value)).filter(Boolean))]
+  if (normalizedIds.length === 0) return
+
+  const eventFrom = `${from}T00:00:00+09:00`
+  const eventTo = `${to}T23:59:59+09:00`
+
+  for (const batch of chunk(normalizedIds, 100)) {
+    const encodedIds = batch.map((value) => `"${value}"`).join(',')
+    const query = [
+      `source_order_id=in.(${encodedIds})`,
+      'source_channel=eq.coupang',
+      `source_account_key=eq.${encodeURIComponent(accountKey)}`,
+      'source_line_id=like.revenue:*',
+      `event_at=gte.${encodeURIComponent(eventFrom)}`,
+      `event_at=lte.${encodeURIComponent(eventTo)}`,
+    ]
+
+    await restRequest(targetConfig, `commerce_order_events_raw?${query.join('&')}`, {
+      method: 'DELETE',
+      headers: {
+        Prefer: 'return=minimal',
+      },
+    })
+  }
+}
+
+function buildPurchaseLookupByRevenueKey(purchaseRows) {
+  const lookup = new Map()
+
+  for (const row of Array.isArray(purchaseRows) ? purchaseRows : []) {
+    const key = buildRevenueOrderItemKey(row?.source_order_id, row?.source_product_id)
+    if (!key) continue
+    const bucket = lookup.get(key)
+    if (bucket) {
+      bucket.push(row)
+    } else {
+      lookup.set(key, [row])
+    }
+  }
+
+  return lookup
+}
+
+export function buildRevenueHistoryEventRows(input) {
+  const purchaseLookup = input.purchaseLookup instanceof Map
+    ? input.purchaseLookup
+    : buildPurchaseLookupByRevenueKey(input.purchaseRows)
+  const eventRows = []
+
+  for (const record of Array.isArray(input.records) ? input.records : []) {
+    const orderId = normalizeString(record?.orderId)
+    const saleType = normalizeRevenueSaleType(record?.saleType)
+    const sign = revenueSign(saleType)
+    const items = Array.isArray(record?.items) ? record.items : []
+    const matchedItems = items.filter((item) => purchaseLookup.has(buildRevenueOrderItemKey(orderId, item?.vendorItemId)))
+    const totalMatchedSaleAmount = matchedItems.reduce((sum, item) => sum + Math.abs(toMoneyNumber(item?.saleAmount)), 0)
+    const orderDeliverySettlementAmount = toMoneyNumber(record?.deliveryFee?.settlementAmount)
+    const orderDeliveryCommissionAmount = toMoneyNumber(record?.deliveryFee?.fee) + toMoneyNumber(record?.deliveryFee?.feeVat)
+
+    for (const item of matchedItems) {
+      const vendorItemId = normalizeString(item?.vendorItemId)
+      const matchKey = buildRevenueOrderItemKey(orderId, vendorItemId)
+      const matchedPurchases = purchaseLookup.get(matchKey) || []
+      if (matchedPurchases.length === 0) continue
+
+      const matchedItemSaleAmount = Math.abs(toMoneyNumber(item?.saleAmount))
+      const deliveryRatio = totalMatchedSaleAmount > 0
+        ? matchedItemSaleAmount / totalMatchedSaleAmount
+        : 1 / matchedItems.length
+      const itemSettlementAmount = sign * toMoneyNumber(item?.settlementAmount)
+      const itemCommissionAmount = sign * (toMoneyNumber(item?.serviceFee) + toMoneyNumber(item?.serviceFeeVat))
+      const deliverySettlementAmount = sign * orderDeliverySettlementAmount * deliveryRatio
+      const deliveryCommissionAmount = sign * orderDeliveryCommissionAmount * deliveryRatio
+      const expectedSettlementAmount = roundMoney(itemSettlementAmount + deliverySettlementAmount)
+      const commissionAmount = roundMoney(itemCommissionAmount + deliveryCommissionAmount)
+      const sourceFulfillmentType = normalizeString(matchedPurchases[0]?.source_fulfillment_type) || DEFAULT_SOURCE_FULFILLMENT_TYPE
+
+      eventRows.push({
+        source_channel: 'coupang',
+        source_fulfillment_type: sourceFulfillmentType,
+        source_account_key: input.accountKey,
+        run_id: input.runId,
+        window_id: null,
+        source_order_id: orderId,
+        source_line_id: buildRevenueEventSourceLineId({
+          orderId,
+          vendorItemId,
+          saleType,
+          record,
+          item,
+        }),
+        event_type: `${DEFAULT_REVENUE_EVENT_PREFIX}:${saleType}`,
+        event_at: toRevenueEventAt(record?.recognitionDate)
+          || toRevenueEventAt(record?.settlementDate)
+          || toRevenueEventAt(record?.saleDate)
+          || new Date().toISOString(),
+        order_status: null,
+        payment_date: toRevenueEventAt(record?.saleDate),
+        extra_flags: {
+          sourceProductId: vendorItemId,
+          saleType,
+          recognitionDate: normalizeString(record?.recognitionDate) || null,
+          settlementDate: normalizeString(record?.settlementDate) || null,
+        },
+        raw_json: {
+          record,
+          item,
+          computed: {
+            expectedSettlementAmount,
+            commissionAmount,
+          },
+        },
+      })
+    }
+  }
+
+  return dedupeEventRows(eventRows)
+}
+
+export function aggregateRevenueEventRowsByOrderItem(rows) {
+  const aggregateMap = new Map()
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const eventType = normalizeString(row?.event_type)
+    if (!eventType.startsWith(`${DEFAULT_REVENUE_EVENT_PREFIX}:`)) continue
+
+    const orderId = normalizeString(row?.source_order_id)
+    const vendorItemId = normalizeString(row?.extra_flags?.sourceProductId || row?.raw_json?.item?.vendorItemId)
+    const key = buildRevenueOrderItemKey(orderId, vendorItemId)
+    if (!key) continue
+
+    const expectedSettlementAmount = toMoneyNumber(row?.raw_json?.computed?.expectedSettlementAmount)
+    const commissionAmount = toMoneyNumber(row?.raw_json?.computed?.commissionAmount)
+    const aggregate = aggregateMap.get(key)
+
+    if (aggregate) {
+      aggregate.expectedSettlementAmount = roundMoney(aggregate.expectedSettlementAmount + expectedSettlementAmount)
+      aggregate.commissionAmount = roundMoney(aggregate.commissionAmount + commissionAmount)
+      aggregate.rowCount += 1
+      continue
+    }
+
+    aggregateMap.set(key, {
+      orderId,
+      sourceProductId: vendorItemId,
+      expectedSettlementAmount: roundMoney(expectedSettlementAmount),
+      commissionAmount: roundMoney(commissionAmount),
+      rowCount: 1,
+    })
+  }
+
+  return aggregateMap
+}
+
+export function buildRevenueSettlementPatches(input) {
+  const purchaseRows = Array.isArray(input.purchaseRows) ? input.purchaseRows : []
+  const aggregateMap = input.aggregateMap instanceof Map
+    ? input.aggregateMap
+    : aggregateRevenueEventRowsByOrderItem(input.eventRows)
+  const patches = []
+  const purchaseLookup = buildPurchaseLookupByRevenueKey(purchaseRows)
+
+  for (const [key, rows] of purchaseLookup.entries()) {
+    const aggregate = aggregateMap.get(key)
+    if (!aggregate) continue
+
+    const weights = rows.map((row) => {
+      const quantity = Number(row?.quantity)
+      return Number.isFinite(quantity) && quantity > 0 ? quantity : 1
+    })
+    const settlementAllocations = allocateAmountAcrossWeights(aggregate.expectedSettlementAmount, weights)
+    const commissionAllocations = allocateAmountAcrossWeights(aggregate.commissionAmount, weights)
+
+    rows.forEach((row, index) => {
+      patches.push({
+        purchase_id: row.purchase_id,
+        expected_settlement_amount: settlementAllocations[index] ?? 0,
+        payment_commission: commissionAllocations[index] ?? 0,
+        sale_commission: 0,
+      })
+    })
+  }
+
+  return patches
+}
+
+export async function runCoupangRevenueEnrichment(input) {
+  const recognitionWindow = resolveRevenueRecognitionWindow({
+    recognitionFrom: input.recognitionFrom,
+    recognitionTo: input.recognitionTo,
+  })
+
+  if (recognitionWindow.isEmpty) {
+    return {
+      recognitionFrom: recognitionWindow.recognitionFrom,
+      recognitionTo: recognitionWindow.recognitionTo,
+      revenueHistoryRecordCount: 0,
+      matchedOrderCount: 0,
+      revenueEventCount: 0,
+      patchedPurchaseCount: 0,
+    }
+  }
+
+  const recognitionTo = recognitionWindow.recognitionTo
+  const revenueRecords = await fetchCoupangRevenueHistory(input.coupangConfig, input.requestState, {
+    from: recognitionWindow.recognitionFrom,
+    to: recognitionTo,
+    maxPerPage: input.maxPerPage,
+  })
+  const orderIds = [...new Set(revenueRecords.map((record) => normalizeString(record?.orderId)).filter(Boolean))]
+  const purchaseRows = input.targetConfig
+    ? await fetchCoupangMarketplacePurchasesByOrderIds(input.targetConfig, input.accountKey, orderIds)
+    : []
+  const purchaseLookup = buildPurchaseLookupByRevenueKey(purchaseRows)
+  const revenueEventRows = buildRevenueHistoryEventRows({
+    records: revenueRecords,
+    purchaseLookup,
+    accountKey: input.accountKey,
+    runId: input.runId,
+  })
+
+  if (!input.dryRun && input.targetConfig && revenueEventRows.length > 0) {
+    await deleteRevenueEventRowsByOrderIdsInWindow(
+      input.targetConfig,
+      input.accountKey,
+      orderIds,
+      recognitionWindow.recognitionFrom,
+      recognitionTo,
+    )
+
+    const persistedEventRows = revenueEventRows.map((row) =>
+      maybeWithSourceFulfillmentType(row, input.sourceScopeSupport?.commerceOrderEventsRaw))
+    await upsertRows(
+      input.targetConfig,
+      'commerce_order_events_raw',
+      'source_channel,source_fulfillment_type,source_account_key,source_line_id,event_at,event_type',
+      persistedEventRows,
+    )
+  }
+
+  const affectedOrderIds = [...new Set(revenueEventRows.map((row) => normalizeString(row?.source_order_id)).filter(Boolean))]
+  const cumulativeRevenueEvents = input.targetConfig
+    ? await fetchCoupangRevenueEventRowsByOrderIds(input.targetConfig, input.accountKey, affectedOrderIds)
+    : revenueEventRows
+  const revenueAggregateMap = aggregateRevenueEventRowsByOrderItem(cumulativeRevenueEvents)
+  const settlementPatches = buildRevenueSettlementPatches({
+    purchaseRows,
+    aggregateMap: revenueAggregateMap,
+  })
+
+  if (!input.dryRun && input.targetConfig && settlementPatches.length > 0) {
+    await patchPurchaseAmountRows(input.targetConfig, settlementPatches)
+  }
+
+  return {
+    recognitionFrom: recognitionWindow.recognitionFrom,
+    recognitionTo,
+    revenueHistoryRecordCount: revenueRecords.length,
+    matchedOrderCount: affectedOrderIds.length,
+    revenueEventCount: revenueEventRows.length,
+    patchedPurchaseCount: settlementPatches.length,
+  }
+}
+
 async function runMarketplaceScope(coupangConfig, requestState, args) {
   const orders = await fetchMarketplaceOrders(coupangConfig, requestState, args)
   const rawLineRows = dedupeCoupangRawLineRows(orders.flatMap((order) => buildCoupangMarketplaceRawLineRows({
@@ -1125,7 +1633,8 @@ async function main() {
         commerceOrderEventsRaw: false,
         commerceOrderLinesRaw: false,
         commerceProductMappings: false,
-        purchases: false,
+    purchases: false,
+        purchaseAmounts: false,
       }
 
   if (!args.dryRun) {
@@ -1167,10 +1676,30 @@ async function main() {
     persistedRawEventCount: 0,
     persistedRawLineCount: 0,
     persistedPurchaseCount: 0,
+    revenueRecognitionFrom: args.from,
+    revenueRecognitionTo: currentLocalYesterdayIsoDate(),
+    revenueHistoryRecordCount: 0,
+    revenueMatchedOrderCount: 0,
+    revenueEventCount: 0,
+    revenuePatchedPurchaseCount: 0,
     scopeSummaries: [],
+  }
+  let revenueOnlyRunId = null
+
+  if (!args.dryRun && args.revenueOnly) {
+    const revenueRunRow = await createSyncRun(
+      targetConfig,
+      args,
+      args.from,
+      maxIsoDate(args.to, currentLocalYesterdayIsoDate()),
+      COUPANG_MARKETPLACE_FULFILLMENT_TYPE,
+    )
+    revenueOnlyRunId = String(revenueRunRow.id)
   }
 
   for (const fulfillmentType of fulfillmentTypes) {
+    if (args.revenueOnly) break
+
     const scopeSummary = createScopeSummary(fulfillmentType)
     let runId = args.dryRun ? randomUUID() : null
 
@@ -1296,6 +1825,62 @@ async function main() {
     } finally {
       summary.scopeSummaries.push(scopeSummary)
     }
+  }
+
+  const revenueRunId = summary.scopeSummaries.find((scope) => normalizeString(scope.runId))?.runId || revenueOnlyRunId
+
+  try {
+    const revenueSummary = await runCoupangRevenueEnrichment({
+      coupangConfig,
+      requestState,
+      targetConfig,
+      sourceScopeSupport,
+      accountKey: args.accountKey,
+      runId: revenueRunId,
+      recognitionFrom: args.from,
+      // Revenue recognition/settlement is often recorded after the order window closes.
+      // For historical backfills, continue querying through the latest completed local day
+      // so existing marketplace orders can be patched with delayed settlement data.
+      recognitionTo: maxIsoDate(args.to, currentLocalIsoDate()),
+      maxPerPage: args.maxPerPage,
+      dryRun: args.dryRun,
+    })
+
+    summary.revenueRecognitionFrom = revenueSummary.recognitionFrom
+    summary.revenueRecognitionTo = revenueSummary.recognitionTo
+    summary.revenueHistoryRecordCount = revenueSummary.revenueHistoryRecordCount
+    summary.revenueMatchedOrderCount = revenueSummary.matchedOrderCount
+    summary.revenueEventCount = revenueSummary.revenueEventCount
+    summary.revenuePatchedPurchaseCount = revenueSummary.patchedPurchaseCount
+
+    if (!args.dryRun && revenueOnlyRunId) {
+      await updateSyncRun(targetConfig, revenueOnlyRunId, buildSummaryPatch({
+        ...createScopeSummary(COUPANG_MARKETPLACE_FULFILLMENT_TYPE),
+        runId: revenueOnlyRunId,
+        responseOrderCount: 0,
+        fetchedOrderCount: revenueSummary.matchedOrderCount,
+        rawEventCount: revenueSummary.revenueEventCount,
+        persistedRawEventCount: revenueSummary.revenueEventCount,
+        persistedPurchaseCount: revenueSummary.patchedPurchaseCount,
+        projectedCount: revenueSummary.patchedPurchaseCount,
+      }, 'done'))
+    }
+  } catch (error) {
+    if (!args.dryRun && revenueOnlyRunId) {
+      await updateSyncRun(
+        targetConfig,
+        revenueOnlyRunId,
+        buildSummaryPatch(
+          {
+            ...createScopeSummary(COUPANG_MARKETPLACE_FULFILLMENT_TYPE),
+            runId: revenueOnlyRunId,
+          },
+          'failed',
+          error instanceof Error ? error.message : String(error),
+        ),
+      )
+    }
+    throw error
   }
 
   console.log(JSON.stringify(summary, null, 2))

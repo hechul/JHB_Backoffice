@@ -3,21 +3,25 @@
     <div class="page-header">
       <div class="page-header-left">
         <h1 class="page-title">네이버 검색광고</h1>
-        <span class="page-caption">광고비와 전환매출 흐름을 먼저 봅니다</span>
+        <span class="page-caption">{{ currentRangeLabel }} 기준 광고비와 전환매출 흐름</span>
       </div>
       <div class="page-header-actions">
-        <div class="preset-chips">
-          <button
-            v-for="preset in presetOptions"
-            :key="preset.value"
-            type="button"
-            class="preset-chip"
-            :class="{ active: selectedPreset === preset.value }"
-            @click="selectedPreset = preset.value"
-          >
-            {{ preset.label }}
-          </button>
-        </div>
+        <select
+          v-if="selectedSearchMonth !== 'all'"
+          v-model="trendDrillWeek"
+          class="select select-compact header-select"
+        >
+          <option value="">주차 전체</option>
+          <option v-for="week in searchWeekOptions" :key="week.value" :value="week.value">{{ week.label }}</option>
+        </select>
+        <select
+          v-if="selectedSearchMonth !== 'all' && trendDrillWeek"
+          v-model="trendDrillDate"
+          class="select select-compact header-select"
+        >
+          <option value="">일자 전체</option>
+          <option v-for="dateToken in searchDateOptions" :key="dateToken" :value="dateToken">{{ formatDateLabel(dateToken) }}</option>
+        </select>
         <button type="button" class="refresh-chip" :disabled="pending || drillPending" @click="handleRefresh">
           새로고침
         </button>
@@ -80,20 +84,29 @@
               <div class="trend-card-copy">
                 <h3 class="card-title">{{ trendCardTitle }}</h3>
                 <div class="trend-drill-path">
-                  <button type="button" class="trend-drill-pill" :class="{ active: !trendDrillMonth }" @click="resetTrendDrilldown">
+                  <button
+                    v-if="selectedSearchMonth === 'all'"
+                    type="button"
+                    class="trend-drill-pill"
+                    :class="{ active: !trendDrillMonth }"
+                    @click="resetTrendDrilldown"
+                  >
                     전체
                   </button>
                   <button
-                    v-if="trendDrillMonth"
+                    v-if="rootTrendMonth"
                     type="button"
                     class="trend-drill-pill"
-                    :class="{ active: !!trendDrillMonth && !trendDrillWeek }"
+                    :class="{ active: !!rootTrendMonth && !trendDrillWeek }"
                     @click="clearTrendWeek"
                   >
-                    {{ formatMonthLabel(trendDrillMonth) }}
+                    {{ formatMonthLabel(rootTrendMonth) }}
                   </button>
-                  <span v-if="trendDrillWeek" class="trend-drill-pill active">
-                    {{ weekLabelFromCode(trendDrillMonth || '', trendDrillWeek) }}
+                  <span v-if="trendDrillWeek && rootTrendMonth" class="trend-drill-pill active">
+                    {{ weekLabelFromCode(rootTrendMonth, trendDrillWeek) }}
+                  </span>
+                  <span v-if="trendDrillDate" class="trend-drill-pill active">
+                    {{ formatDateLabel(trendDrillDate) }}
                   </span>
                 </div>
               </div>
@@ -247,9 +260,7 @@
 import { Chart, LineController, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, Filler } from 'chart.js'
 
 import {
-  NAVER_SEARCHAD_PRESET_OPTIONS,
   type NaverSearchAdOverviewResponse,
-  type NaverSearchAdPreset,
   type NaverSearchAdTrendResponse,
 } from '../../shared/naverSearchAd'
 import { formatCompactCurrency, formatCurrency } from '~/composables/useMoneyFormat'
@@ -257,20 +268,71 @@ import { buildWeekOptions, weekCodeFromDate, weekDateTokensFromCode, weekLabelFr
 
 Chart.register(LineController, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, Filler)
 
-const selectedPreset = ref<NaverSearchAdPreset>('thisMonth')
-const presetOptions = NAVER_SEARCHAD_PRESET_OPTIONS
+const { selectedMonth, selectedPeriodLabel } = useAnalysisPeriod()
 const trendDrillMonth = ref<string | null>(null)
 const trendDrillWeek = ref('')
+const trendDrillDate = ref('')
+
+function isMonthToken(value: string): boolean {
+  return /^\d{4}-\d{2}$/.test(value)
+}
+
+const selectedSearchMonth = computed(() => {
+  return selectedMonth.value === 'all' ? 'all' : (isMonthToken(selectedMonth.value) ? selectedMonth.value : 'all')
+})
+
+const rootTrendMonth = computed(() => {
+  return selectedSearchMonth.value === 'all' ? trendDrillMonth.value : selectedSearchMonth.value
+})
+
+const searchWeekOptions = computed(() => {
+  if (selectedSearchMonth.value === 'all') return []
+  return buildWeekOptions(selectedSearchMonth.value)
+})
+
+const searchDateOptions = computed(() => {
+  if (!rootTrendMonth.value || !trendDrillWeek.value) return []
+  return weekDateTokensFromCode(rootTrendMonth.value, trendDrillWeek.value, 'inMonth')
+})
+
+const overviewQuery = computed(() => {
+  if (trendDrillDate.value) {
+    return {
+      since: trendDrillDate.value,
+      until: trendDrillDate.value,
+    }
+  }
+
+  if (rootTrendMonth.value && trendDrillWeek.value) {
+    const tokens = weekDateTokensFromCode(rootTrendMonth.value, trendDrillWeek.value, 'inMonth')
+    const first = tokens[0]
+    const last = tokens[tokens.length - 1]
+    if (first && last) {
+      return {
+        since: first,
+        until: last,
+      }
+    }
+  }
+
+  if (rootTrendMonth.value) {
+    return {
+      month: rootTrendMonth.value,
+    }
+  }
+
+  return {
+    month: selectedSearchMonth.value,
+  }
+})
 
 const { data, pending, error } = await useAsyncData<NaverSearchAdOverviewResponse>(
   'naver-searchad-overview',
   () => $fetch('/api/ads/naver-searchad/overview', {
-    query: {
-      preset: selectedPreset.value,
-    },
+    query: overviewQuery.value,
   }),
   {
-    watch: [selectedPreset],
+    watch: [overviewQuery],
     default: () => ({
       preset: 'thisMonth',
       label: '이번 달',
@@ -302,15 +364,15 @@ const { data, pending, error } = await useAsyncData<NaverSearchAdOverviewRespons
 const { data: drillData, pending: drillPending } = await useAsyncData<NaverSearchAdTrendResponse>(
   'naver-searchad-trend',
   () => {
-    if (!trendDrillMonth.value) return Promise.resolve({ month: '', daily: [] })
+    if (!rootTrendMonth.value || rootTrendMonth.value === 'all') return Promise.resolve({ month: '', daily: [] })
     return $fetch('/api/ads/naver-searchad/trend', {
       query: {
-        month: trendDrillMonth.value,
+        month: rootTrendMonth.value,
       },
     })
   },
   {
-    watch: [trendDrillMonth],
+    watch: [rootTrendMonth],
     default: () => ({
       month: '',
       daily: [],
@@ -357,6 +419,12 @@ function formatDayLabel(dateToken: string): string {
   return `${day}일`
 }
 
+function formatDateLabel(dateToken: string): string {
+  const text = String(dateToken || '')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+  return text.replace(/-/g, '.')
+}
+
 function statusLabel(status: string): string {
   if (status === 'ELIGIBLE') return '운영중'
   if (status === 'PAUSED') return '중지'
@@ -369,35 +437,48 @@ function statusVariant(status: string): 'success' | 'warning' | 'neutral' {
   return 'neutral'
 }
 
-const trendCanGoBack = computed(() => Boolean(trendDrillWeek.value || trendDrillMonth.value))
-const trendLoading = computed(() => Boolean(trendDrillMonth.value) && drillPending.value)
+const trendCanGoBack = computed(() => {
+  if (trendDrillDate.value) return true
+  if (selectedSearchMonth.value === 'all') return Boolean(trendDrillWeek.value || trendDrillMonth.value)
+  return Boolean(trendDrillWeek.value)
+})
+const trendLoading = computed(() => Boolean(rootTrendMonth.value) && drillPending.value)
+const currentRangeLabel = computed(() => {
+  if (trendDrillDate.value) return formatDateLabel(trendDrillDate.value)
+  if (rootTrendMonth.value && trendDrillWeek.value) return weekLabelFromCode(rootTrendMonth.value, trendDrillWeek.value)
+  if (rootTrendMonth.value) return formatMonthLabel(rootTrendMonth.value)
+  return selectedPeriodLabel.value
+})
 
 const trendCardTitle = computed(() => {
-  if (!trendDrillMonth.value) return '월별 전체 광고 흐름'
-  if (!trendDrillWeek.value) return `${formatMonthLabel(trendDrillMonth.value)} 광고 흐름`
-  return `${weekLabelFromCode(trendDrillMonth.value, trendDrillWeek.value)} 광고 흐름`
+  if (!rootTrendMonth.value) return '월별 전체 광고 흐름'
+  if (trendDrillDate.value) return `${formatDateLabel(trendDrillDate.value)} 광고 흐름`
+  if (!trendDrillWeek.value) return `${formatMonthLabel(rootTrendMonth.value)} 광고 흐름`
+  return `${weekLabelFromCode(rootTrendMonth.value, trendDrillWeek.value)} 광고 흐름`
 })
 
 const trendRangeLabel = computed(() => {
-  if (!trendDrillMonth.value) {
+  if (!rootTrendMonth.value) {
     if (trendLabels.value.length === 0) return '광고 데이터 없음'
     if (trendLabels.value.length === 1) return trendLabels.value[0]
     return `${trendLabels.value[0]} ~ ${trendLabels.value[trendLabels.value.length - 1]}`
   }
-  if (!trendDrillWeek.value) return `${formatMonthLabel(trendDrillMonth.value)} · 주차별`
-  return `${weekLabelFromCode(trendDrillMonth.value, trendDrillWeek.value)} · 일별`
+  if (trendDrillDate.value) return `${formatDateLabel(trendDrillDate.value)} · 일별 선택`
+  if (!trendDrillWeek.value) return `${formatMonthLabel(rootTrendMonth.value)} · 주차별`
+  return `${weekLabelFromCode(rootTrendMonth.value, trendDrillWeek.value)} · 일별`
 })
 
 const trendHelperLabel = computed(() => {
-  if (!trendDrillMonth.value) return '월을 누르면 해당 월의 주차별 광고 흐름을 볼 수 있습니다.'
+  if (!rootTrendMonth.value) return '월을 누르면 해당 월의 주차별 광고 흐름을 볼 수 있습니다.'
+  if (trendDrillDate.value) return '선택한 날짜 기준으로 상단 지표와 목록이 함께 갱신됩니다.'
   if (!trendDrillWeek.value) return '주차를 누르면 해당 주차의 일별 광고 흐름으로 내려갑니다.'
-  return '뒤로가기를 누르면 이전 범위로 돌아갑니다.'
+  return '일자를 누르면 해당 날짜 기준으로 지표와 목록을 다시 볼 수 있습니다.'
 })
 
 watch(
   () => overview.value.monthly,
   (rows) => {
-    if (trendDrillMonth.value && !rows.some((row) => row.month === trendDrillMonth.value)) {
+    if (selectedSearchMonth.value === 'all' && trendDrillMonth.value && !rows.some((row) => row.month === trendDrillMonth.value)) {
       trendDrillMonth.value = null
       trendDrillWeek.value = ''
     }
@@ -406,31 +487,58 @@ watch(
 )
 
 watch(
-  () => trendDrillMonth.value,
+  () => rootTrendMonth.value,
   () => {
     trendDrillWeek.value = ''
+    trendDrillDate.value = ''
+  },
+)
+
+watch(
+  () => trendDrillWeek.value,
+  () => {
+    trendDrillDate.value = ''
+  },
+)
+
+watch(
+  () => selectedSearchMonth.value,
+  () => {
+    trendDrillMonth.value = null
+    trendDrillWeek.value = ''
+    trendDrillDate.value = ''
   },
 )
 
 function resetTrendDrilldown() {
-  trendDrillMonth.value = null
+  if (selectedSearchMonth.value === 'all') {
+    trendDrillMonth.value = null
+  }
   trendDrillWeek.value = ''
+  trendDrillDate.value = ''
 }
 
 function clearTrendWeek() {
   trendDrillWeek.value = ''
+  trendDrillDate.value = ''
 }
 
 function stepBackTrendDrilldown() {
+  if (trendDrillDate.value) {
+    trendDrillDate.value = ''
+    return
+  }
   if (trendDrillWeek.value) {
     trendDrillWeek.value = ''
     return
   }
-  trendDrillMonth.value = null
+  if (selectedSearchMonth.value === 'all') {
+    trendDrillMonth.value = null
+  }
 }
 
 function applyTrendSeries() {
-  if (!trendDrillMonth.value) {
+  if (!rootTrendMonth.value) {
     trendClickKeys.value = overview.value.monthly.map((row) => row.month)
     trendLabels.value = overview.value.monthly.map((row) => row.label)
     trendSpendValues.value = overview.value.monthly.map((row) => row.spend)
@@ -439,12 +547,12 @@ function applyTrendSeries() {
   }
 
   if (!trendDrillWeek.value) {
-    const weekOptions = buildWeekOptions(trendDrillMonth.value)
+    const weekOptions = buildWeekOptions(rootTrendMonth.value)
     const spendMap = new Map<string, number>(weekOptions.map((option) => [option.value, 0]))
     const revenueMap = new Map<string, number>(weekOptions.map((option) => [option.value, 0]))
 
     for (const row of trendDaily.value) {
-      const weekCode = weekCodeFromDate(row.date, trendDrillMonth.value)
+      const weekCode = weekCodeFromDate(row.date, rootTrendMonth.value)
       if (!spendMap.has(weekCode)) continue
       spendMap.set(weekCode, (spendMap.get(weekCode) || 0) + row.spend)
       revenueMap.set(weekCode, (revenueMap.get(weekCode) || 0) + row.purchaseConversionValue)
@@ -457,7 +565,7 @@ function applyTrendSeries() {
     return
   }
 
-  const dateTokens = weekDateTokensFromCode(trendDrillMonth.value, trendDrillWeek.value, 'inMonth')
+  const dateTokens = weekDateTokensFromCode(rootTrendMonth.value, trendDrillWeek.value, 'inMonth')
   const spendMap = new Map<string, number>(dateTokens.map((token) => [token, 0]))
   const revenueMap = new Map<string, number>(dateTokens.map((token) => [token, 0]))
 
@@ -476,15 +584,15 @@ function applyTrendSeries() {
 async function handleRefresh() {
   data.value = await $fetch('/api/ads/naver-searchad/overview', {
     query: {
-      preset: selectedPreset.value,
+      ...overviewQuery.value,
       force: 1,
     },
   })
 
-  if (trendDrillMonth.value) {
+  if (rootTrendMonth.value) {
     drillData.value = await $fetch('/api/ads/naver-searchad/trend', {
       query: {
-        month: trendDrillMonth.value,
+        month: rootTrendMonth.value,
         force: 1,
       },
     })
@@ -548,14 +656,17 @@ function renderTrendChart() {
         const key = trendClickKeys.value[first.index]
         if (!key) return
 
-        if (!trendDrillMonth.value) {
+        if (!rootTrendMonth.value) {
           trendDrillMonth.value = key
           return
         }
 
         if (!trendDrillWeek.value) {
           trendDrillWeek.value = key
+          return
         }
+
+        trendDrillDate.value = key
       },
       plugins: {
         legend: {
@@ -598,7 +709,7 @@ function renderTrendChart() {
 }
 
 watch(
-  () => [overview.value.monthly, trendDaily.value, trendDrillMonth.value, trendDrillWeek.value],
+  () => [overview.value.monthly, trendDaily.value, trendDrillMonth.value, trendDrillWeek.value, trendDrillDate.value],
   () => {
     applyTrendSeries()
   },
@@ -666,17 +777,6 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
 }
 
-.preset-chips {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 14px;
-  background: #FFFFFF;
-}
-
-.preset-chip,
 .refresh-chip {
   border: 0;
   border-radius: 10px;
@@ -687,13 +787,6 @@ onBeforeUnmount(() => {
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
-}
-
-.preset-chip.active {
-  background: #FFFFFF;
-  border: 1px solid rgba(29, 78, 216, 0.18);
-  color: #1D4ED8;
-  box-shadow: none;
 }
 
 .refresh-chip {

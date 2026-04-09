@@ -210,7 +210,7 @@ const expandedSections = ref<Record<string, boolean>>({})
 // 월 선택 드롭다운 DOM 참조 (바깥 클릭 감지용)
 const periodSelectorRef = ref<HTMLElement | null>(null)
 // 월 선택 UI를 보여줄 페이지 경로 목록
-const periodEnabledPaths = ['/dashboard', '/growth-stages', '/product-trends', '/channel-analysis', '/customers', '/logs', '/upload', '/filter']
+const periodEnabledPaths = ['/dashboard', '/growth-stages', '/product-trends', '/channel-analysis', '/search-ads', '/customers', '/logs', '/upload', '/filter']
 
 const analysisMenuItems = computed(() => {
   return [

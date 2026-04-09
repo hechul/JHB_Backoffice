@@ -22,16 +22,16 @@
         icon-color="#1D63E9"
       />
       <KpiCard
-        label="총 정산 예정"
-        :value="overviewMetrics.expectedSettlementAmount"
+        label="네이버 정산 예정"
+        :value="naverSettlementMetrics.expectedSettlementAmount"
         :icon="Users"
         format="currency"
         icon-bg="#ECFDF5"
         icon-color="#10B981"
       />
       <KpiCard
-        label="총 수수료"
-        :value="overviewMetrics.paymentCommissionAmount"
+        label="네이버 총 수수료"
+        :value="naverSettlementMetrics.paymentCommissionAmount"
         :icon="Package"
         format="currency"
         icon-bg="#FFF7E8"
@@ -106,8 +106,10 @@
 
           <div class="channel-stat-list">
             <div class="channel-stat-row">
-              <span>정산 예정</span>
-              <strong>{{ formatCurrencyAmount(channel.expectedSettlementAmount) }}</strong>
+              <span>{{ channel.key === 'naver' ? '정산 예정' : '실구매 수량' }}</span>
+              <strong>
+                {{ channel.key === 'naver' ? formatCurrencyAmount(channel.expectedSettlementAmount) : `${formatQuantityCount(channel.totalQuantity)}개` }}
+              </strong>
             </div>
             <div class="channel-stat-row">
               <span>구매 주문</span>
@@ -439,6 +441,14 @@ const averageOrderValue = computed(() => {
   return overviewMetrics.value.realOrders > 0
     ? Math.round(overviewMetrics.value.paymentAmount / overviewMetrics.value.realOrders)
     : 0
+})
+
+const naverSettlementMetrics = computed(() => {
+  const naver = channelMetrics.value.find((channel) => channel.key === 'naver')
+  return {
+    expectedSettlementAmount: naver?.expectedSettlementAmount || 0,
+    paymentCommissionAmount: naver?.paymentCommissionAmount || 0,
+  }
 })
 
 const channelMetrics = computed<ChannelMetric[]>(() => {

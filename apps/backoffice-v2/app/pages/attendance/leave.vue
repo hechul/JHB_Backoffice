@@ -18,16 +18,6 @@
           <h2>신청하기</h2>
         </div>
 
-        <div class="leave-draft-card">
-          <span class="leave-draft-label">지금 신청 예정</span>
-          <strong class="leave-draft-title">{{ leaveDraftTypeLabel }}</strong>
-          <div class="leave-draft-meta">
-            <span>{{ leaveDraftPeriodLabel }}</span>
-            <span v-if="leaveForm.reason">{{ leaveForm.reason }}</span>
-            <span v-else>사유는 비워둘 수 있습니다.</span>
-          </div>
-        </div>
-
         <div class="form-grid">
           <label class="field">
             <span>유형</span>
@@ -136,14 +126,6 @@ const visibleLeaveRequests = computed(() => {
   return [...leaveRequests.value]
     .filter((row) => row.start_date <= end && row.end_date >= start)
     .sort((a, b) => `${b.start_date}${b.created_at}`.localeCompare(`${a.start_date}${a.created_at}`))
-})
-
-const leaveDraftTypeLabel = computed(() => getLeaveTypeLabel(leaveForm.leave_type))
-
-const leaveDraftPeriodLabel = computed(() => {
-  if (!leaveForm.start_date) return '날짜를 선택하세요.'
-  if (!leaveForm.end_date || leaveForm.end_date === leaveForm.start_date) return leaveForm.start_date
-  return `${leaveForm.start_date} ~ ${leaveForm.end_date}`
 })
 
 function isMissingTableError(error: any) {
@@ -295,44 +277,6 @@ watch(selectedMonth, async () => {
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
-}
-
-.leave-draft-card {
-  padding: 16px 18px;
-  border-radius: 20px;
-  background: rgba(248, 250, 252, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.leave-draft-label {
-  font-size: 0.8rem;
-  color: var(--color-text-secondary);
-}
-
-.leave-draft-title {
-  font-size: 1.08rem;
-  font-weight: 800;
-}
-
-.leave-draft-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.leave-draft-meta span {
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  color: var(--color-text-secondary);
-  font-size: 0.82rem;
-  display: inline-flex;
-  align-items: center;
 }
 
 .summary-grid {

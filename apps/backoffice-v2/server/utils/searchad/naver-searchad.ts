@@ -178,6 +178,10 @@ function isMonthToken(value: string): boolean {
   return /^\d{4}-\d{2}$/.test(value)
 }
 
+function isDateToken(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
 function hasMonthlyActivity(row: NaverSearchAdMonthlyPoint): boolean {
   return row.spend > 0
     || row.impressions > 0
@@ -196,6 +200,53 @@ function trimMonthlyRows(rows: NaverSearchAdMonthlyPoint[]): NaverSearchAdMonthl
 export function normalizeNaverSearchAdMonthToken(value: unknown): string | null {
   const token = String(value || '').trim()
   return isMonthToken(token) ? token : null
+}
+
+function normalizeNaverSearchAdDateToken(value: unknown): string | null {
+  const token = String(value || '').trim()
+  return isDateToken(token) ? token : null
+}
+
+function buildOverviewTimeRange(
+  monthlyRows: NaverSearchAdMonthlyPoint[],
+  presetRange: ReturnType<typeof buildNaverSearchAdTimeRange>,
+  monthSelection?: string | 'all',
+  explicitRange?: { since: string; until: string } | null,
+) {
+  if (explicitRange) {
+    return {
+      label: explicitRange.since === explicitRange.until
+        ? `${explicitRange.since.replace(/-/g, '.')} 기준`
+        : `${explicitRange.since.replace(/-/g, '.')} ~ ${explicitRange.until.replace(/-/g, '.')} 기준`,
+      timeRange: explicitRange,
+    }
+  }
+
+  if (monthSelection && monthSelection !== 'all') {
+    return {
+      label: `${monthSelection.replace('-', '.')} 기준`,
+      timeRange: buildMonthTimeRange(monthSelection),
+    }
+  }
+
+  if (monthSelection === 'all') {
+    const firstMonth = monthlyRows[0]?.month
+    const lastMonth = monthlyRows[monthlyRows.length - 1]?.month
+    if (firstMonth && lastMonth) {
+      return {
+        label: `${firstMonth.replace('-', '.')} ~ ${lastMonth.replace('-', '.')} 기준`,
+        timeRange: {
+          since: `${firstMonth}-01`,
+          until: buildMonthTimeRange(lastMonth).until,
+        },
+      }
+    }
+  }
+
+  return {
+    label: presetRange.label,
+    timeRange: presetRange.timeRange,
+  }
 }
 
 function buildMonthTimeRange(monthToken: string, now = new Date()) {
@@ -337,6 +388,22 @@ async function requestSearchAd<T>(method: 'GET', uri: string, params?: Record<st
           message: '네이버 검색광고 API 응답 시간이 초과되었습니다.',
         })
       }
+
+      if (error?.statusCode) {
+        throw error
+      }
+
+      const errorMessage = String(error?.message || '')
+      if (errorMessage.includes('fetch failed')) {
+        throw createError({
+          statusCode: 502,
+          message: '네이버 검색광고 서버 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.',
+          data: {
+            cause: errorMessage,
+          },
+        })
+      }
+
       throw error
     } finally {
       clearTimeout(timeout)
@@ -649,14 +716,45 @@ function buildKeywordRows(
     .sort((a, b) => b.purchaseConversionValue - a.purchaseConversionValue || b.spend - a.spend)
 }
 
+function hasCampaignActivity(row: NaverSearchAdCampaignRow) {
+  return row.spend > 0
+    || row.impressions > 0
+    || row.clicks > 0
+    || row.conversions > 0
+    || row.purchaseConversions > 0
+    || row.purchaseConversionValue > 0
+}
+
+function hasAdgroupActivity(row: NaverSearchAdAdgroupRow) {
+  return row.spend > 0
+    || row.clicks > 0
+    || row.purchaseConversions > 0
+    || row.purchaseConversionValue > 0
+}
+
+function hasKeywordActivity(row: NaverSearchAdKeywordRow) {
+  return row.spend > 0
+    || row.clicks > 0
+    || row.purchaseConversions > 0
+    || row.purchaseConversionValue > 0
+}
+
 export async function fetchNaverSearchAdOverview(
   presetInput: unknown,
-  options?: { force?: boolean; drillMonth?: string },
+  options?: { force?: boolean; drillMonth?: string; month?: string | 'all' | null; since?: string; until?: string },
 ): Promise<NaverSearchAdOverviewResponse> {
   const range = buildNaverSearchAdTimeRange(presetInput)
   const monthlyRanges = buildNaverSearchAdMonthlyRanges()
   const drillMonth = normalizeNaverSearchAdMonthToken(options?.drillMonth)
-  const cacheKey = `${range.preset}:${drillMonth || 'root'}`
+  const monthSelection = options?.month === 'all'
+    ? 'all'
+    : normalizeNaverSearchAdMonthToken(options?.month)
+  const explicitSince = normalizeNaverSearchAdDateToken(options?.since)
+  const explicitUntil = normalizeNaverSearchAdDateToken(options?.until)
+  const explicitRange = explicitSince && explicitUntil && explicitSince <= explicitUntil
+    ? { since: explicitSince, until: explicitUntil }
+    : null
+  const cacheKey = `${monthSelection || range.preset}:${drillMonth || 'root'}:${explicitRange?.since || '-'}:${explicitRange?.until || '-'}`
   const now = Date.now()
 
   if (!options?.force) {
@@ -674,17 +772,19 @@ export async function fetchNaverSearchAdOverview(
   const adgroups = adgroupMatrix.flat()
   const adgroupsById = new Map(adgroups.map((adgroup) => [adgroup.nccAdgroupId, adgroup]))
 
-  const [campaignStatMap, adgroupStatMap] = await Promise.all([
-    fetchSummaryStats(campaigns.map((campaign) => campaign.nccCampaignId), range.timeRange),
-    fetchSummaryStats(adgroups.map((adgroup) => adgroup.nccAdgroupId), range.timeRange),
-  ])
-
-  const campaignRows = buildCampaignRows(campaigns, campaignStatMap)
-  const adgroupRows = buildAdgroupRows(adgroups, campaignsById, adgroupStatMap)
   const monthly = trimMonthlyRows(await fetchCampaignMonthlyStats(
     campaigns.map((campaign) => campaign.nccCampaignId),
     monthlyRanges,
   ))
+  const overviewRange = buildOverviewTimeRange(monthly, range, monthSelection, explicitRange)
+
+  const [campaignStatMap, adgroupStatMap] = await Promise.all([
+    fetchSummaryStats(campaigns.map((campaign) => campaign.nccCampaignId), overviewRange.timeRange),
+    fetchSummaryStats(adgroups.map((adgroup) => adgroup.nccAdgroupId), overviewRange.timeRange),
+  ])
+
+  const campaignRows = buildCampaignRows(campaigns, campaignStatMap)
+  const adgroupRows = buildAdgroupRows(adgroups, campaignsById, adgroupStatMap)
   const daily = drillMonth
     ? await fetchCampaignDailyStats(
         campaigns.map((campaign) => campaign.nccCampaignId),
@@ -701,7 +801,7 @@ export async function fetchNaverSearchAdOverview(
       2,
     )
     keywords = keywordMatrix.flat()
-    const keywordStatMap = await fetchSummaryStats(keywords.map((keyword) => keyword.nccKeywordId), range.timeRange)
+    const keywordStatMap = await fetchSummaryStats(keywords.map((keyword) => keyword.nccKeywordId), overviewRange.timeRange)
     keywordRows = buildKeywordRows(keywords, campaignsById, adgroupsById, keywordStatMap)
   } catch {
     keywords = []
@@ -733,15 +833,18 @@ export async function fetchNaverSearchAdOverview(
     purchaseConversions: 0,
     purchaseConversionValue: 0,
   })
+  const activeCampaignCount = campaignRows.filter(hasCampaignActivity).length
+  const activeAdgroupCount = adgroupRows.filter(hasAdgroupActivity).length
+  const activeKeywordCount = keywordRows.filter(hasKeywordActivity).length
 
   const overview: NaverSearchAdOverviewResponse = {
     preset: range.preset,
-    label: range.label,
+    label: overviewRange.label,
     sourceLabel: '광고 기준',
     summary: {
-      campaignCount: campaigns.length,
-      adgroupCount: adgroups.length,
-      keywordCount: keywords.length,
+      campaignCount: activeCampaignCount,
+      adgroupCount: activeAdgroupCount,
+      keywordCount: activeKeywordCount,
       spend: summary.spend,
       impressions: summary.impressions,
       clicks: summary.clicks,
