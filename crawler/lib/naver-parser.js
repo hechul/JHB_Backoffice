@@ -128,6 +128,30 @@ function extractVideoUrls(page) {
     })
 }
 
+async function extractVideoKeysFromFrame(frame) {
+    try {
+        const rawKeys = await frame.evaluate(() => {
+            const keys = new Set()
+            document.querySelectorAll('[data-module]').forEach((el) => {
+                const data = el.getAttribute('data-module')
+                if (!data || !data.includes('vid') || !data.includes('inkey')) return
+                try {
+                    const parsed = JSON.parse(data)
+                    const vid = parsed?.data?.vid
+                    const inKey = parsed?.data?.inkey
+                    if (vid && inKey) {
+                        keys.add(JSON.stringify({ vid, inKey }))
+                    }
+                } catch (e) { }
+            })
+            return Array.from(keys)
+        })
+        return Array.isArray(rawKeys) ? rawKeys.map((item) => JSON.parse(item)) : []
+    } catch {
+        return []
+    }
+}
+
 /**
  * 단일 블로그 URL에서 미디어 URL 추출
  */
@@ -207,21 +231,23 @@ async function extractBlogMedia(rawUrl, options = {}) {
         await page.waitForTimeout(1500)
 
         // 2. DOM에서 직접 vid, inkey 추출 (가장 확실한 방법)
-        const videoKeys = await page.evaluate(() => {
-            const keys = new Set();
-            document.querySelectorAll('[data-module]').forEach(el => {
-                const data = el.getAttribute('data-module');
-                if (data && data.includes('vid') && data.includes('inkey')) {
-                    try {
-                        const parsed = JSON.parse(data);
-                        if (parsed.data && parsed.data.vid && parsed.data.inkey) {
-                            keys.add(JSON.stringify({ vid: parsed.data.vid, inKey: parsed.data.inkey }));
-                        }
-                    } catch (e) { }
-                }
-            });
-            return Array.from(keys).map(k => JSON.parse(k));
-        });
+        const videoKeyMap = new Map()
+        const candidateFrames = [page.mainFrame(), ...page.frames().filter((frame) => frame !== page.mainFrame())]
+        for (const frame of candidateFrames) {
+            const frameUrl = String(frame.url() || '')
+            const isRelevantFrame = frame === page.mainFrame()
+                || frameUrl.includes('blog.naver.com')
+                || frameUrl.includes('PostView')
+            if (!isRelevantFrame) continue
+            const frameKeys = await extractVideoKeysFromFrame(frame)
+            for (const keyObj of frameKeys) {
+                const vid = String(keyObj?.vid || '').trim()
+                const inKey = String(keyObj?.inKey || '').trim()
+                if (!vid || !inKey) continue
+                videoKeyMap.set(`${vid}:${inKey}`, { vid, inKey })
+            }
+        }
+        const videoKeys = Array.from(videoKeyMap.values())
 
         // 추출된 키로 동영상 API 서버 직접 찌르기
         for (const keyObj of videoKeys) {

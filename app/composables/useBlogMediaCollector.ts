@@ -75,16 +75,22 @@ export function useBlogMediaCollector() {
         return null
     }
 
+    function buildDownloadApiUrl(jobId: string, fileObj?: { id?: string }) {
+        const partId = String(fileObj?.id || '').trim()
+        if (partId && partId !== 'legacy') {
+            return `/api/blog/download/${jobId}?part=${encodeURIComponent(partId)}`
+        }
+        return `/api/blog/download/${jobId}`
+    }
+
     async function downloadAndCleanup(fileObj: { id: string, url: string, label?: string }, jobId: string) {
         try {
-            const url = fileObj.url
+            const url = buildDownloadApiUrl(jobId, fileObj)
             const fallbackName = `${fileObj.label || 'blog_media'}.zip`
-
-            const isAbsolute = /^https?:\/\//i.test(String(url || ''))
             const response = await fetch(url, {
                 method: 'GET',
-                mode: isAbsolute ? 'cors' : 'same-origin',
-                credentials: isAbsolute ? 'omit' : 'include',
+                mode: 'same-origin',
+                credentials: 'include',
                 cache: 'no-store',
             })
 
@@ -104,13 +110,8 @@ export function useBlogMediaCollector() {
             document.body.appendChild(link)
             link.click()
             link.remove()
-            URL.revokeObjectURL(objectUrl)
-
-            // 다운로드 성공 후 즉시 cleanup 호출
-            await $fetch(`/api/blog/cleanup/${jobId}`, {
-                method: 'POST',
-                body: { partId: fileObj.id }
-            }).catch(e => console.error('[cleanup] Failed:', e))
+            // 브라우저 다운로드 시작 전에 revoke되면 간헐적으로 저장이 누락될 수 있어 지연 해제한다.
+            setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
 
         } catch (e: any) {
             console.error('[downloadAndCleanup] Error:', e)
