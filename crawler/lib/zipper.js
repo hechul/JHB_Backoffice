@@ -177,27 +177,6 @@ function getExt(url) {
 }
 
 /**
- * 블로그ID와 포스트번호를 URL에서 추출
- */
-function extractBlogInfo(url) {
-    try {
-        const parsed = new URL(url)
-        // PostView.naver?blogId=XXX&logNo=YYY
-        const blogId = parsed.searchParams.get('blogId')
-        const logNo = parsed.searchParams.get('logNo')
-        if (blogId && logNo) return { blogId, logNo }
-
-        // /blogId/postNo 경로 형태
-        const match = parsed.pathname.match(/^\/([^/]+)\/(\d+)$/)
-        if (match) return { blogId: match[1], logNo: match[2] }
-
-        return { blogId: 'unknown', logNo: Date.now().toString() }
-    } catch {
-        return { blogId: 'unknown', logNo: Date.now().toString() }
-    }
-}
-
-/**
  * results 배열 → ZIP Buffer 생성
  * results: [{ url, mediaUrls: string[] }]
  */
@@ -211,8 +190,7 @@ async function createZip(results) {
         archive.on('error', reject)
 
         const processAll = async () => {
-            for (const { url, mediaUrls } of results) {
-                const { blogId, logNo } = extractBlogInfo(url)
+            for (const { mediaUrls } of results) {
                 let fileIndex = 1
 
                 const targets = MAX_MEDIA_PER_POST > 0
@@ -240,7 +218,7 @@ async function createZip(results) {
                         const extByMagic = detectExtFromMagic(downloaded.buffer)
                         const extByHeader = detectExtFromContentType(downloaded.contentType)
                         const ext = extByMagic || extByHeader || getExt(mediaUrl)
-                        const filename = `${blogId}_${logNo}_${String(fileIndex).padStart(3, '0')}.${ext}`
+                        const filename = `${fileIndex}.${ext}`
                         archive.append(downloaded.buffer, { name: filename })
                         fileIndex++
                     } catch (err) {

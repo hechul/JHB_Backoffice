@@ -123,18 +123,19 @@
 </template>
 
 <script setup lang="ts">
-import { AlertTriangle, AlertCircle, Download, Link, Loader2, RefreshCw } from 'lucide-vue-next'
+import { AlertTriangle, Download, Link, Loader2, RefreshCw } from 'lucide-vue-next'
 import StatusBadge from '~/components/StatusBadge.vue'
 import { useBlogMediaCollector } from '~/composables/useBlogMediaCollector'
 
 definePageMeta({ layout: 'home' })
+
+const URL_INPUT_STORAGE_KEY = 'jh_blog_media_url_input_v1'
 
 const { isViewer, canModify } = useCurrentUser()
 
 const {
   isRunning,
   isDone,
-  isPolling,
   progress,
   errorMessage,
   statusLabel,
@@ -143,7 +144,6 @@ const {
   reset
 } = useBlogMediaCollector()
 
-const toast = useToast()
 const urlInput = ref('')
 
 const parsedUrls = computed(() =>
@@ -167,6 +167,29 @@ const startButtonLabel = computed(() => {
   return '순차 수집 및 자동 다운로드 시작'
 })
 
+onMounted(() => {
+  if (!import.meta.client) return
+
+  try {
+    const stored = localStorage.getItem(URL_INPUT_STORAGE_KEY)
+    if (stored) {
+      urlInput.value = stored
+    }
+  } catch { /* noop */ }
+})
+
+watch(urlInput, (value) => {
+  if (!import.meta.client) return
+
+  try {
+    const normalized = String(value || '')
+    if (normalized.trim()) {
+      localStorage.setItem(URL_INPUT_STORAGE_KEY, normalized)
+      return
+    }
+    localStorage.removeItem(URL_INPUT_STORAGE_KEY)
+  } catch { /* noop */ }
+})
 
 async function handleStart() {
   await startBatch(parsedUrls.value)

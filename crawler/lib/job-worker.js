@@ -15,8 +15,38 @@ const EXTRACT_RETRY_BACKOFF_MS = 1200
 const MAX_ZIP_PART_MB = Math.max(10, Math.min(Number.parseInt(process.env.BLOG_MAX_ZIP_PART_MB || '45', 10) || 45, 100))
 const MAX_ZIP_PART_BYTES = MAX_ZIP_PART_MB * 1024 * 1024
 const BASE_IMAGE_QUALITY = 'w2000'
+const STALE_RUNNING_JOB_MS = Math.max(10, Math.min(Number.parseInt(process.env.BLOG_STALE_RUNNING_JOB_MINUTES || '20', 10) || 20, 180)) * 60 * 1000
+const IMAGE_CHUNK_SIZE = Math.max(4, Math.min(Number.parseInt(process.env.BLOG_IMAGE_CHUNK_SIZE || '10', 10) || 10, 20))
 
 let isProcessing = false
+
+function isVideoUrl(url) {
+    return /mblogvideo|\.mp4($|\?)|\/video\//i.test(String(url || ''))
+}
+
+function createConservativeMediaChunks(mediaUrls) {
+    const list = Array.isArray(mediaUrls) ? mediaUrls.filter(Boolean) : []
+    if (list.length <= 1) return list.length ? [list] : []
+
+    const videoUrls = list.filter(isVideoUrl)
+    const imageUrls = list.filter((url) => !isVideoUrl(url))
+
+    if (videoUrls.length === 0 && imageUrls.length <= IMAGE_CHUNK_SIZE) {
+        return [list]
+    }
+
+    const chunks = []
+
+    for (const videoUrl of videoUrls) {
+        chunks.push([videoUrl])
+    }
+
+    for (let i = 0; i < imageUrls.length; i += IMAGE_CHUNK_SIZE) {
+        chunks.push(imageUrls.slice(i, i + IMAGE_CHUNK_SIZE))
+    }
+
+    return chunks.filter((chunk) => chunk.length > 0)
+}
 
 async function splitZipByMediaCount(url, mediaUrls, maxBytes) {
     const fitChunks = []
@@ -48,20 +78,26 @@ async function buildZipChunksForResult(url, mediaUrls) {
     }
 
     const usedQuality = BASE_IMAGE_QUALITY
-    const bestZip = await createZip([{ url, mediaUrls }])
+    const seedChunks = createConservativeMediaChunks(mediaUrls)
+    const chunks = []
+    let droppedCount = 0
 
-    if (bestZip.length <= MAX_ZIP_PART_BYTES) {
-        return {
-            chunks: [{ mediaUrls, zipBuffer: bestZip }],
-            droppedCount: 0,
-            usedQuality,
+    for (const seedChunk of seedChunks) {
+        const zipBuffer = await createZip([{ url, mediaUrls: seedChunk }])
+
+        if (zipBuffer.length <= MAX_ZIP_PART_BYTES) {
+            chunks.push({ mediaUrls: seedChunk, zipBuffer })
+            continue
         }
+
+        const split = await splitZipByMediaCount(url, seedChunk, MAX_ZIP_PART_BYTES)
+        chunks.push(...split.fitChunks)
+        droppedCount += split.dropped.length
     }
 
-    const split = await splitZipByMediaCount(url, mediaUrls, MAX_ZIP_PART_BYTES)
     return {
-        chunks: split.fitChunks,
-        droppedCount: split.dropped.length,
+        chunks,
+        droppedCount,
         usedQuality,
     }
 }
@@ -75,148 +111,197 @@ function createSupabaseServiceClient() {
     })
 }
 
-async function processPendingJob(supabase, job) {
-    const jobId = job.id
-    console.log(`[worker] 처리 시작 job=${jobId}`)
+async function markJobFailed(supabase, job, reason) {
+    const summary = (job?.summary_json && typeof job.summary_json === 'object')
+        ? { ...(job.summary_json) }
+        : {}
+    const urls = Array.isArray(summary.urls) ? summary.urls.filter(Boolean) : []
+    const failures = Array.isArray(summary.failures) ? [...summary.failures] : []
 
-    // 1. status: running 업데이트
-    await supabase
-        .from('automation_jobs')
-        .update({ status: 'running' })
-        .eq('id', jobId)
-
-    const urls = job.summary_json?.urls || []
-    const resultsWithOrder = new Array(urls.length)
-    const failures = []
-
-    function mapFailureReason(err) {
-        const message = String(err?.message || '').toLowerCase()
-        if (message.includes('timeout')) return '타임아웃'
-        if (message.includes('net::') || message.includes('name_not_resolved') || message.includes('dns')) return '접근불가'
-        return '파싱실패'
-    }
-
-    async function extractWithRetry(url, index) {
-        let lastError = null
-        for (let attempt = 1; attempt <= EXTRACT_RETRY_COUNT; attempt += 1) {
-            try {
-                const mediaUrls = await extractBlogMedia(url)
-                if (!Array.isArray(mediaUrls) || mediaUrls.length === 0) {
-                    failures.push({ index, url, reason: '미디어_없음' })
-                    return
-                }
-                resultsWithOrder[index] = { url, mediaUrls }
-                return
-            } catch (err) {
-                lastError = err
-                const reason = mapFailureReason(err)
-                const finalAttempt = attempt >= EXTRACT_RETRY_COUNT
-                if (finalAttempt) {
-                    console.error(`[worker] 크롤링 실패 url=${url} attempt=${attempt} reason=${reason}`, err?.message || err)
-                    failures.push({ index, url, reason })
-                    return
-                }
-                const waitMs = EXTRACT_RETRY_BACKOFF_MS * attempt
-                console.warn(`[worker] 크롤링 재시도 url=${url} attempt=${attempt}/${EXTRACT_RETRY_COUNT} wait=${waitMs}ms`)
-                await new Promise((resolve) => setTimeout(resolve, waitMs))
-            }
-        }
-        const fallbackReason = mapFailureReason(lastError || {})
-        failures.push({ index, url, reason: fallbackReason })
-    }
-
-    // 2. 각 URL 크롤링 (제한 병렬)
-    let cursor = 0
-    async function runUrlWorker() {
-        while (cursor < urls.length) {
-            const index = cursor
-            cursor += 1
-            const url = urls[index]
-            if (!url) continue
-            await extractWithRetry(url, index)
+    if (failures.length === 0) {
+        if (urls.length > 0) {
+            failures.push(...urls.map((url) => ({ url, reason })))
+        } else {
+            failures.push({ url: '', reason })
         }
     }
-
-    await Promise.all(Array.from({ length: Math.min(URL_CONCURRENCY, Math.max(urls.length, 1)) }, () => runUrlWorker()))
-
-    const results = resultsWithOrder.filter(Boolean)
-    failures.sort((a, b) => a.index - b.index)
-    const normalizedFailures = failures.map((item) => ({ url: item.url, reason: item.reason }))
-
-    // 3. ZIP 생성 및 업로드 (URL별 파트 업로드)
-    let storagePath = null
-    let downloadUrl = null
-    const zipParts = []
-    const successfulUrls = new Set()
-
-    if (results.length > 0) {
-        let partNo = 1
-        for (const result of results) {
-            try {
-                const prepared = await buildZipChunksForResult(result.url, result.mediaUrls)
-                if (!prepared.chunks.length) {
-                    normalizedFailures.push({ url: result.url, reason: '용량초과' })
-                    continue
-                }
-
-                if (prepared.droppedCount > 0) {
-                    normalizedFailures.push({ url: result.url, reason: '용량초과(일부제외)' })
-                }
-
-                let chunkIndex = 1
-                for (const chunk of prepared.chunks) {
-                    const zipBuffer = chunk.zipBuffer
-                    const partId = `part-${String(partNo).padStart(2, '0')}`
-                    const filename = `${jobId}/${partId}.zip`
-                    const uploadResult = await uploadZipToStorage(supabase, jobId, zipBuffer, { filename })
-                    zipParts.push({
-                        id: partId,
-                        path: uploadResult.path,
-                        sourceUrl: result.url,
-                        fileCount: Array.isArray(chunk.mediaUrls) ? chunk.mediaUrls.length : 0,
-                        sizeBytes: zipBuffer.length,
-                        quality: prepared.usedQuality,
-                        sourceChunkIndex: chunkIndex,
-                        sourceChunkTotal: prepared.chunks.length,
-                    })
-                    chunkIndex += 1
-                    partNo += 1
-                }
-                successfulUrls.add(result.url)
-            } catch (err) {
-                console.error(`[worker] ZIP 업로드 실패 job=${jobId} url=${result.url}`, err?.message || err)
-                normalizedFailures.push({ url: result.url, reason: 'ZIP업로드실패' })
-            }
-        }
-        storagePath = zipParts[0]?.path || null
-    }
-
-    // 4. 최종 상태 업데이트
-    const finalSuccessCount = successfulUrls.size
-    const finalFailCount = normalizedFailures.length
-    const finalStatus = finalFailCount === 0 ? 'done' : finalSuccessCount === 0 ? 'failed' : 'partial'
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
     await supabase
         .from('automation_jobs')
         .update({
-            status: finalStatus,
-            success_count: finalSuccessCount,
-            fail_count: finalFailCount,
-            storage_path: storagePath,
-            download_url: downloadUrl,
-            expires_at: storagePath ? expiresAt : null,
+            status: 'failed',
+            fail_count: Math.max(Number(job?.fail_count || 0), failures.length || 1),
             summary_json: {
-                urls,
-                failures: normalizedFailures,
-                results: results.map(r => ({ url: r.url, count: r.mediaUrls.length })),
-                zip_parts: zipParts,
+                ...summary,
+                failures,
             },
-            completed_at: new Date().toISOString()
+            completed_at: new Date().toISOString(),
         })
-        .eq('id', jobId)
+        .eq('id', job.id)
+}
 
-    console.log(`[worker] 완료 job=${jobId} status=${finalStatus} success=${finalSuccessCount} fail=${finalFailCount} parts=${zipParts.length}`)
+async function reclaimStaleRunningJobs(supabase) {
+    const cutoffIso = new Date(Date.now() - STALE_RUNNING_JOB_MS).toISOString()
+    const { data: staleJobs, error } = await supabase
+        .from('automation_jobs')
+        .select('id, job_type, status, fail_count, summary_json, created_at')
+        .eq('job_type', 'blog_media')
+        .eq('status', 'running')
+        .lt('created_at', cutoffIso)
+
+    if (error) {
+        console.error('[worker] stale job 조회 오류:', error.message)
+        return
+    }
+
+    for (const staleJob of staleJobs || []) {
+        console.warn(`[worker] stale running job 정리: job=${staleJob.id} created_at=${staleJob.created_at}`)
+        await markJobFailed(supabase, staleJob, '워커중단')
+    }
+}
+
+async function processPendingJob(supabase, job) {
+    const jobId = job.id
+    console.log(`[worker] 처리 시작 job=${jobId}`)
+    try {
+        await supabase
+            .from('automation_jobs')
+            .update({ status: 'running' })
+            .eq('id', jobId)
+
+        const urls = job.summary_json?.urls || []
+        const resultsWithOrder = new Array(urls.length)
+        const failures = []
+
+        function mapFailureReason(err) {
+            const message = String(err?.message || '').toLowerCase()
+            if (message.includes('timeout')) return '타임아웃'
+            if (message.includes('net::') || message.includes('name_not_resolved') || message.includes('dns')) return '접근불가'
+            return '파싱실패'
+        }
+
+        async function extractWithRetry(url, index) {
+            let lastError = null
+            for (let attempt = 1; attempt <= EXTRACT_RETRY_COUNT; attempt += 1) {
+                try {
+                    const mediaUrls = await extractBlogMedia(url)
+                    if (!Array.isArray(mediaUrls) || mediaUrls.length === 0) {
+                        failures.push({ index, url, reason: '미디어_없음' })
+                        return
+                    }
+                    resultsWithOrder[index] = { url, mediaUrls }
+                    return
+                } catch (err) {
+                    lastError = err
+                    const reason = mapFailureReason(err)
+                    const finalAttempt = attempt >= EXTRACT_RETRY_COUNT
+                    if (finalAttempt) {
+                        console.error(`[worker] 크롤링 실패 url=${url} attempt=${attempt} reason=${reason}`, err?.message || err)
+                        failures.push({ index, url, reason })
+                        return
+                    }
+                    const waitMs = EXTRACT_RETRY_BACKOFF_MS * attempt
+                    console.warn(`[worker] 크롤링 재시도 url=${url} attempt=${attempt}/${EXTRACT_RETRY_COUNT} wait=${waitMs}ms`)
+                    await new Promise((resolve) => setTimeout(resolve, waitMs))
+                }
+            }
+            const fallbackReason = mapFailureReason(lastError || {})
+            failures.push({ index, url, reason: fallbackReason })
+        }
+
+        let cursor = 0
+        async function runUrlWorker() {
+            while (cursor < urls.length) {
+                const index = cursor
+                cursor += 1
+                const url = urls[index]
+                if (!url) continue
+                await extractWithRetry(url, index)
+            }
+        }
+
+        await Promise.all(Array.from({ length: Math.min(URL_CONCURRENCY, Math.max(urls.length, 1)) }, () => runUrlWorker()))
+
+        const results = resultsWithOrder.filter(Boolean)
+        failures.sort((a, b) => a.index - b.index)
+        const normalizedFailures = failures.map((item) => ({ url: item.url, reason: item.reason }))
+
+        let storagePath = null
+        let downloadUrl = null
+        const zipParts = []
+        const successfulUrls = new Set()
+
+        if (results.length > 0) {
+            let partNo = 1
+            for (const result of results) {
+                try {
+                    const prepared = await buildZipChunksForResult(result.url, result.mediaUrls)
+                    if (!prepared.chunks.length) {
+                        normalizedFailures.push({ url: result.url, reason: '용량초과' })
+                        continue
+                    }
+
+                    if (prepared.droppedCount > 0) {
+                        normalizedFailures.push({ url: result.url, reason: '용량초과(일부제외)' })
+                    }
+
+                    let chunkIndex = 1
+                    for (const chunk of prepared.chunks) {
+                        const zipBuffer = chunk.zipBuffer
+                        const partId = `part-${String(partNo).padStart(2, '0')}`
+                        const filename = `${jobId}/${partId}.zip`
+                        const uploadResult = await uploadZipToStorage(supabase, jobId, zipBuffer, { filename })
+                        zipParts.push({
+                            id: partId,
+                            path: uploadResult.path,
+                            sourceUrl: result.url,
+                            fileCount: Array.isArray(chunk.mediaUrls) ? chunk.mediaUrls.length : 0,
+                            sizeBytes: zipBuffer.length,
+                            quality: prepared.usedQuality,
+                            sourceChunkIndex: chunkIndex,
+                            sourceChunkTotal: prepared.chunks.length,
+                        })
+                        chunkIndex += 1
+                        partNo += 1
+                    }
+                    successfulUrls.add(result.url)
+                } catch (err) {
+                    console.error(`[worker] ZIP 업로드 실패 job=${jobId} url=${result.url}`, err?.message || err)
+                    normalizedFailures.push({ url: result.url, reason: 'ZIP업로드실패' })
+                }
+            }
+            storagePath = zipParts[0]?.path || null
+        }
+
+        const finalSuccessCount = successfulUrls.size
+        const finalFailCount = normalizedFailures.length
+        const finalStatus = finalFailCount === 0 ? 'done' : finalSuccessCount === 0 ? 'failed' : 'partial'
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+        await supabase
+            .from('automation_jobs')
+            .update({
+                status: finalStatus,
+                success_count: finalSuccessCount,
+                fail_count: finalFailCount,
+                storage_path: storagePath,
+                download_url: downloadUrl,
+                expires_at: storagePath ? expiresAt : null,
+                summary_json: {
+                    urls,
+                    failures: normalizedFailures,
+                    results: results.map(r => ({ url: r.url, count: r.mediaUrls.length })),
+                    zip_parts: zipParts,
+                },
+                completed_at: new Date().toISOString()
+            })
+            .eq('id', jobId)
+
+        console.log(`[worker] 완료 job=${jobId} status=${finalStatus} success=${finalSuccessCount} fail=${finalFailCount} parts=${zipParts.length}`)
+    } catch (err) {
+        console.error(`[worker] 예상치 못한 job 실패 job=${jobId}:`, err?.message || err)
+        await markJobFailed(supabase, job, '처리중단')
+    }
 }
 
 async function pollAndProcess() {
@@ -225,6 +310,8 @@ async function pollAndProcess() {
     const supabase = createSupabaseServiceClient()
 
     try {
+        await reclaimStaleRunningJobs(supabase)
+
         // pending job 1개 조회
         const { data: jobs, error } = await supabase
             .from('automation_jobs')
