@@ -7,17 +7,20 @@ const { extractBlogMedia } = require('./naver-parser')
 const { createZip } = require('./zipper')
 const { uploadZipToStorage } = require('./supabase-uploader')
 
+const BLOG_MEDIA_BUCKET_NAME = 'blog-media-zips'
 const POLL_INTERVAL_MS = 5000
 const MAX_CONCURRENT_JOBS = 1 // 무료 플랜 RAM 512MB 대응
 const URL_CONCURRENCY = Math.max(1, Math.min(Number.parseInt(process.env.BLOG_URL_CONCURRENCY || '2', 10) || 2, 4))
 const EXTRACT_RETRY_COUNT = Math.max(1, Math.min(Number.parseInt(process.env.BLOG_EXTRACT_RETRY_COUNT || '3', 10) || 3, 5))
 const EXTRACT_RETRY_BACKOFF_MS = 1200
-const MAX_ZIP_PART_MB = Math.max(20, Math.min(Number.parseInt(process.env.BLOG_MAX_ZIP_PART_MB || '120', 10) || 120, 200))
-const MAX_ZIP_PART_BYTES = MAX_ZIP_PART_MB * 1024 * 1024
+const DEFAULT_MAX_ZIP_PART_MB = Math.max(10, Math.min(Number.parseInt(process.env.BLOG_MAX_ZIP_PART_MB || '45', 10) || 45, 200))
+const DEFAULT_MAX_ZIP_PART_BYTES = DEFAULT_MAX_ZIP_PART_MB * 1024 * 1024
+const ZIP_BUCKET_HEADROOM_MB = Math.max(1, Math.min(Number.parseInt(process.env.BLOG_ZIP_HEADROOM_MB || '5', 10) || 5, 20))
 const BASE_IMAGE_QUALITY = 'w2000'
 const STALE_RUNNING_JOB_MS = Math.max(10, Math.min(Number.parseInt(process.env.BLOG_STALE_RUNNING_JOB_MINUTES || '20', 10) || 20, 180)) * 60 * 1000
 
 let isProcessing = false
+let cachedMaxZipPartBytes = null
 
 function safePathSegment(value) {
     return String(value || '')
@@ -51,7 +54,7 @@ function buildBlogZipPath(jobId, blogIndex, chunkIndex, chunkTotal) {
     return `${jobId}/${buildBlogZipFileName(blogIndex, chunkIndex, chunkTotal)}`
 }
 
-async function splitZipByMediaCount(url, mediaUrls, firstZipBuffer = null) {
+async function splitZipByMediaCount(url, mediaUrls, maxZipPartBytes, firstZipBuffer = null) {
     const chunks = []
     const dropped = []
 
@@ -59,7 +62,7 @@ async function splitZipByMediaCount(url, mediaUrls, firstZipBuffer = null) {
         if (!Array.isArray(list) || list.length === 0) return
 
         const zipBuffer = knownZipBuffer || await createZip([{ url, mediaUrls: list }])
-        if (zipBuffer.length <= MAX_ZIP_PART_BYTES) {
+        if (zipBuffer.length <= maxZipPartBytes) {
             chunks.push({
                 mediaUrls: list,
                 zipBuffer,
@@ -82,7 +85,39 @@ async function splitZipByMediaCount(url, mediaUrls, firstZipBuffer = null) {
     return { chunks, dropped }
 }
 
-async function buildZipChunksForResult(url, mediaUrls) {
+async function getMaxZipPartBytes(supabase) {
+    if (Number.isFinite(cachedMaxZipPartBytes) && cachedMaxZipPartBytes > 0) {
+        return cachedMaxZipPartBytes
+    }
+
+    let resolvedBytes = DEFAULT_MAX_ZIP_PART_BYTES
+
+    try {
+        const { data: buckets, error } = await supabase.storage.listBuckets()
+        if (error) throw error
+
+        const targetBucket = Array.isArray(buckets)
+            ? buckets.find((bucket) => bucket?.name === BLOG_MEDIA_BUCKET_NAME || bucket?.id === BLOG_MEDIA_BUCKET_NAME)
+            : null
+        const bucketLimitBytes = Number(targetBucket?.file_size_limit || 0)
+
+        if (bucketLimitBytes > 0) {
+            const headroomBytes = ZIP_BUCKET_HEADROOM_MB * 1024 * 1024
+            const safeBucketBytes = bucketLimitBytes > headroomBytes
+                ? bucketLimitBytes - headroomBytes
+                : Math.max(Math.floor(bucketLimitBytes * 0.9), 5 * 1024 * 1024)
+            resolvedBytes = Math.min(resolvedBytes, safeBucketBytes)
+        }
+    } catch (error) {
+        console.warn('[worker] 버킷 파일 제한 조회 실패, 기본 ZIP 한도를 사용합니다:', error?.message || error)
+    }
+
+    cachedMaxZipPartBytes = Math.max(5 * 1024 * 1024, resolvedBytes)
+    console.log(`[worker] ZIP 분할 한도: ${(cachedMaxZipPartBytes / 1024 / 1024).toFixed(2)}MB`)
+    return cachedMaxZipPartBytes
+}
+
+async function buildZipChunksForResult(url, mediaUrls, maxZipPartBytes) {
     if (!Array.isArray(mediaUrls) || mediaUrls.length === 0) {
         return { chunks: [], droppedCount: 0, usedQuality: BASE_IMAGE_QUALITY }
     }
@@ -90,7 +125,7 @@ async function buildZipChunksForResult(url, mediaUrls) {
     const usedQuality = BASE_IMAGE_QUALITY
     const zipBuffer = await createZip([{ url, mediaUrls }])
 
-    if (zipBuffer.length <= MAX_ZIP_PART_BYTES) {
+    if (zipBuffer.length <= maxZipPartBytes) {
         return {
             chunks: [{
                 mediaUrls,
@@ -102,7 +137,7 @@ async function buildZipChunksForResult(url, mediaUrls) {
         }
     }
 
-    const split = await splitZipByMediaCount(url, mediaUrls, zipBuffer)
+    const split = await splitZipByMediaCount(url, mediaUrls, maxZipPartBytes, zipBuffer)
     return {
         chunks: split.chunks,
         droppedCount: split.dropped.length,
@@ -240,11 +275,12 @@ async function processPendingJob(supabase, job) {
         const successfulUrls = new Set()
 
         if (results.length > 0) {
+            const maxZipPartBytes = await getMaxZipPartBytes(supabase)
             for (let resultIndex = 0; resultIndex < results.length; resultIndex += 1) {
                 const result = results[resultIndex]
                 const blogIndex = Number.isInteger(result.index) ? result.index : resultIndex
                 try {
-                    const prepared = await buildZipChunksForResult(result.url, result.mediaUrls)
+                    const prepared = await buildZipChunksForResult(result.url, result.mediaUrls, maxZipPartBytes)
                     if (!prepared.chunks.length) {
                         normalizedFailures.push({ url: result.url, reason: '용량초과' })
                         continue
