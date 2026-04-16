@@ -60,7 +60,7 @@ export default defineEventHandler(async (event) => {
                 const id = String(part?.id || `part-${idx + 1}`)
                 return {
                     id,
-                    label: `ZIP ${idx + 1}`,
+                    label: String(part?.label || `ZIP ${idx + 1}`),
                     url: signed.signedUrl,
                     fileCount: Number(part?.fileCount || 0),
                     sizeBytes: Number(part?.sizeBytes || 0),

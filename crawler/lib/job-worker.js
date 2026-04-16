@@ -12,64 +12,74 @@ const MAX_CONCURRENT_JOBS = 1 // 무료 플랜 RAM 512MB 대응
 const URL_CONCURRENCY = Math.max(1, Math.min(Number.parseInt(process.env.BLOG_URL_CONCURRENCY || '2', 10) || 2, 4))
 const EXTRACT_RETRY_COUNT = Math.max(1, Math.min(Number.parseInt(process.env.BLOG_EXTRACT_RETRY_COUNT || '3', 10) || 3, 5))
 const EXTRACT_RETRY_BACKOFF_MS = 1200
-const MAX_ZIP_PART_MB = Math.max(10, Math.min(Number.parseInt(process.env.BLOG_MAX_ZIP_PART_MB || '45', 10) || 45, 100))
+const MAX_ZIP_PART_MB = Math.max(20, Math.min(Number.parseInt(process.env.BLOG_MAX_ZIP_PART_MB || '120', 10) || 120, 200))
 const MAX_ZIP_PART_BYTES = MAX_ZIP_PART_MB * 1024 * 1024
 const BASE_IMAGE_QUALITY = 'w2000'
 const STALE_RUNNING_JOB_MS = Math.max(10, Math.min(Number.parseInt(process.env.BLOG_STALE_RUNNING_JOB_MINUTES || '20', 10) || 20, 180)) * 60 * 1000
-const IMAGE_CHUNK_SIZE = Math.max(4, Math.min(Number.parseInt(process.env.BLOG_IMAGE_CHUNK_SIZE || '10', 10) || 10, 20))
 
 let isProcessing = false
 
+function safePathSegment(value) {
+    return String(value || '')
+        .trim()
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/\s+/g, '_')
+        .slice(0, 80)
+}
+
 function isVideoUrl(url) {
-    return /mblogvideo|\.mp4($|\?)|\/video\//i.test(String(url || ''))
+    return /mblogvideo|\.mp4($|\?)|type=mp4|\/video\//i.test(String(url || ''))
 }
 
-function createConservativeMediaChunks(mediaUrls) {
+function getChunkKind(mediaUrls) {
     const list = Array.isArray(mediaUrls) ? mediaUrls.filter(Boolean) : []
-    if (list.length <= 1) return list.length ? [list] : []
+    if (list.length === 0) return 'media'
 
-    const videoUrls = list.filter(isVideoUrl)
-    const imageUrls = list.filter((url) => !isVideoUrl(url))
-
-    if (videoUrls.length === 0 && imageUrls.length <= IMAGE_CHUNK_SIZE) {
-        return [list]
-    }
-
-    const chunks = []
-
-    for (const videoUrl of videoUrls) {
-        chunks.push([videoUrl])
-    }
-
-    for (let i = 0; i < imageUrls.length; i += IMAGE_CHUNK_SIZE) {
-        chunks.push(imageUrls.slice(i, i + IMAGE_CHUNK_SIZE))
-    }
-
-    return chunks.filter((chunk) => chunk.length > 0)
+    const videoCount = list.filter(isVideoUrl).length
+    if (videoCount === list.length) return 'video'
+    if (videoCount === 0) return 'images'
+    return 'images_videos'
 }
 
-async function splitZipByMediaCount(url, mediaUrls, maxBytes) {
-    const fitChunks = []
+function buildBlogZipFileName(blogIndex, chunkIndex, chunkTotal) {
+    const blogName = `blog_${String(blogIndex + 1).padStart(2, '0')}`
+    if (chunkTotal <= 1) return `${blogName}.zip`
+    return `${blogName}-${chunkIndex}.zip`
+}
+
+function buildBlogZipPath(jobId, blogIndex, chunkIndex, chunkTotal) {
+    return `${jobId}/${buildBlogZipFileName(blogIndex, chunkIndex, chunkTotal)}`
+}
+
+async function splitZipByMediaCount(url, mediaUrls, firstZipBuffer = null) {
+    const chunks = []
     const dropped = []
 
-    async function splitRecursive(list) {
+    async function splitRecursive(list, knownZipBuffer = null) {
         if (!Array.isArray(list) || list.length === 0) return
-        const zipBuffer = await createZip([{ url, mediaUrls: list }])
-        if (zipBuffer.length <= maxBytes) {
-            fitChunks.push({ mediaUrls: list, zipBuffer })
+
+        const zipBuffer = knownZipBuffer || await createZip([{ url, mediaUrls: list }])
+        if (zipBuffer.length <= MAX_ZIP_PART_BYTES) {
+            chunks.push({
+                mediaUrls: list,
+                zipBuffer,
+                kind: getChunkKind(list),
+            })
             return
         }
+
         if (list.length <= 1) {
             dropped.push(list[0])
             return
         }
+
         const mid = Math.ceil(list.length / 2)
         await splitRecursive(list.slice(0, mid))
         await splitRecursive(list.slice(mid))
     }
 
-    await splitRecursive(mediaUrls)
-    return { fitChunks, dropped }
+    await splitRecursive(mediaUrls, firstZipBuffer)
+    return { chunks, dropped }
 }
 
 async function buildZipChunksForResult(url, mediaUrls) {
@@ -78,26 +88,24 @@ async function buildZipChunksForResult(url, mediaUrls) {
     }
 
     const usedQuality = BASE_IMAGE_QUALITY
-    const seedChunks = createConservativeMediaChunks(mediaUrls)
-    const chunks = []
-    let droppedCount = 0
+    const zipBuffer = await createZip([{ url, mediaUrls }])
 
-    for (const seedChunk of seedChunks) {
-        const zipBuffer = await createZip([{ url, mediaUrls: seedChunk }])
-
-        if (zipBuffer.length <= MAX_ZIP_PART_BYTES) {
-            chunks.push({ mediaUrls: seedChunk, zipBuffer })
-            continue
+    if (zipBuffer.length <= MAX_ZIP_PART_BYTES) {
+        return {
+            chunks: [{
+                mediaUrls,
+                zipBuffer,
+                kind: getChunkKind(mediaUrls),
+            }],
+            droppedCount: 0,
+            usedQuality,
         }
-
-        const split = await splitZipByMediaCount(url, seedChunk, MAX_ZIP_PART_BYTES)
-        chunks.push(...split.fitChunks)
-        droppedCount += split.dropped.length
     }
 
+    const split = await splitZipByMediaCount(url, mediaUrls, zipBuffer)
     return {
-        chunks,
-        droppedCount,
+        chunks: split.chunks,
+        droppedCount: split.dropped.length,
         usedQuality,
     }
 }
@@ -189,7 +197,7 @@ async function processPendingJob(supabase, job) {
                         failures.push({ index, url, reason: '미디어_없음' })
                         return
                     }
-                    resultsWithOrder[index] = { url, mediaUrls }
+                    resultsWithOrder[index] = { index, url, mediaUrls }
                     return
                 } catch (err) {
                     lastError = err
@@ -232,8 +240,9 @@ async function processPendingJob(supabase, job) {
         const successfulUrls = new Set()
 
         if (results.length > 0) {
-            let partNo = 1
-            for (const result of results) {
+            for (let resultIndex = 0; resultIndex < results.length; resultIndex += 1) {
+                const result = results[resultIndex]
+                const blogIndex = Number.isInteger(result.index) ? result.index : resultIndex
                 try {
                     const prepared = await buildZipChunksForResult(result.url, result.mediaUrls)
                     if (!prepared.chunks.length) {
@@ -245,24 +254,30 @@ async function processPendingJob(supabase, job) {
                         normalizedFailures.push({ url: result.url, reason: '용량초과(일부제외)' })
                     }
 
-                    let chunkIndex = 1
-                    for (const chunk of prepared.chunks) {
-                        const zipBuffer = chunk.zipBuffer
-                        const partId = `part-${String(partNo).padStart(2, '0')}`
-                        const filename = `${jobId}/${partId}.zip`
-                        const uploadResult = await uploadZipToStorage(supabase, jobId, zipBuffer, { filename })
+                    const chunkTotal = prepared.chunks.length
+                    for (let chunkOffset = 0; chunkOffset < prepared.chunks.length; chunkOffset += 1) {
+                        const chunk = prepared.chunks[chunkOffset]
+                        const chunkIndex = chunkOffset + 1
+                        const blogNo = String(blogIndex + 1).padStart(2, '0')
+                        const partId = chunkTotal <= 1
+                            ? `blog-${blogNo}`
+                            : `blog-${blogNo}-${String(chunkIndex).padStart(2, '0')}`
+                        const label = chunkTotal <= 1
+                            ? `블로그 ${blogIndex + 1}`
+                            : `블로그 ${blogIndex + 1}-${chunkIndex}`
+                        const filename = buildBlogZipPath(jobId, blogIndex, chunkIndex, chunkTotal)
+                        const uploadResult = await uploadZipToStorage(supabase, jobId, chunk.zipBuffer, { filename })
                         zipParts.push({
                             id: partId,
+                            label,
                             path: uploadResult.path,
                             sourceUrl: result.url,
                             fileCount: Array.isArray(chunk.mediaUrls) ? chunk.mediaUrls.length : 0,
-                            sizeBytes: zipBuffer.length,
+                            sizeBytes: chunk.zipBuffer.length,
                             quality: prepared.usedQuality,
                             sourceChunkIndex: chunkIndex,
-                            sourceChunkTotal: prepared.chunks.length,
+                            sourceChunkTotal: chunkTotal,
                         })
-                        chunkIndex += 1
-                        partNo += 1
                     }
                     successfulUrls.add(result.url)
                 } catch (err) {

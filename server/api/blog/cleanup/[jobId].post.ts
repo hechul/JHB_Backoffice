@@ -38,10 +38,13 @@ export default defineEventHandler(async (event) => {
   const zipParts = Array.isArray(summary.zip_parts)
     ? (summary.zip_parts as any[]).map((part) => ({
       id: String(part?.id || ''),
+      label: String(part?.label || ''),
       path: String(part?.path || '').trim(),
       sourceUrl: String(part?.sourceUrl || ''),
       fileCount: Number(part?.fileCount || 0),
       sizeBytes: Number(part?.sizeBytes || 0),
+      sourceChunkIndex: Number(part?.sourceChunkIndex || 0),
+      sourceChunkTotal: Number(part?.sourceChunkTotal || 0),
     })).filter((part) => part.path)
     : []
 
@@ -107,4 +110,3 @@ export default defineEventHandler(async (event) => {
   const nextParts = Array.isArray(summary.zip_parts) ? summary.zip_parts.length : 0
   return { ok: true, removed: removedPath, remaining: nextParts }
 })
-
