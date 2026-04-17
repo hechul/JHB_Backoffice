@@ -226,13 +226,20 @@ export function useBlogMediaCollector() {
         pollStartTime.value = 0
 
         let successInThisJob = false
+        // 이미 처리된 URL 수에 1을 더하면 이번 다운로드 대상 URL의 순번입니다.
+        const currentUrlOrder = progress.value.processedCount + 1
 
         if (data.status === 'done' || data.status === 'partial') {
             const files = data.downloadFiles || []
             let downloaded = 0
-            for (const file of files) {
+            for (const [fileIndex, file] of files.entries()) {
                 try {
-                    await downloadAndCleanup(file, data.jobId)
+                    // URL 순번 기준으로 ZIP 이름을 맞춥니다.
+                    // 예: 첫 번째 URL은 1-1, 1-2 / 두 번째 URL은 2 또는 2-1
+                    const label = files.length > 1
+                        ? `${currentUrlOrder}-${fileIndex + 1}`
+                        : `${currentUrlOrder}`
+                    await downloadAndCleanup({ ...file, label }, data.jobId)
                     downloaded++
                 } catch (e) {
                     // 다운로드 중 실패
@@ -243,7 +250,11 @@ export function useBlogMediaCollector() {
             } else if (data.status === 'done') {
                 if (data.downloadUrl) {
                     try {
-                        await downloadAndCleanup({ id: 'legacy', url: data.downloadUrl, label: 'blog_media' }, data.jobId)
+                        await downloadAndCleanup({
+                            id: 'legacy',
+                            url: data.downloadUrl,
+                            label: `${currentUrlOrder}`
+                        }, data.jobId)
                         successInThisJob = true
                     } catch (e) { }
                 }
