@@ -45,6 +45,9 @@
           <Download v-else :size="16" :stroke-width="2" />
           {{ startButtonLabel }}
         </button>
+        <button v-if="isRunning" class="btn btn-secondary" @click="handleCancel">
+          중단
+        </button>
         <button v-if="isDone || errorMessage" class="btn btn-ghost btn-sm" @click="handleReset">
           초기화
         </button>
@@ -141,6 +144,7 @@ const {
   statusLabel,
   statusVariant,
   startBatch,
+  cancelBatch,
   reset
 } = useBlogMediaCollector()
 
@@ -193,6 +197,10 @@ watch(urlInput, (value) => {
 
 async function handleStart() {
   await startBatch(parsedUrls.value)
+}
+
+async function handleCancel() {
+  await cancelBatch()
 }
 
 function handleReset() {

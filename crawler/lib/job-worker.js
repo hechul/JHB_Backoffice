@@ -203,6 +203,21 @@ async function reclaimStaleRunningJobs(supabase) {
     }
 }
 
+async function isJobStillRunning(supabase, jobId) {
+    const { data, error } = await supabase
+        .from('automation_jobs')
+        .select('status')
+        .eq('id', jobId)
+        .single()
+
+    if (error) {
+        console.warn(`[worker] job 상태 재확인 실패: job=${jobId} error=${error.message}`)
+        return true
+    }
+
+    return String(data?.status || '') === 'running'
+}
+
 async function processPendingJob(supabase, job) {
     const jobId = job.id
     console.log(`[worker] 처리 시작 job=${jobId}`)
@@ -279,6 +294,10 @@ async function processPendingJob(supabase, job) {
         if (results.length > 0) {
             const maxZipPartBytes = await getMaxZipPartBytes(supabase)
             for (let resultIndex = 0; resultIndex < results.length; resultIndex += 1) {
+                if (!(await isJobStillRunning(supabase, jobId))) {
+                    console.warn(`[worker] 중단된 job 감지, 추가 처리 중단: job=${jobId}`)
+                    return
+                }
                 const result = results[resultIndex]
                 const blogIndex = Number.isInteger(result.index) ? result.index : resultIndex
                 try {
@@ -332,6 +351,11 @@ async function processPendingJob(supabase, job) {
         const finalStatus = finalFailCount === 0 ? 'done' : finalSuccessCount === 0 ? 'failed' : 'partial'
         const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
+        if (!(await isJobStillRunning(supabase, jobId))) {
+            console.warn(`[worker] 중단된 job 감지, 완료 상태 덮어쓰기 생략: job=${jobId}`)
+            return
+        }
+
         await supabase
             .from('automation_jobs')
             .update({
@@ -351,6 +375,7 @@ async function processPendingJob(supabase, job) {
                 completed_at: new Date().toISOString()
             })
             .eq('id', jobId)
+            .eq('status', 'running')
 
         console.log(`[worker] 완료 job=${jobId} status=${finalStatus} success=${finalSuccessCount} fail=${finalFailCount} parts=${zipParts.length}`)
     } catch (err) {

@@ -298,6 +298,10 @@ export function useBlogMediaCollector() {
 
         try {
             const data = await $fetch<any>(`/api/blog/status/${currentJobId.value}`)
+            if (data.status === 'canceled') {
+                reset()
+                return
+            }
             const done = ['done', 'partial', 'failed'].includes(data.status)
             if (done) {
                 await handleJobComplete(data)
@@ -305,6 +309,21 @@ export function useBlogMediaCollector() {
         } catch (err: any) {
             console.error('[useBlogMediaCollector] 폴링 오류:', err)
         }
+    }
+
+    async function cancelBatch() {
+        clearPoll()
+        const jobId = currentJobId.value
+
+        if (jobId) {
+            try {
+                await $fetch(`/api/blog/cancel/${jobId}`, { method: 'POST' })
+            } catch (err) {
+                console.error('[useBlogMediaCollector] 작업 중단 실패:', err)
+            }
+        }
+
+        reset()
     }
 
     async function processNext() {
@@ -418,6 +437,7 @@ export function useBlogMediaCollector() {
         statusLabel,
         statusVariant,
         startBatch,
+        cancelBatch,
         reset
     }
 }
