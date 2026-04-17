@@ -1,0 +1,35 @@
+# Nuxt dev/build outputs
+.output
+.data
+.nuxt
+.nitro
+.cache
+dist
+
+# Vercel build output (로컬 빌드 결과물이 git에 포함되면 Vercel이 prebuilt로 사용해 SSR 에러 발생)
+.vercel
+
+# Node dependencies
+node_modules
+
+# Logs
+logs
+*.log
+
+# Misc
+.DS_Store
+.fleet
+.idea
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Gemini MCP settings (contains API keys)
+.gemini/settings.json
+
+# Test artifacts
+playwright-report
+test-results
+coverage
