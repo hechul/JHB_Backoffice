@@ -123,13 +123,21 @@ export function useBlogMediaCollector() {
         isPolling.value = false
 
         let successInThisJob = false
+        // 현재 완료 처리 중인 URL의 순번입니다.
+        // processedCount는 "이미 끝난 URL 수"라서, +1 하면 이번 URL이 몇 번째인지 계산할 수 있습니다.
+        const currentUrlOrder = progress.value.processedCount + 1
 
         if (data.status === 'done' || data.status === 'partial') {
             const files = data.downloadFiles || []
             let downloaded = 0
-            for (const file of files) {
+            for (const [fileIndex, file] of files.entries()) {
                 try {
-                    await downloadAndCleanup(file, data.jobId)
+                    // 하나의 블로그 URL에서 ZIP이 여러 개로 쪼개질 수 있으므로
+                    // 1번째 URL은 1-1, 1-2 / 2번째 URL은 2 또는 2-1, 2-2 형태로 이름을 맞춥니다.
+                    const label = files.length > 1
+                        ? `${currentUrlOrder}-${fileIndex + 1}`
+                        : `${currentUrlOrder}`
+                    await downloadAndCleanup({ ...file, label }, data.jobId)
                     downloaded++
                 } catch (e) {
                     // 다운로드 중 실패
@@ -140,7 +148,11 @@ export function useBlogMediaCollector() {
             } else if (data.status === 'done') {
                 if (data.downloadUrl) {
                     try {
-                        await downloadAndCleanup({ id: 'legacy', url: data.downloadUrl, label: 'blog_media' }, data.jobId)
+                        await downloadAndCleanup({
+                            id: 'legacy',
+                            url: data.downloadUrl,
+                            label: `${currentUrlOrder}`
+                        }, data.jobId)
                         successInThisJob = true
                     } catch (e) { }
                 }
