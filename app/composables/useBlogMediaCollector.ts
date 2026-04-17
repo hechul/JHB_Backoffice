@@ -175,12 +175,18 @@ export function useBlogMediaCollector() {
         return null
     }
 
-    function buildDownloadApiUrl(jobId: string, fileObj?: { id?: string }) {
+    function buildDownloadApiUrl(jobId: string, fileObj?: { id?: string; label?: string }) {
         const partId = String(fileObj?.id || '').trim()
+        const requestedName = String(fileObj?.label || '').trim()
+        const params = new URLSearchParams()
         if (partId && partId !== 'legacy') {
-            return `/api/blog/download/${jobId}?part=${encodeURIComponent(partId)}`
+            params.set('part', partId)
         }
-        return `/api/blog/download/${jobId}`
+        if (requestedName) {
+            params.set('filename', `${requestedName}.zip`)
+        }
+        const query = params.toString()
+        return query ? `/api/blog/download/${jobId}?${query}` : `/api/blog/download/${jobId}`
     }
 
     async function downloadAndCleanup(fileObj: { id: string, url: string, label?: string }, jobId: string) {

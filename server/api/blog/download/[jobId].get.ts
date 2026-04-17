@@ -9,6 +9,12 @@ function getFileNameFromPath(path: string): string {
   return pieces[pieces.length - 1] || 'blog_media.zip'
 }
 
+function safeDownloadFileName(name: string): string {
+  return String(name || 'blog_media.zip')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .trim() || 'blog_media.zip'
+}
+
 export default defineEventHandler(async (event) => {
   const jobId = getRouterParam(event, 'jobId')
   if (!jobId) {
@@ -16,6 +22,7 @@ export default defineEventHandler(async (event) => {
   }
   const query = getQuery(event)
   const requestedPartId = String(query.part || '').trim()
+  const requestedFilename = String(query.filename || '').trim()
 
   const supabaseUrl = process.env.NUXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_KEY
@@ -91,7 +98,7 @@ export default defineEventHandler(async (event) => {
 
   const arrayBuffer = await blobData.arrayBuffer()
   const zipBuffer = Buffer.from(arrayBuffer)
-  const filename = getFileNameFromPath(storagePath)
+  const filename = safeDownloadFileName(requestedFilename || getFileNameFromPath(storagePath))
 
   // 다운로드 1회 처리: 반환할 바이너리를 메모리에 확보한 뒤 스토리지에서 즉시 제거
   const { error: removeError } = await adminClient
