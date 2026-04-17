@@ -44,14 +44,14 @@ function getChunkKind(mediaUrls) {
     return 'images_videos'
 }
 
-function buildBlogZipFileName(blogIndex, chunkIndex, chunkTotal) {
-    const blogName = `blog_${String(blogIndex + 1).padStart(2, '0')}`
+function buildBlogZipFileName(blogOrder, chunkIndex, chunkTotal) {
+    const blogName = `blog_${String(blogOrder).padStart(2, '0')}`
     if (chunkTotal <= 1) return `${blogName}.zip`
     return `${blogName}-${chunkIndex}.zip`
 }
 
-function buildBlogZipPath(jobId, blogIndex, chunkIndex, chunkTotal) {
-    return `${jobId}/${buildBlogZipFileName(blogIndex, chunkIndex, chunkTotal)}`
+function buildBlogZipPath(jobId, blogOrder, chunkIndex, chunkTotal) {
+    return `${jobId}/${buildBlogZipFileName(blogOrder, chunkIndex, chunkTotal)}`
 }
 
 async function splitZipByMediaCount(url, mediaUrls, maxZipPartBytes, firstZipBuffer = null) {
@@ -213,6 +213,8 @@ async function processPendingJob(supabase, job) {
             .eq('id', jobId)
 
         const urls = job.summary_json?.urls || []
+        // 같은 화면 배치에서 두 번째, 세 번째 URL도 파일명이 2, 3으로 이어지게 한다.
+        const baseUrlOrder = Math.max(1, Number.parseInt(String(job.summary_json?.url_order_start ?? '1'), 10) || 1)
         const resultsWithOrder = new Array(urls.length)
         const failures = []
 
@@ -294,14 +296,15 @@ async function processPendingJob(supabase, job) {
                     for (let chunkOffset = 0; chunkOffset < prepared.chunks.length; chunkOffset += 1) {
                         const chunk = prepared.chunks[chunkOffset]
                         const chunkIndex = chunkOffset + 1
-                        const blogNo = String(blogIndex + 1).padStart(2, '0')
+                        const globalBlogOrder = baseUrlOrder + blogIndex
+                        const blogNo = String(globalBlogOrder).padStart(2, '0')
                         const partId = chunkTotal <= 1
                             ? `blog-${blogNo}`
                             : `blog-${blogNo}-${String(chunkIndex).padStart(2, '0')}`
                         const label = chunkTotal <= 1
-                            ? `블로그 ${blogIndex + 1}`
-                            : `블로그 ${blogIndex + 1}-${chunkIndex}`
-                        const filename = buildBlogZipPath(jobId, blogIndex, chunkIndex, chunkTotal)
+                            ? `블로그 ${globalBlogOrder}`
+                            : `블로그 ${globalBlogOrder}-${chunkIndex}`
+                        const filename = buildBlogZipPath(jobId, globalBlogOrder, chunkIndex, chunkTotal)
                         const uploadResult = await uploadZipToStorage(supabase, jobId, chunk.zipBuffer, { filename })
                         zipParts.push({
                             id: partId,
@@ -340,6 +343,7 @@ async function processPendingJob(supabase, job) {
                 expires_at: storagePath ? expiresAt : null,
                 summary_json: {
                     urls,
+                    url_order_start: baseUrlOrder,
                     failures: normalizedFailures,
                     results: results.map(r => ({ url: r.url, count: r.mediaUrls.length })),
                     zip_parts: zipParts,

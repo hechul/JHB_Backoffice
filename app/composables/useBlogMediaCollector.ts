@@ -329,7 +329,11 @@ export function useBlogMediaCollector() {
                 '/api/blog/start',
                 {
                     method: 'POST',
-                    body: { urls: [nextUrl] }
+                    body: {
+                        urls: [nextUrl],
+                        // 서버/워커가 현재 URL 순번을 알아야 ZIP 이름을 1, 2, 3 순서대로 이어서 만든다.
+                        urlOrderStart: progress.value.processedCount + 1,
+                    }
                 }
             )
 

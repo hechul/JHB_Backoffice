@@ -3,7 +3,7 @@ import { serverSupabaseUser } from '#supabase/server'
 
 export default defineEventHandler(async (event) => {
     const body = await readBody(event)
-    const { urls } = body || {}
+    const { urls, urlOrderStart } = body || {}
 
     // 입력 검증
     if (!Array.isArray(urls) || urls.length === 0) {
@@ -23,6 +23,10 @@ export default defineEventHandler(async (event) => {
     if (validUrls.length === 0) {
         throw createError({ statusCode: 400, message: '유효한 네이버 블로그 URL이 없습니다.' })
     }
+
+    // 현재 요청이 전체 배치에서 몇 번째 URL인지 기록한다.
+    // 워커가 이 값을 읽어 ZIP 이름을 blog_02.zip처럼 이어서 생성한다.
+    const normalizedUrlOrderStart = Math.max(1, Number.parseInt(String(urlOrderStart ?? '1'), 10) || 1)
 
     // 사용자 확인 (SPA ssr:false라서 세션이 없으면 null일 수 있음)
     const user = await serverSupabaseUser(event).catch(() => null)
@@ -47,7 +51,10 @@ export default defineEventHandler(async (event) => {
             created_by: user?.id ?? null,
             status: 'pending',
             total_urls: validUrls.length,
-            summary_json: { urls: validUrls }
+            summary_json: {
+                urls: validUrls,
+                url_order_start: normalizedUrlOrderStart,
+            }
         })
         .select('id')
         .single()
